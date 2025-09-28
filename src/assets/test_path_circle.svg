@@ -1,0 +1,11 @@
+<svg width="200" height="200" xmlns="http://www.w3.org/2000/svg">
+  <!-- 円 (32個の線分で近似される) -->
+  <circle cx="50" cy="50" r="40" stroke="red" fill="none"/>
+
+  <!-- パス (M, L, H, V, Z コマンドを使用) -->
+  <!-- 開始点に移動し、線を引いて、水平線、垂直線、最後にパスを閉じる -->
+  <path d="M 100 100 L 150 100 H 125 V 150 Z" stroke="purple" fill="none"/>
+
+  <!-- パス (小文字の相対座標コマンド) -->
+  <path d="m 10 150 l 50 0 v -20 h -30 z" stroke="orange" fill="none"/>
+</svg>

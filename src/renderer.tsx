@@ -21,7 +21,7 @@ declare global {
 }
 
 // 型定義
-type DxfSegment = [[number, number, number], [number, number, number]];
+type DxfSegment = { points: [[number, number, number], [number, number, number]]; color: string };
 type Toolpath = number[][];
 type DrillPoint = number[];
 
@@ -157,9 +157,9 @@ const ThreeViewer = ({ toolpaths, dxfSegments, drillPoints, fileToLoad }: ThreeV
     if (dxfObjectRef.current && sceneRef.current) sceneRef.current.remove(dxfObjectRef.current);
     if (dxfSegments && sceneRef.current) {
       const group = new THREE.Group();
-      const material = new THREE.LineBasicMaterial({ color: 0x333333 });
       for (const segment of dxfSegments) {
-        const points = segment.map(p => new THREE.Vector3(p[0], p[1], p[2]));
+        const material = new THREE.LineBasicMaterial({ color: segment.color || 0x333333 });
+        const points = segment.points.map(p => new THREE.Vector3(p[0], p[1], p[2]));
         const geometry = new THREE.BufferGeometry().setFromPoints(points);
         const line = new THREE.Line(geometry, material);
         group.add(line);
@@ -257,9 +257,9 @@ const App = () => {
   // Handlers
   const getVerticesFromDxf = () => {
     if (!dxfSegments) return null;
-    const vertices = dxfSegments.map(segment => segment[0]);
+    const vertices = dxfSegments.map(segment => segment.points[0]);
     if (vertices.length > 0) {
-      vertices.push(dxfSegments[dxfSegments.length - 1][1]);
+      vertices.push(dxfSegments[dxfSegments.length - 1].points[1]);
     }
     return vertices;
   }

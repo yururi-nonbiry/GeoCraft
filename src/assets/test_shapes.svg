@@ -1,0 +1,13 @@
+<svg width="200" height="200" xmlns="http://www.w3.org/2000/svg">
+  <!-- 長方形 -->
+  <rect x="10" y="10" width="80" height="60" stroke="black" fill="none"/>
+
+  <!-- 連続線 (開いた形) -->
+  <polyline points="100,10 120,60 140,20 180,70" stroke="blue" fill="none"/>
+
+  <!-- 多角形 (閉じた形) -->
+  <polygon points="50,80 90,120 10,120" stroke="green" fill="none"/>
+
+  <!-- 以前のテスト用の線 -->
+  <line x1="10" y1="150" x2="190" y2="150" stroke="red" />
+</svg>
