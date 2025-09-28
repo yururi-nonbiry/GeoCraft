@@ -57,4 +57,27 @@ const rendererConfig = {
   devtool: 'inline-source-map', // デバッグ用にソースマップを有効化
 };
 
-module.exports = [mainConfig, rendererConfig];
+// Preloadスクリプトの設定
+const preloadConfig = {
+  mode: 'development',
+  entry: './src/preload.ts',
+  target: 'electron-preload',
+  output: {
+    path: path.resolve(__dirname, 'dist'),
+    filename: 'preload.js',
+  },
+  module: {
+    rules: [
+      {
+        test: /\.ts$/,
+        include: /src/,
+        use: [{ loader: 'ts-loader' }],
+      },
+    ],
+  },
+  resolve: {
+    extensions: ['.ts', '.js'],
+  },
+};
+
+module.exports = [mainConfig, rendererConfig, preloadConfig];
