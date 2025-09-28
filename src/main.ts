@@ -27,8 +27,9 @@ const menuTemplate: (Electron.MenuItemConstructorOptions | Electron.MenuItem)[] 
             const result = await dialog.showOpenDialog(window, {
               properties: ['openFile'],
               filters: [
-                { name: '3D/2D Files', extensions: ['stl', 'dxf', 'svg'] },
+                { name: '3D/2D Files', extensions: ['stl', 'dxf', 'svg', 'obj'] },
                 { name: 'STL Files', extensions: ['stl'] },
+                { name: 'OBJ Files', extensions: ['obj'] },
                 { name: 'DXF Files', extensions: ['dxf'] },
                 { name: 'SVG Files', extensions: ['svg'] }
               ]
@@ -109,7 +110,7 @@ app.whenReady().then(() => {
       const segments: { points: [[number, number, number], [number, number, number]]; color: string }[] = [];
 
       function parsePoints(pointsStr: string): [number, number][] {
-        return pointsStr.split(/[,\s]+/).filter(p => p).reduce((acc, val, i, arr) => {
+        return pointsStr.split(/[, ]+/).filter(p => p).reduce((acc, val, i, arr) => {
           if (i % 2 === 0 && arr[i+1] !== undefined) acc.push([parseFloat(val), parseFloat(arr[i + 1])]);
           return acc;
         }, [] as [number, number][]);

@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader';
+import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader';
 
 // Preloadスクリプト経由で公開されたAPIの型定義
 declare global {
@@ -109,45 +110,60 @@ const ThreeViewer = ({ toolpaths, dxfSegments, drillPoints, fileToLoad }: ThreeV
     if (dxfObjectRef.current) scene.remove(dxfObjectRef.current);
     if (drillPointsRef.current) scene.remove(drillPointsRef.current);
 
+    const fitCameraToObject = (object: THREE.Object3D) => {
+      if (!cameraRef.current || !controlsRef.current) return;
+      const box = new THREE.Box3().setFromObject(object);
+      const center = box.getCenter(new THREE.Vector3());
+      const size = box.getSize(new THREE.Vector3());
+      const maxDim = Math.max(size.x, size.y, size.z);
+      const fov = cameraRef.current.fov * (Math.PI / 180);
+      let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
+      cameraZ *= 1.5;
+
+      object.position.sub(center);
+      scene.add(object);
+      modelRef.current = object;
+
+      const camPos = new THREE.Vector3();
+      camPos.copy(center);
+      camPos.x -= cameraZ * 0.7;
+      camPos.y -= cameraZ * 0.7;
+      camPos.z += cameraZ * 0.7;
+      cameraRef.current.position.copy(camPos);
+      cameraRef.current.up.set(0, 0, 1);
+
+      controlsRef.current.target.copy(center);
+      controlsRef.current.update();
+    };
+
     if (fileToLoad && fileToLoad.toLowerCase().endsWith('.stl')) {
       const loader = new STLLoader();
       loader.load(fileToLoad, (geometry) => {
         geometry.computeVertexNormals();
         const material = new THREE.MeshStandardMaterial({
-          color: 0x999999,
-          metalness: 0.1,
-          roughness: 0.5,
-          side: THREE.DoubleSide,
+          color: 0x999999, metalness: 0.1, roughness: 0.5, side: THREE.DoubleSide,
         });
         const mesh = new THREE.Mesh(geometry, material);
         mesh.rotation.x = -Math.PI / 2;
-        geometry.computeBoundingBox();
-        const box = geometry.boundingBox!;
-        const center = box.getCenter(new THREE.Vector3());
-        mesh.position.sub(center);
-        scene.add(mesh);
-        modelRef.current = mesh;
-
-        // カメラをモデルに合わせて調整
-        if (cameraRef.current && controlsRef.current) {
-          const size = box.getSize(new THREE.Vector3());
-          const maxDim = Math.max(size.x, size.y, size.z);
-          const fov = cameraRef.current.fov * (Math.PI / 180);
-          let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
-          cameraZ *= 1.5; // 少し余裕を持たせる
-
-          // 斜め上からの視点に設定
-          const camPos = new THREE.Vector3();
-          camPos.copy(center);
-          camPos.x -= cameraZ * 0.7;
-          camPos.y -= cameraZ * 0.7;
-          camPos.z += cameraZ * 0.7;
-          cameraRef.current.position.copy(camPos);
-          cameraRef.current.up.set(0, 0, 1); // Z-upを維持
-
-          controlsRef.current.target.copy(center);
-          controlsRef.current.update();
-        }
+        fitCameraToObject(mesh);
+      });
+    } else if (fileToLoad && fileToLoad.toLowerCase().endsWith('.obj')) {
+      const loader = new OBJLoader();
+      loader.load(fileToLoad, (group) => {
+        const defaultMaterial = new THREE.MeshStandardMaterial({
+          color: 0x999999, metalness: 0.1, roughness: 0.5, side: THREE.DoubleSide,
+        });
+        group.traverse((child) => {
+          if (child instanceof THREE.Mesh) {
+            const geometry = child.geometry;
+            if (geometry instanceof THREE.BufferGeometry) {
+              geometry.computeVertexNormals();
+            }
+            child.material = defaultMaterial;
+          }
+        });
+        group.rotation.x = -Math.PI / 2;
+        fitCameraToObject(group);
       });
     }
   }, [fileToLoad]);
