@@ -12,13 +12,9 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js')
     }
   });
-
-  // index.htmlをロードする
-  // 注意: このパスはコンパイル後のdistディレクトリからの相対パスになる
   mainWindow.loadFile(path.join(__dirname, 'index.html'));
 }
 
-// メニューのテンプレートを定義
 const menuTemplate: (Electron.MenuItemConstructorOptions | Electron.MenuItem)[] = [
   {
     label: 'ファイル',
@@ -65,215 +61,74 @@ const menuTemplate: (Electron.MenuItemConstructorOptions | Electron.MenuItem)[] 
   },
 ];
 
+// Pythonプロセスを呼び出す汎用関数
+function callPython(scriptName: string, args: (string | number)[]): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const pythonExecutable = process.platform === 'win32'
+      ? path.join(app.getAppPath(), '.venv', 'Scripts', 'python.exe')
+      : path.join(app.getAppPath(), '.venv', 'bin', 'python');
+
+    const scriptPath = path.join(app.getAppPath(), 'src', 'python', scriptName);
+    const pythonProcess = spawn(pythonExecutable, [scriptPath, ...args.map(arg => String(arg))]);
+
+    let stdout = '';
+    let stderr = '';
+    pythonProcess.stdout.on('data', (data) => { stdout += data.toString(); });
+    pythonProcess.stderr.on('data', (data) => { stderr += data.toString(); });
+
+    pythonProcess.on('close', (code) => {
+      if (code === 0) {
+        try {
+          resolve(JSON.parse(stdout));
+        } catch (e) {
+          reject(`Failed to parse Python output: ${stdout}`);
+        }
+      } else {
+        console.error(`Python stderr: ${stderr}`);
+        reject(`Python script exited with code ${code}. Stderr: ${stderr}`);
+      }
+    });
+  });
+}
+
 app.whenReady().then(() => {
-  ipcMain.handle('generate-contour-path', async (event, toolDiameter, geometry) => {
-    return new Promise((resolve, reject) => {
-      const pythonExecutable = process.platform === 'win32'
-        ? path.join(app.getAppPath(), '.venv', 'Scripts', 'python.exe')
-        : path.join(app.getAppPath(), '.venv', 'bin', 'python');
+  // IPCハンドラ
+  ipcMain.handle('run-python-test', () => callPython('test.py', []));
+  ipcMain.handle('parse-dxf-file', (event, filePath) => callPython('dxf_parser.py', [filePath]));
+  ipcMain.handle('generate-contour-path', (event, toolDiameter, geometry) => callPython('contour_generator.py', [toolDiameter, JSON.stringify(geometry)]));
+  ipcMain.handle('generate-pocket-path', (event, params) => callPython('pocket_generator.py', [JSON.stringify(params.geometry), params.toolDiameter, params.stepover]));
 
-      const scriptPath = path.join(app.getAppPath(), 'src', 'python', 'contour_generator.py');
-      const geometryString = JSON.stringify(geometry);
-      const pythonProcess = spawn(pythonExecutable, [scriptPath, String(toolDiameter), geometryString]);
+  const setupGcodeGeneratorHandler = (name: string, script: string) => {
+    ipcMain.handle(name, async (event, params) => {
+      const gcodeResult = await callPython(script, [JSON.stringify(params.toolpaths || params.drillPoints), params.feedRate, params.safeZ, params.stepDown, params.peckQ, params.retractZ]);
+      if (gcodeResult.status !== 'success') throw new Error(gcodeResult.message);
 
-      let result = '';
-      pythonProcess.stdout.on('data', (data) => {
-        result += data.toString();
+      const focusedWindow = BrowserWindow.fromWebContents(event.sender);
+      if (!focusedWindow) throw new Error('Could not find the focused window.');
+
+      const { canceled, filePath } = await dialog.showSaveDialog(focusedWindow, {
+        title: 'G-codeを保存',
+        defaultPath: `${name}.nc`,
+        filters: [{ name: 'NC Files', extensions: ['nc', 'gcode', 'txt'] }, { name: 'All Files', extensions: ['*'] }]
       });
 
-      pythonProcess.stderr.on('data', (data) => {
-        console.error(`Python stderr: ${data}`);
-        reject(data.toString());
-      });
+      if (canceled || !filePath) return { status: 'canceled' };
 
-      pythonProcess.on('close', (code) => {
-        if (code === 0) {
-          try {
-            resolve(JSON.parse(result));
-          } catch (e) {
-            reject('Failed to parse Python script output.');
-          }
-        } else {
-          reject(`Python script exited with code ${code}`);
-        }
-      });
+      try {
+        fs.writeFileSync(filePath, gcodeResult.gcode);
+        return { status: 'success', filePath };
+      } catch (err) {
+        throw new Error(`Failed to save file: ${(err as Error).message}`);
+      }
     });
-  });
+  };
 
-  // IPCハンドラの設定
-  ipcMain.handle('run-python-test', async () => {
-    return new Promise((resolve, reject) => {
-      // OSに応じて仮想環境内のPython実行ファイルのパスを決定
-      const pythonExecutable = process.platform === 'win32'
-        ? path.join(app.getAppPath(), '.venv', 'Scripts', 'python.exe')
-        : path.join(app.getAppPath(), '.venv', 'bin', 'python');
+  setupGcodeGeneratorHandler('generate-gcode', 'gcode_generator.py');
+  setupGcodeGeneratorHandler('generate-drill-gcode', 'drill_gcode_generator.py');
 
-      const scriptPath = path.join(app.getAppPath(), 'src', 'python', 'test.py');
-      const pythonProcess = spawn(pythonExecutable, [scriptPath]);
-
-      let result = '';
-      pythonProcess.stdout.on('data', (data) => {
-        result += data.toString();
-      });
-
-      pythonProcess.stderr.on('data', (data) => {
-        console.error(`Python stderr: ${data}`);
-        reject(data.toString());
-      });
-
-      pythonProcess.on('close', (code) => {
-        if (code === 0) {
-          try {
-            resolve(JSON.parse(result));
-          } catch (e) {
-            reject('Failed to parse Python script output.');
-          }
-        } else {
-          reject(`Python script exited with code ${code}`);
-        }
-      });
-    });
-  });
-
-  ipcMain.handle('parse-dxf-file', async (event, filePath) => {
-    return new Promise((resolve, reject) => {
-      const pythonExecutable = process.platform === 'win32'
-        ? path.join(app.getAppPath(), '.venv', 'Scripts', 'python.exe')
-        : path.join(app.getAppPath(), '.venv', 'bin', 'python');
-
-      const scriptPath = path.join(app.getAppPath(), 'src', 'python', 'dxf_parser.py');
-      const pythonProcess = spawn(pythonExecutable, [scriptPath, filePath]);
-
-      let result = '';
-      pythonProcess.stdout.on('data', (data) => {
-        result += data.toString();
-      });
-
-      pythonProcess.stderr.on('data', (data) => {
-        console.error(`Python stderr: ${data}`);
-        reject(data.toString());
-      });
-
-      pythonProcess.on('close', (code) => {
-        if (code === 0) {
-          try {
-            resolve(JSON.parse(result));
-          } catch (e) {
-            reject('Failed to parse Python script output.');
-          }
-        } else {
-          reject(`Python script exited with code ${code}`);
-        }
-      });
-    });
-  });
-
-  ipcMain.handle('generate-gcode', async (event, params) => {
-    // 1. Pythonを呼び出してGコードを生成
-    const gcodeResult = await new Promise<any>((resolve, reject) => {
-      const { toolpaths, feedRate, safeZ, stepDown } = params;
-      const pythonExecutable = process.platform === 'win32'
-        ? path.join(app.getAppPath(), '.venv', 'Scripts', 'python.exe')
-        : path.join(app.getAppPath(), '.venv', 'bin', 'python');
-      
-      const scriptPath = path.join(app.getAppPath(), 'src', 'python', 'gcode_generator.py');
-      const toolpathString = JSON.stringify(toolpaths);
-      
-      const pythonProcess = spawn(pythonExecutable, [
-        scriptPath,
-        toolpathString,
-        String(feedRate),
-        String(safeZ),
-        String(stepDown)
-      ]);
-
-      let result = '';
-      pythonProcess.stdout.on('data', (data) => { result += data.toString(); });
-      pythonProcess.stderr.on('data', (data) => {
-        console.error(`Python stderr: ${data}`);
-        reject(data.toString());
-      });
-      pythonProcess.on('close', (code) => {
-        if (code === 0) {
-          try { resolve(JSON.parse(result)); }
-          catch (e) { reject('Failed to parse Python script output.'); }
-        } else {
-          reject(`Python script exited with code ${code}`);
-        }
-      });
-    });
-
-    if (gcodeResult.status !== 'success') {
-      throw new Error(gcodeResult.message);
-    }
-
-    // 2. 保存ダイアログを表示
-    const focusedWindow = BrowserWindow.fromWebContents(event.sender);
-    if (!focusedWindow) {
-      throw new Error('Could not find the focused window.');
-    }
-
-    const { canceled, filePath } = await dialog.showSaveDialog(focusedWindow, {
-      title: 'G-codeを保存',
-      defaultPath: 'toolpath.nc',
-      filters: [
-        { name: 'NC Files', extensions: ['nc', 'gcode', 'txt'] },
-        { name: 'All Files', extensions: ['*' ] }
-      ]
-    });
-
-    if (canceled || !filePath) {
-      return { status: 'canceled' };
-    }
-
-    // 3. ファイルに書き込み
-    try {
-      fs.writeFileSync(filePath, gcodeResult.gcode);
-      return { status: 'success', filePath };
-    } catch (err) {
-      throw new Error(`Failed to save file: ${(err as Error).message}`);
-    }
-  });
-
-  ipcMain.handle('generate-pocket-path', async (event, params) => {
-    return new Promise((resolve, reject) => {
-      const { geometry, toolDiameter, stepover } = params;
-      const pythonExecutable = process.platform === 'win32'
-        ? path.join(app.getAppPath(), '.venv', 'Scripts', 'python.exe')
-        : path.join(app.getAppPath(), '.venv', 'bin', 'python');
-
-      const scriptPath = path.join(app.getAppPath(), 'src', 'python', 'pocket_generator.py');
-      const geometryString = JSON.stringify(geometry);
-
-      const pythonProcess = spawn(pythonExecutable, [
-        scriptPath,
-        geometryString,
-        String(toolDiameter),
-        String(stepover)
-      ]);
-
-      let result = '';
-      pythonProcess.stdout.on('data', (data) => { result += data.toString(); });
-      pythonProcess.stderr.on('data', (data) => {
-        console.error(`Python stderr: ${data}`);
-        reject(data.toString());
-      });
-      pythonProcess.on('close', (code) => {
-        if (code === 0) {
-          try { resolve(JSON.parse(result)); }
-          catch (e) { reject('Failed to parse Python script output.'); }
-        } else {
-          reject(`Python script exited with code ${code}`);
-        }
-      });
-    });
-  });
-
-  // メニューをテンプレートから作成
+  // メニューとウィンドウの作成
   const menu = Menu.buildFromTemplate(menuTemplate);
-  // アプリケーションメニューとして設定
   Menu.setApplicationMenu(menu);
-
   createWindow();
 
   app.on('activate', () => {

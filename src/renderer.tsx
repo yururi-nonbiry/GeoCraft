@@ -13,6 +13,7 @@ declare global {
       parseDxfFile: (filePath: string) => Promise<any>;
       generateGcode: (params: any) => Promise<any>;
       generatePocketPath: (params: any) => Promise<any>;
+      generateDrillGcode: (params: any) => Promise<any>;
     };
   }
 }
@@ -20,19 +21,22 @@ declare global {
 // 型定義
 type DxfSegment = [[number, number, number], [number, number, number]];
 type Toolpath = number[][];
+type DrillPoint = number[];
 
 interface ThreeViewerProps {
   toolpaths: Toolpath[] | null;
   dxfSegments: DxfSegment[] | null;
+  drillPoints: DrillPoint[] | null;
   fileToLoad: string | null;
 }
 
-const ThreeViewer = ({ toolpaths, dxfSegments, fileToLoad }: ThreeViewerProps) => {
+const ThreeViewer = ({ toolpaths, dxfSegments, drillPoints, fileToLoad }: ThreeViewerProps) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const modelRef = useRef<THREE.Object3D | null>(null);
   const toolpathGroupRef = useRef<THREE.Group | null>(null);
   const dxfObjectRef = useRef<THREE.Group | null>(null);
+  const drillPointsRef = useRef<THREE.Points | null>(null);
 
   // 初期セットアップ
   useEffect(() => {
@@ -43,7 +47,7 @@ const ThreeViewer = ({ toolpaths, dxfSegments, fileToLoad }: ThreeViewerProps) =
     sceneRef.current = scene;
 
     const camera = new THREE.PerspectiveCamera(75, currentMount.clientWidth / currentMount.clientHeight, 0.1, 1000);
-    camera.up.set(0, 0, 1); // Z軸を上に設定
+    camera.up.set(0, 0, 1);
     camera.position.set(10, 10, 15);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -86,16 +90,16 @@ const ThreeViewer = ({ toolpaths, dxfSegments, fileToLoad }: ThreeViewerProps) =
     };
   }, []);
 
-  // ファイル読み込み処理
+  // ファイル読み込み/クリア処理
   useEffect(() => {
-    if (!fileToLoad || !sceneRef.current) return;
+    if (!sceneRef.current) return;
     const scene = sceneRef.current;
-
     if (modelRef.current) scene.remove(modelRef.current);
     if (toolpathGroupRef.current) scene.remove(toolpathGroupRef.current);
     if (dxfObjectRef.current) scene.remove(dxfObjectRef.current);
+    if (drillPointsRef.current) scene.remove(drillPointsRef.current);
 
-    if (fileToLoad.toLowerCase().endsWith('.stl')) {
+    if (fileToLoad && fileToLoad.toLowerCase().endsWith('.stl')) {
       const loader = new STLLoader();
       loader.load(fileToLoad, (geometry) => {
         const material = new THREE.MeshStandardMaterial({ color: 0x007bff, transparent: true, opacity: 0.5 });
@@ -112,9 +116,7 @@ const ThreeViewer = ({ toolpaths, dxfSegments, fileToLoad }: ThreeViewerProps) =
 
   // DXF描画処理
   useEffect(() => {
-    if (dxfObjectRef.current && sceneRef.current) {
-      sceneRef.current.remove(dxfObjectRef.current);
-    }
+    if (dxfObjectRef.current && sceneRef.current) sceneRef.current.remove(dxfObjectRef.current);
     if (dxfSegments && sceneRef.current) {
       const group = new THREE.Group();
       const material = new THREE.LineBasicMaterial({ color: 0x333333 });
@@ -129,11 +131,23 @@ const ThreeViewer = ({ toolpaths, dxfSegments, fileToLoad }: ThreeViewerProps) =
     }
   }, [dxfSegments]);
 
+  // ドリル点描画処理
+  useEffect(() => {
+    if (drillPointsRef.current && sceneRef.current) sceneRef.current.remove(drillPointsRef.current);
+    if (drillPoints && sceneRef.current) {
+      const geometry = new THREE.BufferGeometry();
+      const vertices = new Float32Array(drillPoints.flat());
+      geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+      const material = new THREE.PointsMaterial({ color: 0x00ff00, size: 0.5, sizeAttenuation: false });
+      const points = new THREE.Points(geometry, material);
+      sceneRef.current.add(points);
+      drillPointsRef.current = points;
+    }
+  }, [drillPoints]);
+
   // ツールパス描画処理
   useEffect(() => {
-    if (toolpathGroupRef.current && sceneRef.current) {
-      sceneRef.current.remove(toolpathGroupRef.current);
-    }
+    if (toolpathGroupRef.current && sceneRef.current) sceneRef.current.remove(toolpathGroupRef.current);
     if (toolpaths && sceneRef.current) {
       const group = new THREE.Group();
       const material = new THREE.LineBasicMaterial({ color: 0xff0000 });
@@ -154,19 +168,23 @@ const ThreeViewer = ({ toolpaths, dxfSegments, fileToLoad }: ThreeViewerProps) =
 const App = () => {
   // states
   const [toolDiameter, setToolDiameter] = useState(3.0);
-  const [stepover, setStepover] = useState(0.5); // 50%
+  const [stepover, setStepover] = useState(0.5);
   const [toolpaths, setToolpaths] = useState<Toolpath[] | null>(null);
   const [dxfSegments, setDxfSegments] = useState<DxfSegment[] | null>(null);
+  const [drillPoints, setDrillPoints] = useState<DrillPoint[] | null>(null);
   const [fileToLoad, setFileToLoad] = useState<string | null>(null);
   const [feedRate, setFeedRate] = useState(100);
   const [safeZ, setSafeZ] = useState(5.0);
-  const [stepDown, setStepDown] = useState(-1.0);
+  const [stepDown, setStepDown] = useState(-2.0);
+  const [retractZ, setRetractZ] = useState(2.0);
+  const [peckQ, setPeckQ] = useState(1.0);
 
   // File open listener
   useEffect(() => {
     const removeListener = window.electronAPI.onFileOpen((filePath) => {
       setToolpaths(null);
       setDxfSegments(null);
+      setDrillPoints(null);
       setFileToLoad(null);
 
       const extension = filePath.split('.').pop()?.toLowerCase();
@@ -176,6 +194,7 @@ const App = () => {
         window.electronAPI.parseDxfFile(filePath).then(result => {
           if (result.status === 'success') {
             setDxfSegments(result.segments);
+            setDrillPoints(result.drill_points);
           } else {
             alert(`DXF解析エラー: ${result.message}`);
           }
@@ -206,7 +225,7 @@ const App = () => {
     try {
       const result = await window.electronAPI.generateContourPath(toolDiameter, vertices);
       if (result.status === 'success') {
-        setToolpaths([result.toolpath]); // 輪郭パスは単一なので配列に入れる
+        setToolpaths([result.toolpath]);
       } else {
         alert(`パス生成エラー: ${result.message}`);
       }
@@ -231,6 +250,24 @@ const App = () => {
       }
     } catch (error) {
       alert(`パス生成に失敗しました: ${error}`);
+    }
+  };
+
+  const handleGenerateDrillGcode = async () => {
+    if (!drillPoints || drillPoints.length === 0) {
+      alert('Gコードを生成するためのドリル点がありません。');
+      return;
+    }
+    try {
+      const params = { drillPoints, safeZ, retractZ, stepDown, peckQ };
+      const result = await window.electronAPI.generateDrillGcode(params);
+      if (result.status === 'success') {
+        alert(`ドリルGコードを保存しました: ${result.filePath}`);
+      } else if (result.status !== 'canceled') {
+        alert(`Gコードの保存に失敗しました: ${result.message}`);
+      }
+    } catch (error) {
+      alert(`Gコードの保存に失敗しました: ${error}`);
     }
   };
 
@@ -262,7 +299,7 @@ const App = () => {
   return (
     <div style={mainStyle}>
       <div style={viewerStyle}>
-        <ThreeViewer toolpaths={toolpaths} dxfSegments={dxfSegments} fileToLoad={fileToLoad} />
+        <ThreeViewer toolpaths={toolpaths} dxfSegments={dxfSegments} drillPoints={drillPoints} fileToLoad={fileToLoad} />
       </div>
       <div style={panelStyle}>
         <h2>設定パネル</h2>
@@ -270,28 +307,34 @@ const App = () => {
           <h3>加工設定</h3>
           <label style={labelStyle}>工具径 (mm)</label>
           <input type="number" value={toolDiameter} onChange={(e) => setToolDiameter(parseFloat(e.target.value))} step="0.1"/>
-        </div>
-        <hr />
-        <div style={inputGroupStyle}>
-          <h3>輪郭加工</h3>
-          <button onClick={handleGenerateContour}>輪郭パス生成</button>
-        </div>
-        <div style={inputGroupStyle}>
-          <h3>ポケット加工</h3>
-          <label style={labelStyle}>ステップオーバー (%)</label>
-          <input type="number" value={stepover * 100} onChange={(e) => setStepover(parseFloat(e.target.value) / 100)} step="1" min="1" max="100" />
-          <button onClick={handleGeneratePocket}>ポケットパス生成</button>
-        </div>
-        <hr />
-        <div style={inputGroupStyle}>
-          <h3>Gコード生成</h3>
-          <label style={labelStyle}>送り速度 (mm/min)</label>
-          <input type="number" value={feedRate} onChange={(e) => setFeedRate(parseFloat(e.target.value))} />
           <label style={labelStyle}>安全高さ (Z)</label>
           <input type="number" value={safeZ} onChange={(e) => setSafeZ(parseFloat(e.target.value))} step="0.1" />
           <label style={labelStyle}>切り込み深さ (Z)</label>
           <input type="number" value={stepDown} onChange={(e) => setStepDown(parseFloat(e.target.value))} step="0.1" />
-          <button onClick={handleSaveGcode}>Gコードを保存</button>
+        </div>
+        <hr />
+        <div style={inputGroupStyle}>
+          <h3>輪郭・ポケット加工</h3>
+          <label style={labelStyle}>ステップオーバー (%)</label>
+          <input type="number" value={stepover * 100} onChange={(e) => setStepover(parseFloat(e.target.value) / 100)} step="1" min="1" max="100" />
+          <button onClick={handleGenerateContour}>輪郭パス生成</button>
+          <button onClick={handleGeneratePocket}>ポケットパス生成</button>
+        </div>
+        <hr />
+        <div style={inputGroupStyle}>
+          <h3>ドリル加工</h3>
+          <label style={labelStyle}>R点 (切り込み開始高さ)</label>
+          <input type="number" value={retractZ} onChange={(e) => setRetractZ(parseFloat(e.target.value))} step="0.1" />
+          <label style={labelStyle}>ペック量 (Q)</label>
+          <input type="number" value={peckQ} onChange={(e) => setPeckQ(parseFloat(e.target.value))} step="0.1" />
+          <button onClick={handleGenerateDrillGcode}>ドリルGコード生成</button>
+        </div>
+        <hr />
+        <div style={inputGroupStyle}>
+          <h3>Gコード保存</h3>
+          <label style={labelStyle}>送り速度 (mm/min)</label>
+          <input type="number" value={feedRate} onChange={(e) => setFeedRate(parseFloat(e.target.value))} />
+          <button onClick={handleSaveGcode}>輪郭/ポケットGコードを保存</button>
         </div>
       </div>
     </div>
