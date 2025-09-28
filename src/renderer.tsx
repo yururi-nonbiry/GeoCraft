@@ -14,6 +14,7 @@ declare global {
       generateGcode: (params: any) => Promise<any>;
       generatePocketPath: (params: any) => Promise<any>;
       generateDrillGcode: (params: any) => Promise<any>;
+      generate3dPath: (params: any) => Promise<any>;
     };
   }
 }
@@ -33,6 +34,8 @@ interface ThreeViewerProps {
 const ThreeViewer = ({ toolpaths, dxfSegments, drillPoints, fileToLoad }: ThreeViewerProps) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
+  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const controlsRef = useRef<OrbitControls | null>(null);
   const modelRef = useRef<THREE.Object3D | null>(null);
   const toolpathGroupRef = useRef<THREE.Group | null>(null);
   const dxfObjectRef = useRef<THREE.Group | null>(null);
@@ -49,19 +52,25 @@ const ThreeViewer = ({ toolpaths, dxfSegments, drillPoints, fileToLoad }: ThreeV
     const camera = new THREE.PerspectiveCamera(75, currentMount.clientWidth / currentMount.clientHeight, 0.1, 1000);
     camera.up.set(0, 0, 1);
     camera.position.set(10, 10, 15);
+    cameraRef.current = camera;
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(currentMount.clientWidth, currentMount.clientHeight);
     currentMount.appendChild(renderer.domElement);
 
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+    // ライトを強化
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
     scene.add(ambientLight);
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    directionalLight.position.set(5, 5, 5);
-    scene.add(directionalLight);
+    const directionalLight1 = new THREE.DirectionalLight(0xffffff, 1.0);
+    directionalLight1.position.set(5, 5, 10);
+    scene.add(directionalLight1);
+    const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.5);
+    directionalLight2.position.set(-5, -5, -10);
+    scene.add(directionalLight2);
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
+    controlsRef.current = controls;
 
     const gridHelper = new THREE.GridHelper(20, 20);
     gridHelper.rotation.x = Math.PI / 2;
@@ -77,7 +86,7 @@ const ThreeViewer = ({ toolpaths, dxfSegments, drillPoints, fileToLoad }: ThreeV
     animate();
 
     const handleResize = () => {
-      if (!mountRef.current) return;
+      if (!mountRef.current || !cameraRef.current) return;
       camera.aspect = mountRef.current.clientWidth / mountRef.current.clientHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
@@ -102,14 +111,42 @@ const ThreeViewer = ({ toolpaths, dxfSegments, drillPoints, fileToLoad }: ThreeV
     if (fileToLoad && fileToLoad.toLowerCase().endsWith('.stl')) {
       const loader = new STLLoader();
       loader.load(fileToLoad, (geometry) => {
-        const material = new THREE.MeshStandardMaterial({ color: 0x007bff, transparent: true, opacity: 0.5 });
+        geometry.computeVertexNormals();
+        const material = new THREE.MeshStandardMaterial({
+          color: 0x999999,
+          metalness: 0.1,
+          roughness: 0.5,
+          side: THREE.DoubleSide,
+        });
         const mesh = new THREE.Mesh(geometry, material);
+        mesh.rotation.x = -Math.PI / 2;
         geometry.computeBoundingBox();
         const box = geometry.boundingBox!;
         const center = box.getCenter(new THREE.Vector3());
         mesh.position.sub(center);
         scene.add(mesh);
         modelRef.current = mesh;
+
+        // カメラをモデルに合わせて調整
+        if (cameraRef.current && controlsRef.current) {
+          const size = box.getSize(new THREE.Vector3());
+          const maxDim = Math.max(size.x, size.y, size.z);
+          const fov = cameraRef.current.fov * (Math.PI / 180);
+          let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
+          cameraZ *= 1.5; // 少し余裕を持たせる
+
+          // 斜め上からの視点に設定
+          const camPos = new THREE.Vector3();
+          camPos.copy(center);
+          camPos.x -= cameraZ * 0.7;
+          camPos.y -= cameraZ * 0.7;
+          camPos.z += cameraZ * 0.7;
+          cameraRef.current.position.copy(camPos);
+          cameraRef.current.up.set(0, 0, 1); // Z-upを維持
+
+          controlsRef.current.target.copy(center);
+          controlsRef.current.update();
+        }
       });
     }
   }, [fileToLoad]);
@@ -152,7 +189,7 @@ const ThreeViewer = ({ toolpaths, dxfSegments, drillPoints, fileToLoad }: ThreeV
       const group = new THREE.Group();
       const material = new THREE.LineBasicMaterial({ color: 0xff0000 });
       for (const toolpath of toolpaths) {
-        const points = toolpath.map(p => new THREE.Vector3(p[0], p[1], 0));
+        const points = toolpath.map(p => new THREE.Vector3(p[0], p[1], p[2] || 0)); // Zがなければ0を補う
         const geometry = new THREE.BufferGeometry().setFromPoints(points);
         const line = new THREE.Line(geometry, material);
         group.add(line);
@@ -169,6 +206,7 @@ const App = () => {
   // states
   const [toolDiameter, setToolDiameter] = useState(3.0);
   const [stepover, setStepover] = useState(0.5);
+  const [sliceHeight, setSliceHeight] = useState(1.0);
   const [toolpaths, setToolpaths] = useState<Toolpath[] | null>(null);
   const [dxfSegments, setDxfSegments] = useState<DxfSegment[] | null>(null);
   const [drillPoints, setDrillPoints] = useState<DrillPoint[] | null>(null);
@@ -185,12 +223,10 @@ const App = () => {
       setToolpaths(null);
       setDxfSegments(null);
       setDrillPoints(null);
-      setFileToLoad(null);
+      setFileToLoad(filePath); // ファイルパスを先にセット
 
       const extension = filePath.split('.').pop()?.toLowerCase();
-      if (extension === 'stl') {
-        setFileToLoad(filePath);
-      } else if (extension === 'dxf') {
+      if (extension === 'dxf') {
         window.electronAPI.parseDxfFile(filePath).then(result => {
           if (result.status === 'success') {
             setDxfSegments(result.segments);
@@ -250,6 +286,24 @@ const App = () => {
       }
     } catch (error) {
       alert(`パス生成に失敗しました: ${error}`);
+    }
+  };
+
+  const handleGenerate3dPath = async () => {
+    if (!fileToLoad || !fileToLoad.toLowerCase().endsWith('.stl')) {
+      alert('3D加工パスを生成するには、STLファイルを開いてください。');
+      return;
+    }
+    try {
+      const params = { filePath: fileToLoad, sliceHeight, toolDiameter, stepoverRatio: stepover };
+      const result = await window.electronAPI.generate3dPath(params);
+      if (result.status === 'success') {
+        setToolpaths(result.toolpaths);
+      } else {
+        alert(`3Dパス生成エラー: ${result.message}`);
+      }
+    } catch (error) {
+      alert(`3Dパス生成に失敗しました: ${error}`);
     }
   };
 
@@ -314,11 +368,17 @@ const App = () => {
         </div>
         <hr />
         <div style={inputGroupStyle}>
-          <h3>輪郭・ポケット加工</h3>
+          <h3>2.5D 加工 (DXF)</h3>
           <label style={labelStyle}>ステップオーバー (%)</label>
           <input type="number" value={stepover * 100} onChange={(e) => setStepover(parseFloat(e.target.value) / 100)} step="1" min="1" max="100" />
           <button onClick={handleGenerateContour}>輪郭パス生成</button>
           <button onClick={handleGeneratePocket}>ポケットパス生成</button>
+        </div>
+        <div style={inputGroupStyle}>
+          <h3>3D 加工 (STL)</h3>
+          <label style={labelStyle}>スライス厚 (mm)</label>
+          <input type="number" value={sliceHeight} onChange={(e) => setSliceHeight(parseFloat(e.target.value))} step="0.1" />
+          <button onClick={handleGenerate3dPath}>3Dパス生成</button>
         </div>
         <hr />
         <div style={inputGroupStyle}>
