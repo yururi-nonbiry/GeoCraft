@@ -271,21 +271,74 @@ const App = () => {
   }, []);
 
   // Handlers
-  const getVerticesFromDxf = () => {
-    if (!dxfSegments) return null;
-    const vertices = dxfSegments.map(segment => segment.points[0]);
-    if (vertices.length > 0) {
-      vertices.push(dxfSegments[dxfSegments.length - 1].points[1]);
+  const getConnectedGeometries = () => {
+    if (!dxfSegments || dxfSegments.length === 0) return [];
+
+    const pointToKey = (p: [number, number, number]) => p.map(v => v.toFixed(4)).join(',');
+    const remaining = new Set(dxfSegments);
+    const geometries: Array<Array<[number, number, number]>> = [];
+
+    while (remaining.size > 0) {
+        const path: Array<[number, number, number]> = [];
+        const startSeg = remaining.values().next().value;
+        remaining.delete(startSeg);
+
+        path.push(...startSeg.points);
+        let firstPointKey = pointToKey(path[0]);
+        let lastPointKey = pointToKey(path[path.length - 1]);
+
+        let changed = true;
+        while (changed) {
+            changed = false;
+            for (const seg of remaining) {
+                const p1Key = pointToKey(seg.points[0]);
+                const p2Key = pointToKey(seg.points[1]);
+
+                // --- Forward connection ---
+                if (p1Key === lastPointKey) {
+                    path.push(seg.points[1]);
+                    lastPointKey = p2Key;
+                    remaining.delete(seg);
+                    changed = true;
+                    break;
+                }
+                if (p2Key === lastPointKey) {
+                    path.push(seg.points[0]);
+                    lastPointKey = p1Key;
+                    remaining.delete(seg);
+                    changed = true;
+                    break;
+                }
+                // --- Backward connection ---
+                if (p2Key === firstPointKey) {
+                    path.unshift(seg.points[0]);
+                    firstPointKey = p1Key;
+                    remaining.delete(seg);
+                    changed = true;
+                    break;
+                }
+                if (p1Key === firstPointKey) {
+                    path.unshift(seg.points[1]);
+                    firstPointKey = p2Key;
+                    remaining.delete(seg);
+                    changed = true;
+                    break;
+                }
+            }
+        }
+        geometries.push(path);
     }
-    return vertices;
-  }
+    return geometries;
+  };
 
   const handleGenerateContour = async () => {
-    const vertices = getVerticesFromDxf();
-    if (!vertices) {
+    const geometries = getConnectedGeometries();
+    if (geometries.length === 0) {
       alert('ツールパスを生成するための図形が読み込まれていません。DXF/SVGファイルを開いてください。');
       return;
     }
+    // TODO: Let user select which geometry if multiple exist. For now, use the first one.
+    const vertices = geometries[0];
     try {
       const result = await window.electronAPI.generateContourPath(toolDiameter, vertices);
       if (result.status === 'success') {
@@ -299,11 +352,13 @@ const App = () => {
   };
 
   const handleGeneratePocket = async () => {
-    const vertices = getVerticesFromDxf();
-    if (!vertices) {
+    const geometries = getConnectedGeometries();
+    if (geometries.length === 0) {
       alert('ツールパスを生成するための図形が読み込まれていません。DXF/SVGファイルを開いてください。');
       return;
     }
+    // TODO: Let user select which geometry if multiple exist. For now, use the first one.
+    const vertices = geometries[0];
     try {
       const params = { geometry: vertices, toolDiameter, stepover: toolDiameter * stepover };
       const result = await window.electronAPI.generatePocketPath(params);
