@@ -11,6 +11,7 @@ declare global {
       onFileOpen: (callback: (filePath: string) => void) => () => void;
       generateContourPath: (toolDiameter: number, geometry: any) => Promise<any>;
       parseDxfFile: (filePath: string) => Promise<any>;
+      parseSvgFile: (filePath: string) => Promise<any>;
       generateGcode: (params: any) => Promise<any>;
       generatePocketPath: (params: any) => Promise<any>;
       generateDrillGcode: (params: any) => Promise<any>;
@@ -151,7 +152,7 @@ const ThreeViewer = ({ toolpaths, dxfSegments, drillPoints, fileToLoad }: ThreeV
     }
   }, [fileToLoad]);
 
-  // DXF描画処理
+  // DXF/SVG描画処理
   useEffect(() => {
     if (dxfObjectRef.current && sceneRef.current) sceneRef.current.remove(dxfObjectRef.current);
     if (dxfSegments && sceneRef.current) {
@@ -237,6 +238,17 @@ const App = () => {
         }).catch(error => {
           alert(`DXF解析に失敗しました: ${error}`);
         });
+      } else if (extension === 'svg') {
+        window.electronAPI.parseSvgFile(filePath).then(result => {
+          if (result.status === 'success') {
+            setDxfSegments(result.segments); // DXFと同じ描画ロジックを再利用
+            setDrillPoints(result.drill_points);
+          } else {
+            alert(`SVG解析エラー: ${result.message}`);
+          }
+        }).catch(error => {
+          alert(`SVG解析に失敗しました: ${error}`);
+        });
       }
     });
     return () => { removeListener(); };
@@ -255,7 +267,7 @@ const App = () => {
   const handleGenerateContour = async () => {
     const vertices = getVerticesFromDxf();
     if (!vertices) {
-      alert('ツールパスを生成するための図形が読み込まれていません。DXFファイルを開いてください。');
+      alert('ツールパスを生成するための図形が読み込まれていません。DXF/SVGファイルを開いてください。');
       return;
     }
     try {
@@ -273,7 +285,7 @@ const App = () => {
   const handleGeneratePocket = async () => {
     const vertices = getVerticesFromDxf();
     if (!vertices) {
-      alert('ツールパスを生成するための図形が読み込まれていません。DXFファイルを開いてください。');
+      alert('ツールパスを生成するための図形が読み込まれていません。DXF/SVGファイルを開いてください。');
       return;
     }
     try {
@@ -368,7 +380,7 @@ const App = () => {
         </div>
         <hr />
         <div style={inputGroupStyle}>
-          <h3>2.5D 加工 (DXF)</h3>
+          <h3>2.5D 加工 (DXF/SVG)</h3>
           <label style={labelStyle}>ステップオーバー (%)</label>
           <input type="number" value={stepover * 100} onChange={(e) => setStepover(parseFloat(e.target.value) / 100)} step="1" min="1" max="100" />
           <button onClick={handleGenerateContour}>輪郭パス生成</button>

@@ -2,6 +2,7 @@ import { app, BrowserWindow, Menu, dialog, ipcMain } from 'electron';
 import * as path from 'path';
 import { spawn } from 'child_process';
 import * as fs from 'fs';
+import { parse } from 'svg-parser';
 
 function createWindow() {
   const mainWindow = new BrowserWindow({
@@ -26,9 +27,10 @@ const menuTemplate: (Electron.MenuItemConstructorOptions | Electron.MenuItem)[] 
             const result = await dialog.showOpenDialog(window, {
               properties: ['openFile'],
               filters: [
-                { name: '3D/2D Files', extensions: ['stl', 'dxf'] },
+                { name: '3D/2D Files', extensions: ['stl', 'dxf', 'svg'] },
                 { name: 'STL Files', extensions: ['stl'] },
-                { name: 'DXF Files', extensions: ['dxf'] }
+                { name: 'DXF Files', extensions: ['dxf'] },
+                { name: 'SVG Files', extensions: ['svg'] }
               ]
             });
             if (!result.canceled && result.filePaths.length > 0) {
@@ -98,6 +100,42 @@ app.whenReady().then(() => {
   ipcMain.handle('generate-contour-path', (event, toolDiameter, geometry) => callPython('contour_generator.py', [toolDiameter, JSON.stringify(geometry)]));
   ipcMain.handle('generate-pocket-path', (event, params) => callPython('pocket_generator.py', [JSON.stringify(params.geometry), params.toolDiameter, params.stepover]));
   ipcMain.handle('generate-3d-path', (event, params) => callPython('z_level_slicer.py', [params.filePath, params.sliceHeight, params.toolDiameter, params.stepoverRatio]));
+
+  // SVGパーサーハンドラ
+  ipcMain.handle('parse-svg-file', async (event, filePath) => {
+    try {
+      const data = fs.readFileSync(filePath, 'utf8');
+      const parsed = parse(data);
+      const segments: any[] = [];
+      // TODO: SVGの座標系をThree.jsに合わせる変換処理
+
+      function traverse(node: any) {
+        if (node.type === 'element') {
+          // ここで各SVG要素を線分に変換する
+          // 簡単な例として<line>要素を処理
+          if (node.tagName === 'line' && node.properties) {
+            const x1 = parseFloat(node.properties.x1 as string);
+            const y1 = parseFloat(node.properties.y1 as string);
+            const x2 = parseFloat(node.properties.x2 as string);
+            const y2 = parseFloat(node.properties.y2 as string);
+            segments.push([[x1, -y1, 0], [x2, -y2, 0]]); // Y軸を反転
+          }
+          // TODO: path, rect, circle, polygon, polylineなどの処理を追加
+
+          if (node.children) {
+            node.children.forEach(traverse);
+          }
+        }
+      }
+
+      traverse(parsed.children[0]);
+
+      return { status: 'success', segments, drill_points: [] };
+    } catch (e: any) {
+      return { status: 'error', message: e.message };
+    }
+  });
+
 
   const setupGcodeGeneratorHandler = (name: string, script: string) => {
     ipcMain.handle(name, async (event, params) => {

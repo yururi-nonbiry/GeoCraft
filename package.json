@@ -22,6 +22,7 @@
   "devDependencies": {
     "@types/react": "^19.1.14",
     "@types/react-dom": "^19.1.9",
+    "@types/svg-parser": "^2.0.6",
     "@types/three": "^0.180.0",
     "cross-env": "^10.0.0",
     "css-loader": "^7.1.2",
@@ -36,6 +37,7 @@
   "dependencies": {
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
+    "svg-parser": "^2.0.4",
     "three": "^0.180.0"
   }
 }
