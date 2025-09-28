@@ -11,11 +11,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     };
   },
   invokePythonTest: () => ipcRenderer.invoke('run-python-test'),
-  generateContourPath: (toolDiameter: number, geometry: any) => ipcRenderer.invoke('generate-contour-path', toolDiameter, geometry),
+      generateContourPath: (toolDiameter: number, geometry: any, side: string) => Promise<any>;
   parseDxfFile: (filePath: string) => ipcRenderer.invoke('parse-dxf-file', filePath),
   parseSvgFile: (filePath: string) => ipcRenderer.invoke('parse-svg-file', filePath),
   generateGcode: (params: any) => ipcRenderer.invoke('generate-gcode', params),
   generatePocketPath: (params: any) => ipcRenderer.invoke('generate-pocket-path', params),
   generateDrillGcode: (params: any) => ipcRenderer.invoke('generate-drill-gcode', params),
-  generate3dPath: (params: any) => ipcRenderer.invoke('generate-3d-path', params)
+      generate3dPath: (params: any) => Promise<any>;
+      fitArcsToToolpath: (toolpath: number[][], arcs: any[]) => Promise<any>;
 });

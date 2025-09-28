@@ -23,17 +23,21 @@ declare global {
 
 // 型定義
 type DxfSegment = { points: [[number, number, number], [number, number, number]]; color: string };
+type DxfArc = { center: [number, number, number]; radius: number; start_angle: number; end_angle: number; };
+type Geometry = { segments: DxfSegment[]; arcs: DxfArc[]; drill_points: DrillPoint[] };
 type Toolpath = number[][];
+type ToolpathSegment = 
+  | { type: 'line'; points: number[][] }
+  | { type: 'arc'; start: number[]; end: number[]; center: number[]; direction: 'cw' | 'ccw' };
 type DrillPoint = number[];
 
 interface ThreeViewerProps {
-  toolpaths: Toolpath[] | null;
-  dxfSegments: DxfSegment[] | null;
-  drillPoints: DrillPoint[] | null;
+  toolpaths: ToolpathSegment[] | null;
+  geometry: Geometry | null;
   fileToLoad: string | null;
 }
 
-const ThreeViewer = ({ toolpaths, dxfSegments, drillPoints, fileToLoad }: ThreeViewerProps) => {
+const ThreeViewer = ({ toolpaths, geometry, fileToLoad }: ThreeViewerProps) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
@@ -41,6 +45,7 @@ const ThreeViewer = ({ toolpaths, dxfSegments, drillPoints, fileToLoad }: ThreeV
   const modelRef = useRef<THREE.Object3D | null>(null);
   const toolpathGroupRef = useRef<THREE.Group | null>(null);
   const dxfObjectRef = useRef<THREE.Group | null>(null);
+  const dxfArcsRef = useRef<THREE.Group | null>(null);
   const drillPointsRef = useRef<THREE.Points | null>(null);
 
   // 初期セットアップ
@@ -171,9 +176,9 @@ const ThreeViewer = ({ toolpaths, dxfSegments, drillPoints, fileToLoad }: ThreeV
   // DXF/SVG描画処理
   useEffect(() => {
     if (dxfObjectRef.current && sceneRef.current) sceneRef.current.remove(dxfObjectRef.current);
-    if (dxfSegments && sceneRef.current) {
+    if (geometry && geometry.segments && sceneRef.current) {
       const group = new THREE.Group();
-      for (const segment of dxfSegments) {
+      for (const segment of geometry.segments) {
         const material = new THREE.LineBasicMaterial({ color: segment.color || 0x333333 });
         const points = segment.points.map(p => new THREE.Vector3(p[0], p[1], p[2]));
         const geometry = new THREE.BufferGeometry().setFromPoints(points);
@@ -183,33 +188,82 @@ const ThreeViewer = ({ toolpaths, dxfSegments, drillPoints, fileToLoad }: ThreeV
       sceneRef.current.add(group);
       dxfObjectRef.current = group;
     }
-  }, [dxfSegments]);
+  }, [geometry]);
 
   // ドリル点描画処理
   useEffect(() => {
     if (drillPointsRef.current && sceneRef.current) sceneRef.current.remove(drillPointsRef.current);
-    if (drillPoints && sceneRef.current) {
-      const geometry = new THREE.BufferGeometry();
-      const vertices = new Float32Array(drillPoints.flat());
-      geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+    if (geometry && geometry.drill_points && sceneRef.current) {
+      const pointsGeometry = new THREE.BufferGeometry();
+      const vertices = new Float32Array(geometry.drill_points.flat());
+      pointsGeometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
       const material = new THREE.PointsMaterial({ color: 0x00ff00, size: 0.5, sizeAttenuation: false });
-      const points = new THREE.Points(geometry, material);
+      const points = new THREE.Points(pointsGeometry, material);
       sceneRef.current.add(points);
       drillPointsRef.current = points;
     }
-  }, [drillPoints]);
+  }, [geometry]);
+
+  // 円弧描画処理
+  useEffect(() => {
+    if (dxfArcsRef.current && sceneRef.current) sceneRef.current.remove(dxfArcsRef.current);
+    if (geometry && geometry.arcs && sceneRef.current) {
+      const group = new THREE.Group();
+      const material = new THREE.LineBasicMaterial({ color: 0x3333cc }); // Arc color
+      for (const arc of geometry.arcs) {
+        const curve = new THREE.ArcCurve(
+          arc.center[0],
+          arc.center[1],
+          arc.radius,
+          arc.start_angle * (Math.PI / 180), // Convert to radians
+          arc.end_angle * (Math.PI / 180),   // Convert to radians
+          false // Clockwise
+        );
+        const points = curve.getPoints(50);
+        const arcGeometry = new THREE.BufferGeometry().setFromPoints(points);
+        const arcLine = new THREE.Line(arcGeometry, material);
+        // Arcs are usually on the XY plane, no rotation needed if Z is handled
+        arcLine.position.z = arc.center[2];
+        group.add(arcLine);
+      }
+      sceneRef.current.add(group);
+      dxfArcsRef.current = group;
+    }
+  }, [geometry]);
 
   // ツールパス描画処理
   useEffect(() => {
     if (toolpathGroupRef.current && sceneRef.current) sceneRef.current.remove(toolpathGroupRef.current);
     if (toolpaths && sceneRef.current) {
       const group = new THREE.Group();
-      const material = new THREE.LineBasicMaterial({ color: 0xff0000 });
-      for (const toolpath of toolpaths) {
-        const points = toolpath.map(p => new THREE.Vector3(p[0], p[1], p[2] || 0)); // Zがなければ0を補う
-        const geometry = new THREE.BufferGeometry().setFromPoints(points);
-        const line = new THREE.Line(geometry, material);
-        group.add(line);
+      const lineMaterial = new THREE.LineBasicMaterial({ color: 0xff0000 });
+      const arcMaterial = new THREE.LineBasicMaterial({ color: 0x0000ff }); // Use a different color for arcs to distinguish
+
+      for (const segment of toolpaths) {
+        if (segment.type === 'line') {
+          const points = segment.points.map(p => new THREE.Vector3(p[0], p[1], p[2] || 0));
+          const geometry = new THREE.BufferGeometry().setFromPoints(points);
+          const line = new THREE.Line(geometry, lineMaterial);
+          group.add(line);
+        } else if (segment.type === 'arc') {
+          const { start, end, center, direction } = segment;
+          // Note: ArcCurve needs 2D coordinates for its constructor.
+          // The Z coordinate is applied to the resulting line's position.
+          const curve = new THREE.ArcCurve(
+            center[0],
+            center[1],
+            Math.hypot(start[0] - center[0], start[1] - center[1]), // radius
+            Math.atan2(start[1] - center[1], start[0] - center[0]), // startAngle
+            Math.atan2(end[1] - center[1], end[0] - center[0]),     // endAngle
+            direction === 'cw'
+          );
+          const points = curve.getPoints(50);
+          const arcGeometry = new THREE.BufferGeometry().setFromPoints(points);
+          const arcLine = new THREE.Line(arcGeometry, arcMaterial);
+          // Assuming arcs are on the XY plane, their Z is constant
+          arcLine.position.z = start[2] || 0;
+          group.add(arcLine);
+        }
       }
       sceneRef.current.add(group);
       toolpathGroupRef.current = group;
@@ -224,9 +278,8 @@ const App = () => {
   const [toolDiameter, setToolDiameter] = useState(3.0);
   const [stepover, setStepover] = useState(0.5);
   const [sliceHeight, setSliceHeight] = useState(1.0);
-  const [toolpaths, setToolpaths] = useState<Toolpath[] | null>(null);
-  const [dxfSegments, setDxfSegments] = useState<DxfSegment[] | null>(null);
-  const [drillPoints, setDrillPoints] = useState<DrillPoint[] | null>(null);
+  const [toolpaths, setToolpaths] = useState<ToolpathSegment[] | null>(null);
+  const [geometry, setGeometry] = useState<Geometry | null>(null);
   const [fileToLoad, setFileToLoad] = useState<string | null>(null);
   const [feedRate, setFeedRate] = useState(100);
   const [safeZ, setSafeZ] = useState(5.0);
@@ -234,20 +287,20 @@ const App = () => {
   const [retractZ, setRetractZ] = useState(2.0);
   const [peckQ, setPeckQ] = useState(1.0);
 
+  const [contourSide, setContourSide] = useState('outer'); // 'outer' or 'inner'
+
   // File open listener
   useEffect(() => {
     const removeListener = window.electronAPI.onFileOpen((filePath) => {
       setToolpaths(null);
-      setDxfSegments(null);
-      setDrillPoints(null);
+      setGeometry(null);
       setFileToLoad(filePath); // ファイルパスを先にセット
 
       const extension = filePath.split('.').pop()?.toLowerCase();
       if (extension === 'dxf') {
         window.electronAPI.parseDxfFile(filePath).then(result => {
           if (result.status === 'success') {
-            setDxfSegments(result.segments);
-            setDrillPoints(result.drill_points);
+            setGeometry({ segments: result.segments, arcs: result.arcs, drill_points: result.drill_points });
           } else {
             alert(`DXF解析エラー: ${result.message}`);
           }
@@ -257,8 +310,8 @@ const App = () => {
       } else if (extension === 'svg') {
         window.electronAPI.parseSvgFile(filePath).then(result => {
           if (result.status === 'success') {
-            setDxfSegments(result.segments); // DXFと同じ描画ロジックを再利用
-            setDrillPoints(result.drill_points);
+            // SVG parser currently only returns segments
+            setGeometry({ segments: result.segments, arcs: [], drill_points: result.drill_points });
           } else {
             alert(`SVG解析エラー: ${result.message}`);
           }
@@ -272,10 +325,10 @@ const App = () => {
 
   // Handlers
   const getConnectedGeometries = () => {
-    if (!dxfSegments || dxfSegments.length === 0) return [];
+    if (!geometry || !geometry.segments || geometry.segments.length === 0) return [];
 
     const pointToKey = (p: [number, number, number]) => p.map(v => v.toFixed(4)).join(',');
-    const remaining = new Set(dxfSegments);
+    const remaining = new Set(geometry.segments);
     const geometries: Array<Array<[number, number, number]>> = [];
 
     while (remaining.size > 0) {
@@ -333,18 +386,27 @@ const App = () => {
 
   const handleGenerateContour = async () => {
     const geometries = getConnectedGeometries();
-    if (geometries.length === 0) {
+    if (geometries.length === 0 || !geometry || !geometry.arcs) {
       alert('ツールパスを生成するための図形が読み込まれていません。DXF/SVGファイルを開いてください。');
       return;
     }
-    // TODO: Let user select which geometry if multiple exist. For now, use the first one.
     const vertices = geometries[0];
     try {
-      const result = await window.electronAPI.generateContourPath(toolDiameter, vertices);
-      if (result.status === 'success') {
-        setToolpaths([result.toolpath]);
+      // Step 1: Generate the linear toolpath
+      const linearResult = await window.electronAPI.generateContourPath(toolDiameter, vertices, contourSide);
+      if (linearResult.status !== 'success') {
+        alert(`初期パス生成エラー: ${linearResult.message}`);
+        return;
+      }
+
+      // Step 2: Fit arcs to the linear toolpath
+      const fittedResult = await window.electronAPI.fitArcsToToolpath(linearResult.toolpath, geometry.arcs);
+      if (fittedResult.status === 'success') {
+        setToolpaths(fittedResult.toolpath_segments);
       } else {
-        alert(`パス生成エラー: ${result.message}`);
+        alert(`円弧フィットエラー: ${fittedResult.message}`);
+        // As a fallback, show the linear path
+        setToolpaths([{ type: 'line', points: linearResult.toolpath }]);
       }
     } catch (error) {
       alert(`パス生成に失敗しました: ${error}`);
@@ -357,13 +419,14 @@ const App = () => {
       alert('ツールパスを生成するための図形が読み込まれていません。DXF/SVGファイルを開いてください。');
       return;
     }
-    // TODO: Let user select which geometry if multiple exist. For now, use the first one.
     const vertices = geometries[0];
     try {
       const params = { geometry: vertices, toolDiameter, stepover: toolDiameter * stepover };
       const result = await window.electronAPI.generatePocketPath(params);
       if (result.status === 'success') {
-        setToolpaths(result.toolpaths);
+        // For now, wrap pocket paths as simple line segments
+        const segments: ToolpathSegment[] = result.toolpaths.map((path: number[][]) => ({ type: 'line', points: path }));
+        setToolpaths(segments);
       } else {
         alert(`パス生成エラー: ${result.message}`);
       }
@@ -391,12 +454,12 @@ const App = () => {
   };
 
   const handleGenerateDrillGcode = async () => {
-    if (!drillPoints || drillPoints.length === 0) {
+    if (!geometry || !geometry.drill_points || geometry.drill_points.length === 0) {
       alert('Gコードを生成するためのドリル点がありません。');
       return;
     }
     try {
-      const params = { drillPoints, safeZ, retractZ, stepDown, peckQ };
+      const params = { drillPoints: geometry.drill_points, safeZ, retractZ, stepDown, peckQ };
       const result = await window.electronAPI.generateDrillGcode(params);
       if (result.status === 'success') {
         alert(`ドリルGコードを保存しました: ${result.filePath}`);
@@ -414,7 +477,9 @@ const App = () => {
       return;
     }
     try {
-      const params = { toolpaths, feedRate, safeZ, stepDown };
+      // Convert old toolpath format to new ToolpathSegment format
+      const segments: ToolpathSegment[] = toolpaths.map(path => ({ type: 'line', points: path }));
+      const params = { toolpaths: segments, feedRate, safeZ, stepDown };
       const result = await window.electronAPI.generateGcode(params);
       if (result.status === 'success') {
         alert(`Gコードを保存しました: ${result.filePath}`);
@@ -426,6 +491,32 @@ const App = () => {
     }
   };
 
+  const handleArcTest = async () => {
+    // Create a dummy toolpath: a square with rounded corners
+    const r = 5; // radius
+    const testPath: ToolpathSegment[] = [
+      { type: 'line', points: [[r, 0, 0], [50 - r, 0, 0]] },
+      { type: 'arc', start: [50 - r, 0, 0], end: [50, r, 0], center: [50 - r, r, 0], direction: 'ccw' },
+      { type: 'line', points: [[50, r, 0], [50, 50 - r, 0]] },
+      { type: 'arc', start: [50, 50 - r, 0], end: [50 - r, 50, 0], center: [50 - r, 50 - r, 0], direction: 'ccw' },
+      { type: 'line', points: [[50 - r, 50, 0], [r, 50, 0]] },
+      { type: 'arc', start: [r, 50, 0], end: [0, 50 - r, 0], center: [r, 50 - r, 0], direction: 'ccw' },
+      { type: 'line', points: [[0, 50 - r, 0], [0, r, 0]] },
+      { type: 'arc', start: [0, r, 0], end: [r, 0, 0], center: [r, r, 0], direction: 'ccw' },
+    ];
+    try {
+      const params = { toolpaths: testPath, feedRate, safeZ, stepDown };
+      const result = await window.electronAPI.generateGcode(params);
+      if (result.status === 'success') {
+        alert(`テストGコードを保存しました: ${result.filePath}`);
+      } else if (result.status !== 'canceled') {
+        alert(`Gコードの保存に失敗しました: ${result.message}`);
+      }
+    } catch (error) {
+      alert(`Gコードの保存に失敗しました: ${error}`);
+    }
+  }
+
   // Styles
   const mainStyle: React.CSSProperties = { display: 'flex', height: '100vh', fontFamily: 'sans-serif' };
   const viewerStyle: React.CSSProperties = { flex: 3, borderRight: '1px solid #ccc' };
@@ -436,7 +527,7 @@ const App = () => {
   return (
     <div style={mainStyle}>
       <div style={viewerStyle}>
-        <ThreeViewer toolpaths={toolpaths} dxfSegments={dxfSegments} drillPoints={drillPoints} fileToLoad={fileToLoad} />
+        <ThreeViewer toolpaths={toolpaths} geometry={geometry} fileToLoad={fileToLoad} />
       </div>
       <div style={panelStyle}>
         <h2>設定パネル</h2>
@@ -454,6 +545,11 @@ const App = () => {
           <h3>2.5D 加工 (DXF/SVG)</h3>
           <label style={labelStyle}>ステップオーバー (%)</label>
           <input type="number" value={stepover * 100} onChange={(e) => setStepover(parseFloat(e.target.value) / 100)} step="1" min="1" max="100" />
+          <label style={labelStyle}>輪郭方向</label>
+          <select value={contourSide} onChange={(e) => setContourSide(e.target.value)}>
+            <option value="outer">外側</option>
+            <option value="inner">内側</option>
+          </select>
           <button onClick={handleGenerateContour}>輪郭パス生成</button>
           <button onClick={handleGeneratePocket}>ポケットパス生成</button>
         </div>
@@ -478,6 +574,7 @@ const App = () => {
           <label style={labelStyle}>送り速度 (mm/min)</label>
           <input type="number" value={feedRate} onChange={(e) => setFeedRate(parseFloat(e.target.value))} />
           <button onClick={handleSaveGcode}>輪郭/ポケットGコードを保存</button>
+          <button onClick={handleArcTest}>円弧Gコードテスト</button>
         </div>
       </div>
     </div>

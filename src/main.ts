@@ -98,9 +98,10 @@ app.whenReady().then(() => {
   // IPCハンドラ
   ipcMain.handle('run-python-test', () => callPython('test.py', []));
   ipcMain.handle('parse-dxf-file', (event, filePath) => callPython('dxf_parser.py', [filePath]));
-  ipcMain.handle('generate-contour-path', (event, toolDiameter, geometry) => callPython('contour_generator.py', [toolDiameter, JSON.stringify(geometry)]));
+  ipcMain.handle('generate-contour-path', (event, toolDiameter, geometry, side) => callPython('contour_generator.py', [toolDiameter, JSON.stringify(geometry), side]));
   ipcMain.handle('generate-pocket-path', (event, params) => callPython('pocket_generator.py', [JSON.stringify(params.geometry), params.toolDiameter, params.stepover]));
   ipcMain.handle('generate-3d-path', (event, params) => callPython('z_level_slicer.py', [params.filePath, params.sliceHeight, params.toolDiameter, params.stepoverRatio]));
+  ipcMain.handle('fit-arcs-to-toolpath', (event, toolpath, arcs) => callPython('arc_fitter.py', [JSON.stringify(toolpath), JSON.stringify(arcs)]));
 
   // SVGパーサーハンドラ
   ipcMain.handle('parse-svg-file', async (event, filePath) => {
