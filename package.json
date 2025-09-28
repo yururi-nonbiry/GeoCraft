@@ -1,0 +1,41 @@
+{
+  "name": "geocraft",
+  "version": "1.0.0",
+  "description": "A DIY Hobby CAM System based on Electron, React, and Three.js.",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "webpack --config webpack.config.js",
+    "start": "npm run build && electron .",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yururi-nonbiry/GeoCraft.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/yururi-nonbiry/GeoCraft/issues"
+  },
+  "homepage": "https://github.com/yururi-nonbiry/GeoCraft#readme",
+  "devDependencies": {
+    "@types/react": "^19.1.14",
+    "@types/react-dom": "^19.1.9",
+    "@types/three": "^0.180.0",
+    "cross-env": "^10.0.0",
+    "css-loader": "^7.1.2",
+    "electron": "^38.1.2",
+    "html-webpack-plugin": "^5.6.4",
+    "style-loader": "^4.0.0",
+    "ts-loader": "^9.5.4",
+    "typescript": "^5.9.2",
+    "webpack": "^5.101.3",
+    "webpack-cli": "^6.0.1"
+  },
+  "dependencies": {
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "three": "^0.180.0"
+  }
+}
