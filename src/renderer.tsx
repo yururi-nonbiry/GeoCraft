@@ -43,7 +43,8 @@ const ThreeViewer = ({ toolpaths, dxfSegments, fileToLoad }: ThreeViewerProps) =
     sceneRef.current = scene;
 
     const camera = new THREE.PerspectiveCamera(75, currentMount.clientWidth / currentMount.clientHeight, 0.1, 1000);
-    camera.position.set(5, 5, 15);
+    camera.up.set(0, 0, 1); // Z軸を上に設定
+    camera.position.set(10, 10, 15);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(currentMount.clientWidth, currentMount.clientHeight);
@@ -59,6 +60,7 @@ const ThreeViewer = ({ toolpaths, dxfSegments, fileToLoad }: ThreeViewerProps) =
     controls.enableDamping = true;
 
     const gridHelper = new THREE.GridHelper(20, 20);
+    gridHelper.rotation.x = Math.PI / 2;
     scene.add(gridHelper);
     const axesHelper = new THREE.AxesHelper(5);
     scene.add(axesHelper);
@@ -237,10 +239,8 @@ const App = () => {
       alert('保存するツールパスがありません。');
       return;
     }
-    // TODO: G-code生成は複数のパスに対応する必要がある
-    const singlePath = toolpaths.flat(); // 一旦すべてのパスを連結
     try {
-      const params = { toolpath: singlePath, feedRate, safeZ, stepDown };
+      const params = { toolpaths, feedRate, safeZ, stepDown };
       const result = await window.electronAPI.generateGcode(params);
       if (result.status === 'success') {
         alert(`Gコードを保存しました: ${result.filePath}`);

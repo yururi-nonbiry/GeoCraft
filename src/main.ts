@@ -171,13 +171,13 @@ app.whenReady().then(() => {
   ipcMain.handle('generate-gcode', async (event, params) => {
     // 1. Pythonを呼び出してGコードを生成
     const gcodeResult = await new Promise<any>((resolve, reject) => {
-      const { toolpath, feedRate, safeZ, stepDown } = params;
+      const { toolpaths, feedRate, safeZ, stepDown } = params;
       const pythonExecutable = process.platform === 'win32'
         ? path.join(app.getAppPath(), '.venv', 'Scripts', 'python.exe')
         : path.join(app.getAppPath(), '.venv', 'bin', 'python');
       
       const scriptPath = path.join(app.getAppPath(), 'src', 'python', 'gcode_generator.py');
-      const toolpathString = JSON.stringify(toolpath);
+      const toolpathString = JSON.stringify(toolpaths);
       
       const pythonProcess = spawn(pythonExecutable, [
         scriptPath,
