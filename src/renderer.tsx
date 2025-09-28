@@ -12,24 +12,26 @@ declare global {
       generateContourPath: (toolDiameter: number, geometry: any) => Promise<any>;
       parseDxfFile: (filePath: string) => Promise<any>;
       generateGcode: (params: any) => Promise<any>;
+      generatePocketPath: (params: any) => Promise<any>;
     };
   }
 }
 
 // 型定義
 type DxfSegment = [[number, number, number], [number, number, number]];
+type Toolpath = number[][];
 
 interface ThreeViewerProps {
-  toolpath: number[][] | null;
+  toolpaths: Toolpath[] | null;
   dxfSegments: DxfSegment[] | null;
   fileToLoad: string | null;
 }
 
-const ThreeViewer = ({ toolpath, dxfSegments, fileToLoad }: ThreeViewerProps) => {
+const ThreeViewer = ({ toolpaths, dxfSegments, fileToLoad }: ThreeViewerProps) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const modelRef = useRef<THREE.Object3D | null>(null);
-  const toolpathRef = useRef<THREE.Line | null>(null);
+  const toolpathGroupRef = useRef<THREE.Group | null>(null);
   const dxfObjectRef = useRef<THREE.Group | null>(null);
 
   // 初期セットアップ
@@ -88,7 +90,7 @@ const ThreeViewer = ({ toolpath, dxfSegments, fileToLoad }: ThreeViewerProps) =>
     const scene = sceneRef.current;
 
     if (modelRef.current) scene.remove(modelRef.current);
-    if (toolpathRef.current) scene.remove(toolpathRef.current);
+    if (toolpathGroupRef.current) scene.remove(toolpathGroupRef.current);
     if (dxfObjectRef.current) scene.remove(dxfObjectRef.current);
 
     if (fileToLoad.toLowerCase().endsWith('.stl')) {
@@ -127,26 +129,31 @@ const ThreeViewer = ({ toolpath, dxfSegments, fileToLoad }: ThreeViewerProps) =>
 
   // ツールパス描画処理
   useEffect(() => {
-    if (toolpathRef.current && sceneRef.current) {
-      sceneRef.current.remove(toolpathRef.current);
+    if (toolpathGroupRef.current && sceneRef.current) {
+      sceneRef.current.remove(toolpathGroupRef.current);
     }
-    if (toolpath && sceneRef.current) {
-      const points = toolpath.map(p => new THREE.Vector3(p[0], p[1], 0));
-      const geometry = new THREE.BufferGeometry().setFromPoints(points);
+    if (toolpaths && sceneRef.current) {
+      const group = new THREE.Group();
       const material = new THREE.LineBasicMaterial({ color: 0xff0000 });
-      const line = new THREE.Line(geometry, material);
-      sceneRef.current.add(line);
-      toolpathRef.current = line;
+      for (const toolpath of toolpaths) {
+        const points = toolpath.map(p => new THREE.Vector3(p[0], p[1], 0));
+        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+        const line = new THREE.Line(geometry, material);
+        group.add(line);
+      }
+      sceneRef.current.add(group);
+      toolpathGroupRef.current = group;
     }
-  }, [toolpath]);
+  }, [toolpaths]);
 
   return <div ref={mountRef} style={{ width: '100%', height: '100%' }} />;
 };
 
 const App = () => {
   // states
-  const [toolDiameter, setToolDiameter] = useState(1.0);
-  const [toolpath, setToolpath] = useState<number[][] | null>(null);
+  const [toolDiameter, setToolDiameter] = useState(3.0);
+  const [stepover, setStepover] = useState(0.5); // 50%
+  const [toolpaths, setToolpaths] = useState<Toolpath[] | null>(null);
   const [dxfSegments, setDxfSegments] = useState<DxfSegment[] | null>(null);
   const [fileToLoad, setFileToLoad] = useState<string | null>(null);
   const [feedRate, setFeedRate] = useState(100);
@@ -156,7 +163,7 @@ const App = () => {
   // File open listener
   useEffect(() => {
     const removeListener = window.electronAPI.onFileOpen((filePath) => {
-      setToolpath(null);
+      setToolpaths(null);
       setDxfSegments(null);
       setFileToLoad(null);
 
@@ -179,19 +186,44 @@ const App = () => {
   }, []);
 
   // Handlers
-  const handleGenerateContour = async () => {
-    if (!dxfSegments) {
-      alert('ツールパスを生成するための図形が読み込まれていません。DXFファイルを開いてください。');
-      return;
-    }
+  const getVerticesFromDxf = () => {
+    if (!dxfSegments) return null;
     const vertices = dxfSegments.map(segment => segment[0]);
     if (vertices.length > 0) {
       vertices.push(dxfSegments[dxfSegments.length - 1][1]);
     }
+    return vertices;
+  }
+
+  const handleGenerateContour = async () => {
+    const vertices = getVerticesFromDxf();
+    if (!vertices) {
+      alert('ツールパスを生成するための図形が読み込まれていません。DXFファイルを開いてください。');
+      return;
+    }
     try {
       const result = await window.electronAPI.generateContourPath(toolDiameter, vertices);
       if (result.status === 'success') {
-        setToolpath(result.toolpath);
+        setToolpaths([result.toolpath]); // 輪郭パスは単一なので配列に入れる
+      } else {
+        alert(`パス生成エラー: ${result.message}`);
+      }
+    } catch (error) {
+      alert(`パス生成に失敗しました: ${error}`);
+    }
+  };
+
+  const handleGeneratePocket = async () => {
+    const vertices = getVerticesFromDxf();
+    if (!vertices) {
+      alert('ツールパスを生成するための図形が読み込まれていません。DXFファイルを開いてください。');
+      return;
+    }
+    try {
+      const params = { geometry: vertices, toolDiameter, stepover: toolDiameter * stepover };
+      const result = await window.electronAPI.generatePocketPath(params);
+      if (result.status === 'success') {
+        setToolpaths(result.toolpaths);
       } else {
         alert(`パス生成エラー: ${result.message}`);
       }
@@ -201,12 +233,14 @@ const App = () => {
   };
 
   const handleSaveGcode = async () => {
-    if (!toolpath) {
+    if (!toolpaths || toolpaths.length === 0) {
       alert('保存するツールパスがありません。');
       return;
     }
+    // TODO: G-code生成は複数のパスに対応する必要がある
+    const singlePath = toolpaths.flat(); // 一旦すべてのパスを連結
     try {
-      const params = { toolpath, feedRate, safeZ, stepDown };
+      const params = { toolpath: singlePath, feedRate, safeZ, stepDown };
       const result = await window.electronAPI.generateGcode(params);
       if (result.status === 'success') {
         alert(`Gコードを保存しました: ${result.filePath}`);
@@ -228,15 +262,25 @@ const App = () => {
   return (
     <div style={mainStyle}>
       <div style={viewerStyle}>
-        <ThreeViewer toolpath={toolpath} dxfSegments={dxfSegments} fileToLoad={fileToLoad} />
+        <ThreeViewer toolpaths={toolpaths} dxfSegments={dxfSegments} fileToLoad={fileToLoad} />
       </div>
       <div style={panelStyle}>
         <h2>設定パネル</h2>
         <div style={inputGroupStyle}>
-          <h3>輪郭加工</h3>
+          <h3>加工設定</h3>
           <label style={labelStyle}>工具径 (mm)</label>
           <input type="number" value={toolDiameter} onChange={(e) => setToolDiameter(parseFloat(e.target.value))} step="0.1"/>
+        </div>
+        <hr />
+        <div style={inputGroupStyle}>
+          <h3>輪郭加工</h3>
           <button onClick={handleGenerateContour}>輪郭パス生成</button>
+        </div>
+        <div style={inputGroupStyle}>
+          <h3>ポケット加工</h3>
+          <label style={labelStyle}>ステップオーバー (%)</label>
+          <input type="number" value={stepover * 100} onChange={(e) => setStepover(parseFloat(e.target.value) / 100)} step="1" min="1" max="100" />
+          <button onClick={handleGeneratePocket}>ポケットパス生成</button>
         </div>
         <hr />
         <div style={inputGroupStyle}>

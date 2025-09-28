@@ -235,6 +235,40 @@ app.whenReady().then(() => {
     }
   });
 
+  ipcMain.handle('generate-pocket-path', async (event, params) => {
+    return new Promise((resolve, reject) => {
+      const { geometry, toolDiameter, stepover } = params;
+      const pythonExecutable = process.platform === 'win32'
+        ? path.join(app.getAppPath(), '.venv', 'Scripts', 'python.exe')
+        : path.join(app.getAppPath(), '.venv', 'bin', 'python');
+
+      const scriptPath = path.join(app.getAppPath(), 'src', 'python', 'pocket_generator.py');
+      const geometryString = JSON.stringify(geometry);
+
+      const pythonProcess = spawn(pythonExecutable, [
+        scriptPath,
+        geometryString,
+        String(toolDiameter),
+        String(stepover)
+      ]);
+
+      let result = '';
+      pythonProcess.stdout.on('data', (data) => { result += data.toString(); });
+      pythonProcess.stderr.on('data', (data) => {
+        console.error(`Python stderr: ${data}`);
+        reject(data.toString());
+      });
+      pythonProcess.on('close', (code) => {
+        if (code === 0) {
+          try { resolve(JSON.parse(result)); }
+          catch (e) { reject('Failed to parse Python script output.'); }
+        } else {
+          reject(`Python script exited with code ${code}`);
+        }
+      });
+    });
+  });
+
   // メニューをテンプレートから作成
   const menu = Menu.buildFromTemplate(menuTemplate);
   // アプリケーションメニューとして設定

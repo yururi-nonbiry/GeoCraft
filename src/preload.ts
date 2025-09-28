@@ -13,5 +13,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   invokePythonTest: () => ipcRenderer.invoke('run-python-test'),
   generateContourPath: (toolDiameter: number, geometry: any) => ipcRenderer.invoke('generate-contour-path', toolDiameter, geometry),
   parseDxfFile: (filePath: string) => ipcRenderer.invoke('parse-dxf-file', filePath),
-  generateGcode: (params: any) => ipcRenderer.invoke('generate-gcode', params)
+  generateGcode: (params: any) => ipcRenderer.invoke('generate-gcode', params),
+  generatePocketPath: (params: any) => ipcRenderer.invoke('generate-pocket-path', params)
 });
