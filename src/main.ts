@@ -3,9 +3,14 @@ import * as path from 'path';
 import { spawn } from 'child_process';
 import * as fs from 'fs';
 import { parse } from 'svg-parser';
+import { SerialPort } from 'serialport';
+import { ReadlineParser } from '@serialport/parser-readline';
+
+let mainWindow: BrowserWindow | null;
+let port: SerialPort | null = null;
 
 function createWindow() {
-  const mainWindow = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     webPreferences: {
@@ -14,6 +19,12 @@ function createWindow() {
     }
   });
   mainWindow.loadFile(path.join(__dirname, 'index.html'));
+  mainWindow.on('closed', () => {
+    if (port && port.isOpen) {
+      port.close();
+    }
+    mainWindow = null;
+  });
 }
 
 const menuTemplate: (Electron.MenuItemConstructorOptions | Electron.MenuItem)[] = [
@@ -21,7 +32,7 @@ const menuTemplate: (Electron.MenuItemConstructorOptions | Electron.MenuItem)[] 
     label: 'ファイル',
     submenu: [
       {
-        label: 'ファイルを開く...',
+        label: 'ファイルを開く...', 
         click: async (item, window) => {
           if (window instanceof BrowserWindow) {
             const result = await dialog.showOpenDialog(window, {
@@ -95,7 +106,60 @@ function callPython(scriptName: string, args: (string | number)[]): Promise<any>
 }
 
 app.whenReady().then(() => {
-  // IPCハンドラ
+  // --- Serial Port Handlers ---
+  ipcMain.handle('serial:list-ports', async () => {
+    try {
+      const ports = await SerialPort.list();
+      return { status: 'success', ports };
+    } catch (e: any) {
+      return { status: 'error', message: e.message };
+    }
+  });
+
+  ipcMain.handle('serial:connect', (event, path, baudRate) => {
+    if (port && port.isOpen) {
+      return { status: 'error', message: 'A port is already open.' };
+    }
+    return new Promise((resolve) => {
+      port = new SerialPort({ path, baudRate }, (err) => {
+        if (err) {
+          port = null;
+          resolve({ status: 'error', message: err.message });
+        } else {
+          resolve({ status: 'success' });
+        }
+      });
+
+      const parser = port.pipe(new ReadlineParser({ delimiter: '\n' }));
+      parser.on('data', (data) => {
+        mainWindow?.webContents.send('serial:data', data);
+      });
+
+      port.on('close', () => {
+        port = null;
+        mainWindow?.webContents.send('serial:closed');
+      });
+    });
+  });
+
+  ipcMain.handle('serial:disconnect', () => {
+    return new Promise((resolve) => {
+      if (port && port.isOpen) {
+        port.close((err) => {
+          if (err) {
+            resolve({ status: 'error', message: err.message });
+          } else {
+            port = null;
+            resolve({ status: 'success' });
+          }
+        });
+      } else {
+        resolve({ status: 'success' }); // Already disconnected
+      }
+    });
+  });
+
+  // --- Python Handlers ---
   ipcMain.handle('run-python-test', () => callPython('test.py', []));
   ipcMain.handle('parse-dxf-file', (event, filePath) => callPython('dxf_parser.py', [filePath]));
   ipcMain.handle('generate-contour-path', (event, toolDiameter, geometry, side) => callPython('contour_generator.py', [toolDiameter, JSON.stringify(geometry), side]));
@@ -111,7 +175,7 @@ app.whenReady().then(() => {
       const segments: { points: [[number, number, number], [number, number, number]]; color: string }[] = [];
 
       function parsePoints(pointsStr: string): [number, number][] {
-        return pointsStr.split(/[, ]+/).filter(p => p).reduce((acc, val, i, arr) => {
+        return pointsStr.split(/[\s,]+/).filter(p => p).reduce((acc, val, i, arr) => {
           if (i % 2 === 0 && arr[i+1] !== undefined) acc.push([parseFloat(val), parseFloat(arr[i + 1])]);
           return acc;
         }, [] as [number, number][]);

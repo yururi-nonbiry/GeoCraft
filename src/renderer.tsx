@@ -287,7 +287,71 @@ const App = () => {
   const [retractZ, setRetractZ] = useState(2.0);
   const [peckQ, setPeckQ] = useState(1.0);
 
-  const [contourSide, setContourSide] = useState('outer'); // 'outer' or 'inner'
+  // CNC Connection State
+  const [serialPorts, setSerialPorts] = useState<any[]>([]);
+  const [selectedPort, setSelectedPort] = useState<string>('');
+  const [isConnected, setIsConnected] = useState(false);
+  const [baudRate, setBaudRate] = useState(115200);
+  const [consoleLog, setConsoleLog] = useState<string[]>([]);
+
+  // --- CNC Connection Logic ---
+  const handleRefreshPorts = () => {
+    window.electronAPI.listSerialPorts().then(result => {
+      if (result.status === 'success') {
+        setSerialPorts(result.ports);
+        if (result.ports.length > 0) {
+          setSelectedPort(result.ports[0].path);
+        }
+      } else {
+        alert(`ポートの取得に失敗しました: ${result.message}`);
+      }
+    });
+  };
+
+  useEffect(() => {
+    // Initial port list fetch
+    handleRefreshPorts();
+
+    // Listen for data from the main process
+    const removeDataListener = window.electronAPI.onSerialData((data) => {
+      setConsoleLog(prev => [...prev, `> ${data}`]);
+    });
+
+    const removeClosedListener = window.electronAPI.onSerialClosed(() => {
+      setIsConnected(false);
+      setConsoleLog(prev => [...prev, '--- 接続が切断されました ---']);
+    });
+
+    return () => {
+      removeDataListener();
+      removeClosedListener();
+    };
+  }, []);
+
+  const handleConnect = async () => {
+    if (!selectedPort) {
+      alert('ポートを選択してください。');
+      return;
+    }
+    const result = await window.electronAPI.connectSerial(selectedPort, baudRate);
+    if (result.status === 'success') {
+      setIsConnected(true);
+      setConsoleLog(prev => [...prev, `--- ${selectedPort}に接続しました ---`]);
+    } else {
+      alert(`接続エラー: ${result.message}`);
+    }
+  };
+
+  const handleDisconnect = async () => {
+    const result = await window.electronAPI.disconnectSerial();
+    if (result.status === 'success') {
+      setIsConnected(false);
+      // The onSerialClosed listener will also fire and update state
+    } else {
+      alert(`切断エラー: ${result.message}`);
+    }
+  };
+
 
   // File open listener
   useEffect(() => {
