@@ -628,12 +628,19 @@ const App = () => {
     }
   }
 
+  const [activeTab, setActiveTab] = useState('cam'); // 'cam' or 'cnc'
+
   // Styles
   const mainStyle: React.CSSProperties = { display: 'flex', height: '100vh', fontFamily: 'sans-serif' };
   const viewerStyle: React.CSSProperties = { flex: 3, borderRight: '1px solid #ccc' };
-  const panelStyle: React.CSSProperties = { flex: 1, padding: '1rem', overflowY: 'auto' };
+  const panelStyle: React.CSSProperties = { flex: 1, padding: '1rem', overflowY: 'auto', display: 'flex', flexDirection: 'column' };
   const inputGroupStyle: React.CSSProperties = { marginBottom: '1rem' };
   const labelStyle: React.CSSProperties = { display: 'block', marginBottom: '0.25rem' };
+  const tabContainerStyle: React.CSSProperties = { display: 'flex', borderBottom: '1px solid #ccc', marginBottom: '1rem' };
+  const tabStyle: React.CSSProperties = { padding: '0.5rem 1rem', cursor: 'pointer', border: 'none', backgroundColor: 'transparent', borderBottom: '2px solid transparent' };
+  const activeTabStyle: React.CSSProperties = { ...tabStyle, borderBottom: '2px solid blue', fontWeight: 'bold' };
+  const tabContentStyle: React.CSSProperties = { flex: 1, overflowY: 'auto' };
+
 
   return (
     <div style={mainStyle}>
@@ -641,128 +648,144 @@ const App = () => {
         <ThreeViewer toolpaths={toolpaths} geometry={geometry} fileToLoad={fileToLoad} />
       </div>
       <div style={panelStyle}>
-        <h2>設定パネル</h2>
-        <div style={inputGroupStyle}>
-          <h3>加工設定</h3>
-          <label style={labelStyle}>工具径 (mm)</label>
-          <input type="number" value={toolDiameter} onChange={(e) => setToolDiameter(parseFloat(e.target.value))} step="0.1"/>
-          <label style={labelStyle}>安全高さ (Z)</label>
-          <input type="number" value={safeZ} onChange={(e) => setSafeZ(parseFloat(e.target.value))} step="0.1" />
-          <label style={labelStyle}>切り込み深さ (Z)</label>
-          <input type="number" value={stepDown} onChange={(e) => setStepDown(parseFloat(e.target.value))} step="0.1" />
+        <div style={tabContainerStyle}>
+          <button style={activeTab === 'cam' ? activeTabStyle : tabStyle} onClick={() => setActiveTab('cam')}>CAM</button>
+          <button style={activeTab === 'cnc' ? activeTabStyle : tabStyle} onClick={() => setActiveTab('cnc')}>CNC</button>
         </div>
-        <hr />
-        <div style={inputGroupStyle}>
-          <h3>2.5D 加工 (DXF/SVG)</h3>
-          <label style={labelStyle}>ステップオーバー (%)</label>
-          <input type="number" value={stepover * 100} onChange={(e) => setStepover(parseFloat(e.target.value) / 100)} step="1" min="1" max="100" />
-          <label style={labelStyle}>輪郭方向</label>
-          <select value={contourSide} onChange={(e) => setContourSide(e.target.value)}>
-            <option value="outer">外側</option>
-            <option value="inner">内側</option>
-          </select>
-          <button onClick={handleGenerateContour}>輪郭パス生成</button>
-          <button onClick={handleGeneratePocket}>ポケットパス生成</button>
-        </div>
-        <div style={inputGroupStyle}>
-          <h3>3D 加工 (STL)</h3>
-          <label style={labelStyle}>スライス厚 (mm)</label>
-          <input type="number" value={sliceHeight} onChange={(e) => setSliceHeight(parseFloat(e.target.value))} step="0.1" />
-          <button onClick={handleGenerate3dPath}>3Dパス生成</button>
-        </div>
-        <hr />
-        <div style={inputGroupStyle}>
-          <h3>ドリル加工</h3>
-          <label style={labelStyle}>R点 (切り込み開始高さ)</label>
-          <input type="number" value={retractZ} onChange={(e) => setRetractZ(parseFloat(e.target.value))} step="0.1" />
-          <label style={labelStyle}>ペック量 (Q)</label>
-          <input type="number" value={peckQ} onChange={(e) => setPeckQ(parseFloat(e.target.value))} step="0.1" />
-          <button onClick={handleGenerateDrillGcode}>ドリルGコード生成</button>
-        </div>
-        <hr />
-        <div style={inputGroupStyle}>
-          <h3>Gコード保存</h3>
-          <label style={labelStyle}>送り速度 (mm/min)</label>
-          <input type="number" value={feedRate} onChange={(e) => setFeedRate(parseFloat(e.target.value))} />
-          <button onClick={handleSaveGcode}>輪郭/ポケットGコードを保存</button>
-          <button onClick={handleArcTest}>円弧Gコードテスト</button>
-        </div>
-        <hr />
-        <div style={inputGroupStyle}>
-          <h3>CNC 制御</h3>
-          <label style={labelStyle}>ポート</label>
-          <select value={selectedPort} onChange={(e) => setSelectedPort(e.target.value)} disabled={isConnected}>
-            {serialPorts.map(port => (
-              <option key={port.path} value={port.path}>{port.path}</option>
-            ))}
-          </select>
-          <label style={labelStyle}>ボーレート</label>
-          <input type="number" value={baudRate} onChange={(e) => setBaudRate(parseInt(e.target.value))} disabled={isConnected} />
-          <button onClick={handleRefreshPorts} disabled={isConnected}>更新</button>
-          {!isConnected ? (
-            <button onClick={handleConnect}>接続</button>
-          ) : (
-            <button onClick={handleDisconnect}>切断</button>
+
+        <div style={tabContentStyle}>
+          {activeTab === 'cam' && (
+            <div>
+              <h2>CAM設定</h2>
+              <div style={inputGroupStyle}>
+                <h3>加工設定</h3>
+                <label style={labelStyle}>工具径 (mm)</label>
+                <input type="number" value={toolDiameter} onChange={(e) => setToolDiameter(parseFloat(e.target.value))} step="0.1"/>
+                <label style={labelStyle}>安全高さ (Z)</label>
+                <input type="number" value={safeZ} onChange={(e) => setSafeZ(parseFloat(e.target.value))} step="0.1" />
+                <label style={labelStyle}>切り込み深さ (Z)</label>
+                <input type="number" value={stepDown} onChange={(e) => setStepDown(parseFloat(e.target.value))} step="0.1" />
+              </div>
+              <hr />
+              <div style={inputGroupStyle}>
+                <h3>2.5D 加工 (DXF/SVG)</h3>
+                <label style={labelStyle}>ステップオーバー (%)</label>
+                <input type="number" value={stepover * 100} onChange={(e) => setStepover(parseFloat(e.target.value) / 100)} step="1" min="1" max="100" />
+                <label style={labelStyle}>輪郭方向</label>
+                <select value={contourSide} onChange={(e) => setContourSide(e.target.value)}>
+                  <option value="outer">外側</option>
+                  <option value="inner">内側</option>
+                </select>
+                <button onClick={handleGenerateContour}>輪郭パス生成</button>
+                <button onClick={handleGeneratePocket}>ポケットパス生成</button>
+              </div>
+              <div style={inputGroupStyle}>
+                <h3>3D 加工 (STL)</h3>
+                <label style={labelStyle}>スライス厚 (mm)</label>
+                <input type="number" value={sliceHeight} onChange={(e) => setSliceHeight(parseFloat(e.target.value))} step="0.1" />
+                <button onClick={handleGenerate3dPath}>3Dパス生成</button>
+              </div>
+              <hr />
+              <div style={inputGroupStyle}>
+                <h3>ドリル加工</h3>
+                <label style={labelStyle}>R点 (切り込み開始高さ)</label>
+                <input type="number" value={retractZ} onChange={(e) => setRetractZ(parseFloat(e.target.value))} step="0.1" />
+                <label style={labelStyle}>ペック量 (Q)</label>
+                <input type="number" value={peckQ} onChange={(e) => setPeckQ(parseFloat(e.target.value))} step="0.1" />
+                <button onClick={handleGenerateDrillGcode}>ドリルGコード生成</button>
+              </div>
+              <hr />
+              <div style={inputGroupStyle}>
+                <h3>Gコード保存</h3>
+                <label style={labelStyle}>送り速度 (mm/min)</label>
+                <input type="number" value={feedRate} onChange={(e) => setFeedRate(parseFloat(e.target.value))} />
+                <button onClick={handleSaveGcode}>輪郭/ポケットGコードを保存</button>
+                <button onClick={handleArcTest}>円弧Gコードテスト</button>
+              </div>
+            </div>
           )}
-          <label style={labelStyle}>コンソール</label>
-          <textarea 
-            readOnly 
-            style={{ width: '100%', height: '150px', backgroundColor: '#f0f0f0', fontFamily: 'monospace' }}
-            value={consoleLog.join('\n')}
-          />
-        </div>
-        <hr />
-        <div style={inputGroupStyle}>
-            <h3>G-Code 送信</h3>
-            <textarea
-                style={{ width: '100%', height: '200px', fontFamily: 'monospace' }}
-                value={gcode}
-                onChange={(e) => setGcode(e.target.value)}
-                placeholder="ここにG-codeを貼り付け..."
-            />
-            <button onClick={handleSendGcode} disabled={!isConnected || gcodeStatus !== 'idle'}>
-                送信開始
-            </button>
-            <button onClick={handlePauseGcode} disabled={gcodeStatus !== 'sending'}>
-                一時停止
-            </button>
-            <button onClick={handleResumeGcode} disabled={gcodeStatus !== 'paused'}>
-                再開
-            </button>
-            <button onClick={handleStopGcode} disabled={gcodeStatus === 'idle'}>
-                停止
-            </button>
-            <p>状態: {gcodeStatus} | 進捗: {gcodeProgress.sent}/{gcodeProgress.total}</p>
-        </div>
-        <hr />
-        <div style={inputGroupStyle}>
-            <h3>手動操作 (Jog)</h3>
-            <div>
-                <p>マシン状態: {machinePosition.status}</p>
-                <p>WPos: X:{machinePosition.wpos.x.toFixed(3)} Y:{machinePosition.wpos.y.toFixed(3)} Z:{machinePosition.wpos.z.toFixed(3)}</p>
-                <p>MPos: X:{machinePosition.mpos.x.toFixed(3)} Y:{machinePosition.mpos.y.toFixed(3)} Z:{machinePosition.mpos.z.toFixed(3)}</p>
-            </div>
-            <div>
-                <span>移動量 (mm): </span>
-                {[0.1, 1, 10, 100].map(step => (
-                    <button key={step} onClick={() => setJogStep(step)} style={{ fontWeight: jogStep === step ? 'bold' : 'normal' }}>
-                        {step}
-                    </button>
-                ))}
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem', marginTop: '0.5rem' }}>
-                <button onClick={() => handleJog('Y', 1)}>Y+</button>
-                <div></div>
-                <button onClick={() => handleJog('Z', 1)}>Z+</button>
 
-                <button onClick={() => handleJog('X', -1)}>X-</button>
-                <button onClick={handleSetZero}>原点設定</button>
-                <button onClick={() => handleJog('X', 1)}>X+</button>
+          {activeTab === 'cnc' && (
+            <div>
+              <h2>CNC制御</h2>
+              <div style={inputGroupStyle}>
+                <h3>CNC 接続</h3>
+                <label style={labelStyle}>ポート</label>
+                <select value={selectedPort} onChange={(e) => setSelectedPort(e.target.value)} disabled={isConnected}>
+                  {serialPorts.map(port => (
+                    <option key={port.path} value={port.path}>{port.path}</option>
+                  ))}
+                </select>
+                <label style={labelStyle}>ボーレート</label>
+                <input type="number" value={baudRate} onChange={(e) => setBaudRate(parseInt(e.target.value))} disabled={isConnected} />
+                <button onClick={handleRefreshPorts} disabled={isConnected}>更新</button>
+                {!isConnected ? (
+                  <button onClick={handleConnect}>接続</button>
+                ) : (
+                  <button onClick={handleDisconnect}>切断</button>
+                )}
+                <label style={labelStyle}>コンソール</label>
+                <textarea 
+                  readOnly 
+                  style={{ width: '100%', height: '150px', backgroundColor: '#f0f0f0', fontFamily: 'monospace' }}
+                  value={consoleLog.join('\n')}
+                />
+              </div>
+              <hr />
+              <div style={inputGroupStyle}>
+                  <h3>G-Code 送信</h3>
+                  <textarea
+                      style={{ width: '100%', height: '200px', fontFamily: 'monospace' }}
+                      value={gcode}
+                      onChange={(e) => setGcode(e.target.value)}
+                      placeholder="ここにG-codeを貼り付け..."
+                  />
+                  <button onClick={handleSendGcode} disabled={!isConnected || gcodeStatus !== 'idle'}>
+                      送信開始
+                  </button>
+                  <button onClick={handlePauseGcode} disabled={gcodeStatus !== 'sending'}>
+                      一時停止
+                  </button>
+                  <button onClick={handleResumeGcode} disabled={gcodeStatus !== 'paused'}>
+                      再開
+                  </button>
+                  <button onClick={handleStopGcode} disabled={gcodeStatus === 'idle'}>
+                      停止
+                  </button>
+                  <p>状態: {gcodeStatus} | 進捗: {gcodeProgress.sent}/{gcodeProgress.total}</p>
+              </div>
+              <hr />
+              <div style={inputGroupStyle}>
+                  <h3>手動操作 (Jog)</h3>
+                  <div>
+                      <p>マシン状態: {machinePosition.status}</p>
+                      <p>WPos: X:{machinePosition.wpos.x.toFixed(3)} Y:{machinePosition.wpos.y.toFixed(3)} Z:{machinePosition.wpos.z.toFixed(3)}</p>
+                      <p>MPos: X:{machinePosition.mpos.x.toFixed(3)} Y:{machinePosition.mpos.y.toFixed(3)} Z:{machinePosition.mpos.z.toFixed(3)}</p>
+                  </div>
+                  <div>
+                      <span>移動量 (mm): </span>
+                      {[0.1, 1, 10, 100].map(step => (
+                          <button key={step} onClick={() => setJogStep(step)} style={{ fontWeight: jogStep === step ? 'bold' : 'normal' }}>
+                              {step}
+                          </button>
+                      ))}
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem', marginTop: '0.5rem' }}>
+                      <button onClick={() => handleJog('Y', 1)}>Y+</button>
+                      <div></div>
+                      <button onClick={() => handleJog('Z', 1)}>Z+</button>
 
-                <button onClick={() => handleJog('Y', -1)}>Y-</button>
-                <div></div>
-                <button onClick={() => handleJog('Z', -1)}>Z-</button>
+                      <button onClick={() => handleJog('X', -1)}>X-</button>
+                      <button onClick={handleSetZero}>原点設定</button>
+                      <button onClick={() => handleJog('X', 1)}>X+</button>
+
+                      <button onClick={() => handleJog('Y', -1)}>Y-</button>
+                      <div></div>
+                      <button onClick={() => handleJog('Z', -1)}>Z-</button>
+                  </div>
+              </div>
             </div>
+          )}
         </div>
       </div>
     </div>
