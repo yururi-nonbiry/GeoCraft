@@ -5,22 +5,6 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader';
 
-// Preloadスクリプト経由で公開されたAPIの型定義
-declare global {
-  interface Window {
-    electronAPI: {
-      onFileOpen: (callback: (filePath: string) => void) => () => void;
-      generateContourPath: (toolDiameter: number, geometry: any) => Promise<any>;
-      parseDxfFile: (filePath: string) => Promise<any>;
-      parseSvgFile: (filePath: string) => Promise<any>;
-      generateGcode: (params: any) => Promise<any>;
-      generatePocketPath: (params: any) => Promise<any>;
-      generateDrillGcode: (params: any) => Promise<any>;
-      generate3dPath: (params: any) => Promise<any>;
-    };
-  }
-}
-
 // 型定義
 type DxfSegment = { points: [[number, number, number], [number, number, number]]; color: string };
 type DxfArc = { center: [number, number, number]; radius: number; start_angle: number; end_angle: number; };
@@ -286,6 +270,7 @@ const App = () => {
   const [stepDown, setStepDown] = useState(-2.0);
   const [retractZ, setRetractZ] = useState(2.0);
   const [peckQ, setPeckQ] = useState(1.0);
+  const [contourSide, setContourSide] = useState('outer');
 
   // CNC Connection State
   const [serialPorts, setSerialPorts] = useState<any[]>([]);
@@ -293,6 +278,15 @@ const App = () => {
   const [isConnected, setIsConnected] = useState(false);
   const [baudRate, setBaudRate] = useState(115200);
   const [consoleLog, setConsoleLog] = useState<string[]>([]);
+
+  // G-code Sending State
+  const [gcode, setGcode] = useState('');
+  const [gcodeStatus, setGcodeStatus] = useState<'idle' | 'sending' | 'paused' | 'finished' | 'error'>('idle');
+  const [gcodeProgress, setGcodeProgress] = useState({ sent: 0, total: 0 });
+
+  // Jog & Status State
+  const [jogStep, setJogStep] = useState(10);
+  const [machinePosition, setMachinePosition] = useState({ wpos: { x: 0, y: 0, z: 0 }, mpos: { x: 0, y: 0, z: 0 }, status: 'Unknown' });
 
   // --- CNC Connection Logic ---
   const handleRefreshPorts = () => {
@@ -327,6 +321,60 @@ const App = () => {
       removeClosedListener();
     };
   }, []);
+
+  // G-code sending handlers and progress listener
+  useEffect(() => {
+    const removeGcodeProgressListener = window.electronAPI.onGcodeProgress(progress => {
+      setGcodeProgress({ sent: progress.sent, total: progress.total });
+      setGcodeStatus(progress.status);
+      if (progress.status === 'finished') {
+        setConsoleLog(prev => [...prev, '--- G-code送信完了 ---']);
+        setGcodeStatus('idle');
+      } else if (progress.status === 'error') {
+        setConsoleLog(prev => [...prev, '--- G-code送信エラー ---']);
+        setGcodeStatus('idle');
+      }
+    });
+
+    return () => {
+      removeGcodeProgressListener();
+    };
+  }, []);
+
+  // Jog and status listener
+  useEffect(() => {
+    const removeStatusListener = window.electronAPI.onStatus(status => {
+      setMachinePosition(status);
+    });
+    return () => {
+      removeStatusListener();
+    };
+  }, []);
+
+  const handleJog = (axis: 'X' | 'Y' | 'Z', direction: number) => {
+    if (!isConnected) return;
+    window.electronAPI.jog(axis, direction, jogStep);
+  };
+
+  const handleSetZero = () => {
+    if (!isConnected) return;
+    if (confirm('現在のワーク座標をすべて0に設定します。よろしいですか？')) {
+        window.electronAPI.setZero();
+    }
+  };
+
+  const handleSendGcode = () => {
+    if (gcode.trim() === '') {
+      alert('送信するG-codeがありません。');
+      return;
+    }
+    window.electronAPI.sendGcode(gcode);
+    setGcodeStatus('sending');
+  };
+
+  const handlePauseGcode = () => window.electronAPI.pauseGcode();
+  const handleResumeGcode = () => window.electronAPI.resumeGcode();
+  const handleStopGcode = () => window.electronAPI.stopGcode();
 
   const handleConnect = async () => {
     if (!selectedPort) {
@@ -398,6 +446,7 @@ const App = () => {
     while (remaining.size > 0) {
         const path: Array<[number, number, number]> = [];
         const startSeg = remaining.values().next().value;
+        if (!startSeg) continue; // Add null check
         remaining.delete(startSeg);
 
         path.push(...startSeg.points);
@@ -541,9 +590,7 @@ const App = () => {
       return;
     }
     try {
-      // Convert old toolpath format to new ToolpathSegment format
-      const segments: ToolpathSegment[] = toolpaths.map(path => ({ type: 'line', points: path }));
-      const params = { toolpaths: segments, feedRate, safeZ, stepDown };
+      const params = { toolpaths: toolpaths, feedRate, safeZ, stepDown };
       const result = await window.electronAPI.generateGcode(params);
       if (result.status === 'success') {
         alert(`Gコードを保存しました: ${result.filePath}`);
@@ -639,6 +686,83 @@ const App = () => {
           <input type="number" value={feedRate} onChange={(e) => setFeedRate(parseFloat(e.target.value))} />
           <button onClick={handleSaveGcode}>輪郭/ポケットGコードを保存</button>
           <button onClick={handleArcTest}>円弧Gコードテスト</button>
+        </div>
+        <hr />
+        <div style={inputGroupStyle}>
+          <h3>CNC 制御</h3>
+          <label style={labelStyle}>ポート</label>
+          <select value={selectedPort} onChange={(e) => setSelectedPort(e.target.value)} disabled={isConnected}>
+            {serialPorts.map(port => (
+              <option key={port.path} value={port.path}>{port.path}</option>
+            ))}
+          </select>
+          <label style={labelStyle}>ボーレート</label>
+          <input type="number" value={baudRate} onChange={(e) => setBaudRate(parseInt(e.target.value))} disabled={isConnected} />
+          <button onClick={handleRefreshPorts} disabled={isConnected}>更新</button>
+          {!isConnected ? (
+            <button onClick={handleConnect}>接続</button>
+          ) : (
+            <button onClick={handleDisconnect}>切断</button>
+          )}
+          <label style={labelStyle}>コンソール</label>
+          <textarea 
+            readOnly 
+            style={{ width: '100%', height: '150px', backgroundColor: '#f0f0f0', fontFamily: 'monospace' }}
+            value={consoleLog.join('\n')}
+          />
+        </div>
+        <hr />
+        <div style={inputGroupStyle}>
+            <h3>G-Code 送信</h3>
+            <textarea
+                style={{ width: '100%', height: '200px', fontFamily: 'monospace' }}
+                value={gcode}
+                onChange={(e) => setGcode(e.target.value)}
+                placeholder="ここにG-codeを貼り付け..."
+            />
+            <button onClick={handleSendGcode} disabled={!isConnected || gcodeStatus !== 'idle'}>
+                送信開始
+            </button>
+            <button onClick={handlePauseGcode} disabled={gcodeStatus !== 'sending'}>
+                一時停止
+            </button>
+            <button onClick={handleResumeGcode} disabled={gcodeStatus !== 'paused'}>
+                再開
+            </button>
+            <button onClick={handleStopGcode} disabled={gcodeStatus === 'idle'}>
+                停止
+            </button>
+            <p>状態: {gcodeStatus} | 進捗: {gcodeProgress.sent}/{gcodeProgress.total}</p>
+        </div>
+        <hr />
+        <div style={inputGroupStyle}>
+            <h3>手動操作 (Jog)</h3>
+            <div>
+                <p>マシン状態: {machinePosition.status}</p>
+                <p>WPos: X:{machinePosition.wpos.x.toFixed(3)} Y:{machinePosition.wpos.y.toFixed(3)} Z:{machinePosition.wpos.z.toFixed(3)}</p>
+                <p>MPos: X:{machinePosition.mpos.x.toFixed(3)} Y:{machinePosition.mpos.y.toFixed(3)} Z:{machinePosition.mpos.z.toFixed(3)}</p>
+            </div>
+            <div>
+                <span>移動量 (mm): </span>
+                {[0.1, 1, 10, 100].map(step => (
+                    <button key={step} onClick={() => setJogStep(step)} style={{ fontWeight: jogStep === step ? 'bold' : 'normal' }}>
+                        {step}
+                    </button>
+                ))}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem', marginTop: '0.5rem' }}>
+                <button onClick={() => handleJog('Y', 1)}>Y+</button>
+                <div></div>
+                <button onClick={() => handleJog('Z', 1)}>Z+</button>
+
+                <button onClick={() => handleJog('X', -1)}>X-</button>
+                <button onClick={handleSetZero}>原点設定</button>
+                <button onClick={() => handleJog('X', 1)}>X+</button>
+
+                <button onClick={() => handleJog('Y', -1)}>Y-</button>
+                <div></div>
+                <button onClick={() => handleJog('Z', -1)}>Z-</button>
+            </div>
         </div>
       </div>
     </div>

@@ -9,6 +9,13 @@ import { ReadlineParser } from '@serialport/parser-readline';
 let mainWindow: BrowserWindow | null;
 let port: SerialPort | null = null;
 
+// G-code sending job management
+let gcodeQueue: string[] = [];
+let gcodeJobStatus: 'idle' | 'sending' | 'paused' = 'idle';
+let totalLines = 0;
+let statusInterval: NodeJS.Timeout | null = null;
+
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -106,6 +113,26 @@ function callPython(scriptName: string, args: (string | number)[]): Promise<any>
 }
 
 app.whenReady().then(() => {
+  const sendNextLine = () => {
+    if (!port || !port.isOpen) return;
+
+    if (gcodeJobStatus === 'sending' && gcodeQueue.length > 0) {
+      const line = gcodeQueue.shift();
+      if (line) {
+        port.write(line + '\n', (err) => {
+          if (err) {
+            console.error('Serial write error:', err.message);
+            gcodeJobStatus = 'idle';
+            mainWindow?.webContents.send('serial:gcode-progress', { sent: totalLines - gcodeQueue.length, total: totalLines, status: 'error' });
+          }
+        });
+      }
+    } else if (gcodeJobStatus === 'sending' && gcodeQueue.length === 0) {
+      gcodeJobStatus = 'idle';
+      mainWindow?.webContents.send('serial:gcode-progress', { sent: totalLines, total: totalLines, status: 'finished' });
+    }
+  };
+
   // --- Serial Port Handlers ---
   ipcMain.handle('serial:list-ports', async () => {
     try {
@@ -127,16 +154,55 @@ app.whenReady().then(() => {
           resolve({ status: 'error', message: err.message });
         } else {
           resolve({ status: 'success' });
+          // Start polling for status
+          if (statusInterval) clearInterval(statusInterval);
+          statusInterval = setInterval(() => {
+            if (port && port.isOpen) {
+              port.write('?\n');
+            }
+          }, 250);
         }
       });
 
       const parser = port.pipe(new ReadlineParser({ delimiter: '\n' }));
+
       parser.on('data', (data) => {
-        mainWindow?.webContents.send('serial:data', data);
+        const line = data.toString().trim();
+        mainWindow?.webContents.send('serial:data', line);
+
+        // Parse status reports like <Idle|WPos:0.000,0.000,0.000|MPos:0.000,0.000,0.000|FS:0,0>
+        if (line.startsWith('<') && line.endsWith('>')) {
+            const status = line.substring(1, line.length - 1).split('|');
+            const machineStatus = {
+                status: status[0],
+                wpos: { x: 0, y: 0, z: 0 },
+                mpos: { x: 0, y: 0, z: 0 },
+            };
+            status.forEach((part: string) => {
+                if (part.startsWith('WPos:')) {
+                    const coords = part.substring(5).split(',');
+                    machineStatus.wpos = { x: parseFloat(coords[0]), y: parseFloat(coords[1]), z: parseFloat(coords[2]) };
+                }
+                if (part.startsWith('MPos:')) {
+                    const coords = part.substring(5).split(',');
+                    machineStatus.mpos = { x: parseFloat(coords[0]), y: parseFloat(coords[1]), z: parseFloat(coords[2]) };
+                }
+            });
+            mainWindow?.webContents.send('serial:status', machineStatus);
+        }
+
+        if (line.startsWith('ok') || line.startsWith('error')) {
+            mainWindow?.webContents.send('serial:gcode-progress', { sent: totalLines - gcodeQueue.length, total: totalLines, status: gcodeJobStatus });
+            sendNextLine();
+        }
       });
 
       port.on('close', () => {
         port = null;
+        gcodeJobStatus = 'idle';
+        gcodeQueue = [];
+        if (statusInterval) clearInterval(statusInterval);
+        statusInterval = null;
         mainWindow?.webContents.send('serial:closed');
       });
     });
@@ -149,14 +215,67 @@ app.whenReady().then(() => {
           if (err) {
             resolve({ status: 'error', message: err.message });
           } else {
-            port = null;
+            // port.on('close') will handle the rest
             resolve({ status: 'success' });
           }
         });
       } else {
+        if (statusInterval) clearInterval(statusInterval);
+        statusInterval = null;
         resolve({ status: 'success' }); // Already disconnected
       }
     });
+  });
+
+  // --- G-code and Jogging Handlers ---
+  ipcMain.on('serial:send-gcode', (event, gcode) => {
+    if (port && port.isOpen && gcodeJobStatus === 'idle') {
+      gcodeQueue = gcode.split('\n').map((l: string) => l.trim()).filter((l: string) => l.length > 0);
+      totalLines = gcodeQueue.length;
+      if (totalLines > 0) {
+        gcodeJobStatus = 'sending';
+        mainWindow?.webContents.send('serial:gcode-progress', { sent: 0, total: totalLines, status: 'sending' });
+        sendNextLine(); // Start sending the first line
+      }
+    }
+  });
+
+  ipcMain.on('serial:pause-gcode', () => {
+    if (gcodeJobStatus === 'sending') {
+      gcodeJobStatus = 'paused';
+      mainWindow?.webContents.send('serial:gcode-progress', { sent: totalLines - gcodeQueue.length, total: totalLines, status: 'paused' });
+    }
+  });
+
+  ipcMain.on('serial:resume-gcode', () => {
+    if (gcodeJobStatus === 'paused') {
+      gcodeJobStatus = 'sending';
+      mainWindow?.webContents.send('serial:gcode-progress', { sent: totalLines - gcodeQueue.length, total: totalLines, status: 'sending' });
+      sendNextLine(); // Resume sending
+    }
+  });
+
+  ipcMain.on('serial:stop-gcode', () => {
+    gcodeQueue = [];
+    gcodeJobStatus = 'idle';
+    if (port && port.isOpen) {
+        // Send a soft reset to Grbl to clear any running commands
+        port.write('\x18'); 
+    }
+    mainWindow?.webContents.send('serial:gcode-progress', { sent: 0, total: 0, status: 'idle' });
+  });
+
+  ipcMain.on('serial:jog', (event, { axis, direction, step }) => {
+      if (port && port.isOpen) {
+          const command = `$J=G91 ${axis}${step * direction} F1000\n`; // Using a fixed feedrate for jogging
+          port.write(command);
+      }
+  });
+
+  ipcMain.on('serial:set-zero', () => {
+      if (port && port.isOpen) {
+          port.write('G10 L20 P1 X0 Y0 Z0\n');
+      }
   });
 
   // --- Python Handlers ---

@@ -3,7 +3,7 @@ import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
 // Define the API we want to expose to the renderer process
 const electronAPI = {
   // --- File/Python Operations ---
-  onFileOpen: (callback: (filePath: string) => void) => {
+  onFileOpen: (callback: (filePath: string) => void): () => void => {
     const listener = (event: IpcRendererEvent, filePath: string) => callback(filePath);
     ipcRenderer.on('open-file', listener);
     return () => ipcRenderer.removeListener('open-file', listener);
@@ -21,15 +21,35 @@ const electronAPI = {
   listSerialPorts: () => ipcRenderer.invoke('serial:list-ports'),
   connectSerial: (path: string, baudRate: number) => ipcRenderer.invoke('serial:connect', path, baudRate),
   disconnectSerial: () => ipcRenderer.invoke('serial:disconnect'),
-  onSerialData: (callback: (data: string) => void) => {
+  onSerialData: (callback: (data: string) => void): () => void => {
     const listener = (event: IpcRendererEvent, data: string) => callback(data);
     ipcRenderer.on('serial:data', listener);
     return () => ipcRenderer.removeListener('serial:data', listener);
   },
-  onSerialClosed: (callback: () => void) => {
+  onSerialClosed: (callback: () => void): () => void => {
     const listener = () => callback();
     ipcRenderer.on('serial:closed', listener);
     return () => ipcRenderer.removeListener('serial:closed', listener);
+  },
+
+  // --- G-Code Sending ---
+  sendGcode: (gcode: string) => ipcRenderer.send('serial:send-gcode', gcode),
+  pauseGcode: () => ipcRenderer.send('serial:pause-gcode'),
+  resumeGcode: () => ipcRenderer.send('serial:resume-gcode'),
+  stopGcode: () => ipcRenderer.send('serial:stop-gcode'),
+  onGcodeProgress: (callback: (progress: { sent: number, total: number, status: 'sending' | 'paused' | 'finished' | 'error' }) => void): () => void => {
+    const listener = (event: IpcRendererEvent, progress: any) => callback(progress);
+    ipcRenderer.on('serial:gcode-progress', listener);
+    return () => ipcRenderer.removeListener('serial:gcode-progress', listener);
+  },
+
+  // --- Jogging ---
+  jog: (axis: 'X' | 'Y' | 'Z', direction: number, step: number) => ipcRenderer.send('serial:jog', { axis, direction, step }),
+  setZero: () => ipcRenderer.send('serial:set-zero'),
+  onStatus: (callback: (status: any) => void): () => void => {
+      const listener = (event: IpcRendererEvent, status: any) => callback(status);
+      ipcRenderer.on('serial:status', listener);
+      return () => ipcRenderer.removeListener('serial:status', listener);
   },
 };
 
