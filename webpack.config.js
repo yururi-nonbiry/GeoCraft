@@ -10,6 +10,9 @@ const mainConfig = {
     path: path.resolve(__dirname, 'dist'),
     filename: 'main.js',
   },
+  externals: {
+    'serialport': 'commonjs serialport',
+  },
   module: {
     rules: [
       {
