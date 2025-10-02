@@ -46,6 +46,8 @@ interface ThreeViewerProps {
   fileToLoad: string | null;
 }
 
+const SIDE_PANEL_WIDTH = 360;
+
 const ThreeViewer = ({ toolpaths, geometry, fileToLoad }: ThreeViewerProps) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -571,10 +573,20 @@ const App = () => {
           </Toolbar>
         </AppBar>
         <Grid container sx={{ flexGrow: 1, overflow: 'hidden' }}>
-          <Grid item xs={8} sx={{ height: '100%', position: 'relative' }}>
+          <Grid item sx={{ flex: 1, minWidth: 0, height: '100%', position: 'relative' }}>
             <ThreeViewer toolpaths={toolpaths} geometry={geometry} fileToLoad={fileToLoad} />
           </Grid>
-          <Grid item xs={4} sx={{ height: '100%', display: 'flex', flexDirection: 'column', borderLeft: '1px solid #ccc' }}>
+          <Grid
+            item
+            sx={{
+              width: SIDE_PANEL_WIDTH,
+              flexShrink: 0,
+              height: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              borderLeft: '1px solid #ccc',
+            }}
+          >
             <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
               <Tabs value={activeTab} onChange={(e, newValue) => setActiveTab(newValue)} centered>
                 <Tab label="CAM" />
