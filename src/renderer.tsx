@@ -629,10 +629,8 @@ const App = () => {
             <Box sx={{ flexGrow: 1, overflowY: 'auto' }}>
               <TabPanel value={activeTab} index={0}>
                 <Paper sx={{ p: 2, mb: 2 }}>
-                  <Typography variant="h6" gutterBottom>加工設定</Typography>
-                  <TextField label="工具径 (mm)" type="number" value={toolDiameter} onChange={(e) => setToolDiameter(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
-                  <TextField label="安全高さ (Z)" type="number" value={safeZ} onChange={(e) => setSafeZ(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
-                  <TextField label="切り込み深さ (Z)" type="number" value={stepDown} onChange={(e) => setStepDown(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
+                  <Typography variant="h6" gutterBottom>Tool Settings</Typography>
+                  <TextField label="Tool Diameter (mm)" type="number" value={toolDiameter} onChange={(e) => setToolDiameter(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
                 </Paper>
                 <Paper sx={{ p: 2, mb: 2 }}>
                   <Typography variant="h6" gutterBottom>2.5D 加工 (DXF/SVG)</Typography>
@@ -673,6 +671,13 @@ const App = () => {
                 </Paper>
               </TabPanel>
               <TabPanel value={activeTab} index={1}>
+                <Paper sx={{ p: 2, mb: 2 }}>
+                  <Typography variant="h6" gutterBottom>Machine Settings</Typography>
+                  <TextField label="Safe Z (mm)" type="number" value={safeZ} onChange={(e) => setSafeZ(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
+                  <TextField label="Step Down (mm)" type="number" value={stepDown} onChange={(e) => setStepDown(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
+                  <TextField label="Retract Z (mm)" type="number" value={retractZ} onChange={(e) => setRetractZ(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
+                  <TextField label="Peck Amount (Q)" type="number" value={peckQ} onChange={(e) => setPeckQ(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
+                </Paper>
                 <Paper sx={{ p: 2, mb: 2 }}>
                   <Typography variant="h6" gutterBottom>CNC 接続</Typography>
                   <FormControl fullWidth margin="normal" size="small" disabled={isConnected}>
