@@ -15,6 +15,18 @@ type RoughingPathParams = {
 };
 
 
+type GcodeGenerationParams = {
+  toolpaths?: unknown;
+  drillPoints?: unknown;
+  feedRate: number;
+  safeZ: number;
+  stepDown: number;
+  peckQ?: number;
+  retractZ: number;
+};
+
+type SettingsPayload = Record<string, unknown>;
+
 // Define the API we want to expose to the renderer process
 const electronAPI = {
   // --- File/Python Operations ---
@@ -30,8 +42,14 @@ const electronAPI = {
   openFile: (fileType: string) => ipcRenderer.invoke('open-file', fileType),
   generate3dRoughingPath: (params: RoughingPathParams) => ipcRenderer.invoke('generate-3d-roughing-path', params),
   fitArcsToToolpath: (toolpath: number[][], arcs: any[]) => ipcRenderer.invoke('fit-arcs-to-toolpath', toolpath, arcs),
-  generateGcode: (params: any) => ipcRenderer.invoke('generate-gcode', params),
-  generateDrillGcode: (params: any) => ipcRenderer.invoke('generate-drill-gcode', params),
+  generateGcode: (params: GcodeGenerationParams) => ipcRenderer.invoke('generate-gcode', params),
+  generateDrillGcode: (params: GcodeGenerationParams) => ipcRenderer.invoke('generate-drill-gcode', params),
+
+  // Settings
+  getSettings: () => ipcRenderer.invoke('get-settings'),
+  saveSettings: (settings: SettingsPayload) => ipcRenderer.invoke('save-settings', settings),
+
+  // File System
 
   // --- Serial Port Communication ---
   listSerialPorts: () => ipcRenderer.invoke('serial:list-ports'),

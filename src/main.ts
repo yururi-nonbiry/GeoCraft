@@ -6,7 +6,7 @@ import { parse } from 'svg-parser';
 import { SerialPort } from 'serialport';
 import { ReadlineParser } from '@serialport/parser-readline';
 
-let mainWindow: BrowserWindow | null;
+let mainWindow: BrowserWindow | null = null;
 let port: SerialPort | null = null;
 
 type PocketPathParams = {
@@ -31,23 +31,58 @@ let totalLines = 0;
 let statusInterval: NodeJS.Timeout | null = null;
 
 
-function createWindow() {
+const createWindow = () => {
   mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    width: 1280,
+    height: 900,
     webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
-      preload: path.join(__dirname, 'preload.js')
-    }
+      nodeIntegration: false,
+    },
   });
-  mainWindow.loadFile(path.join(__dirname, 'index.html'));
+
+  const indexPath = path.join(__dirname, 'index.html');
+  mainWindow.loadFile(indexPath);
+
   mainWindow.on('closed', () => {
-    if (port && port.isOpen) {
-      port.close();
-    }
     mainWindow = null;
   });
-}
+};
+
+// --- Settings IPC Handlers ---
+const getSettingsPath = () => path.join(app.getPath('userData'), 'geocraft_settings.json');
+
+ipcMain.handle('get-settings', async () => {
+  const settingsPath = getSettingsPath();
+  try {
+    if (fs.existsSync(settingsPath)) {
+      const data = fs.readFileSync(settingsPath, 'utf-8');
+      return JSON.parse(data);
+    } else {
+      // Return default settings if file doesn't exist
+      return {};
+    }
+  } catch (error: unknown) {
+    console.error('Failed to get settings:', error);
+    const message = error instanceof Error ? error.message : String(error);
+    return { status: 'error', message };
+  }
+});
+
+ipcMain.handle('save-settings', async (event, settings) => {
+  const settingsPath = getSettingsPath();
+  try {
+    fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+    return { status: 'success' };
+  } catch (error: unknown) {
+    console.error('Failed to save settings:', error);
+    const message = error instanceof Error ? error.message : String(error);
+    return { status: 'error', message };
+  }
+});
+
+  // Create the browser window.
 
 const menuTemplate: (Electron.MenuItemConstructorOptions | Electron.MenuItem)[] = [
   {
@@ -682,3 +717,4 @@ app.on('window-all-closed', () => {
     app.quit();
   }
 });
+

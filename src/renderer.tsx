@@ -561,7 +561,7 @@ const App = () => {
   const handleGenerateDrillGcode = async () => {
     if (!geometry || !geometry.drill_points || geometry.drill_points.length === 0) return alert('Gコードを生成するためのドリル点がありません。');
     try {
-      const params = { drillPoints: geometry.drill_points, safeZ, retractZ, stepDown, peckQ };
+      const params = { drillPoints: geometry.drill_points, feedRate, safeZ, retractZ, stepDown, peckQ };
       const result = await window.electronAPI.generateDrillGcode(params);
       if (result.status === 'success') alert(`ドリルGコードを保存しました: ${result.filePath}`);
       else if (result.status !== 'canceled') alert(`Gコードの保存に失敗しました: ${result.message}`);
@@ -573,7 +573,7 @@ const App = () => {
   const handleSaveGcode = async () => {
     if (!toolpaths || toolpaths.length === 0) return alert('保存するツールパスがありません。');
     try {
-      const params = { toolpaths: toolpaths, feedRate, safeZ, stepDown };
+      const params = { toolpaths: toolpaths, feedRate, safeZ, stepDown, retractZ };
       const result = await window.electronAPI.generateGcode(params);
       if (result.status === 'success') alert(`Gコードを保存しました: ${result.filePath}`);
       else if (result.status !== 'canceled') alert(`Gコードの保存に失敗しました: ${result.message}`);
