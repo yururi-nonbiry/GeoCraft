@@ -5,12 +5,37 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader';
 
+// Material-UI Imports
+import {
+  CssBaseline,
+  ThemeProvider,
+  createTheme,
+  AppBar,
+  Toolbar,
+  Typography,
+  Grid,
+  Paper,
+  Tabs,
+  Tab,
+  Box,
+  TextField,
+  Button,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
+  TextareaAutosize,
+  LinearProgress,
+} from '@mui/material';
+import { Refresh, Link, LinkOff, PlayArrow, Pause, Stop, Settings, Memory } from '@mui/icons-material';
+
+
 // 型定義
 type DxfSegment = { points: [[number, number, number], [number, number, number]]; color: string };
 type DxfArc = { center: [number, number, number]; radius: number; start_angle: number; end_angle: number; };
 type Geometry = { segments: DxfSegment[]; arcs: DxfArc[]; drill_points: DrillPoint[] };
 type Toolpath = number[][];
-type ToolpathSegment = 
+type ToolpathSegment =
   | { type: 'line'; points: number[][] }
   | { type: 'arc'; start: number[]; end: number[]; center: number[]; direction: 'cw' | 'ccw' };
 type DrillPoint = number[];
@@ -37,7 +62,7 @@ const ThreeViewer = ({ toolpaths, geometry, fileToLoad }: ThreeViewerProps) => {
     if (!mountRef.current) return;
     const currentMount = mountRef.current;
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color('#e0e0e0');
+    scene.background = new THREE.Color('#f0f0f0'); // Slightly lighter background
     sceneRef.current = scene;
 
     const camera = new THREE.PerspectiveCamera(75, currentMount.clientWidth / currentMount.clientHeight, 0.1, 1000);
@@ -50,12 +75,12 @@ const ThreeViewer = ({ toolpaths, geometry, fileToLoad }: ThreeViewerProps) => {
     currentMount.appendChild(renderer.domElement);
 
     // ライトを強化
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
     scene.add(ambientLight);
-    const directionalLight1 = new THREE.DirectionalLight(0xffffff, 1.0);
+    const directionalLight1 = new THREE.DirectionalLight(0xffffff, 0.9);
     directionalLight1.position.set(5, 5, 10);
     scene.add(directionalLight1);
-    const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.5);
+    const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.4);
     directionalLight2.position.set(-5, -5, -10);
     scene.add(directionalLight2);
 
@@ -254,8 +279,19 @@ const ThreeViewer = ({ toolpaths, geometry, fileToLoad }: ThreeViewerProps) => {
     }
   }, [toolpaths]);
 
-  return <div ref={mountRef} style={{ width: '100%', height: '100%' }} />;
+  return <div ref={mountRef} style={{ width: '100%', height: '100%', position: 'relative' }} />;
 };
+
+const theme = createTheme({
+  palette: {
+    primary: {
+      main: '#1976d2',
+    },
+    secondary: {
+      main: '#dc004e',
+    },
+  },
+});
 
 const App = () => {
   // states
@@ -293,7 +329,7 @@ const App = () => {
     window.electronAPI.listSerialPorts().then(result => {
       if (result.status === 'success') {
         setSerialPorts(result.ports);
-        if (result.ports.length > 0) {
+        if (result.ports.length > 0 && !selectedPort) {
           setSelectedPort(result.ports[0].path);
         }
       } else {
@@ -303,27 +339,12 @@ const App = () => {
   };
 
   useEffect(() => {
-    // Initial port list fetch
     handleRefreshPorts();
-
-    // Listen for data from the main process
-    const removeDataListener = window.electronAPI.onSerialData((data) => {
-      setConsoleLog(prev => [...prev, `> ${data}`]);
-    });
-
+    const removeDataListener = window.electronAPI.onSerialData((data) => setConsoleLog(prev => [...prev, `> ${data}`]));
     const removeClosedListener = window.electronAPI.onSerialClosed(() => {
       setIsConnected(false);
       setConsoleLog(prev => [...prev, '--- 接続が切断されました ---']);
     });
-
-    return () => {
-      removeDataListener();
-      removeClosedListener();
-    };
-  }, []);
-
-  // G-code sending handlers and progress listener
-  useEffect(() => {
     const removeGcodeProgressListener = window.electronAPI.onGcodeProgress(progress => {
       setGcodeProgress({ sent: progress.sent, total: progress.total });
       setGcodeStatus(progress.status);
@@ -335,52 +356,36 @@ const App = () => {
         setGcodeStatus('idle');
       }
     });
-
-    return () => {
-      removeGcodeProgressListener();
-    };
-  }, []);
-
-  // Jog and status listener
-  useEffect(() => {
-    const removeStatusListener = window.electronAPI.onStatus(status => {
-      setMachinePosition(status);
+    const removeStatusListener = window.electronAPI.onStatus(status => setMachinePosition(status));
+    const removeFileOpenListener = window.electronAPI.onFileOpen((filePath) => {
+      setToolpaths(null);
+      setGeometry(null);
+      setFileToLoad(filePath);
+      const extension = filePath.split('.').pop()?.toLowerCase();
+      if (extension === 'dxf') {
+        window.electronAPI.parseDxfFile(filePath).then(result => {
+          if (result.status === 'success') setGeometry({ segments: result.segments, arcs: result.arcs, drill_points: result.drill_points });
+          else alert(`DXF解析エラー: ${result.message}`);
+        }).catch(error => alert(`DXF解析に失敗しました: ${error}`));
+      } else if (extension === 'svg') {
+        window.electronAPI.parseSvgFile(filePath).then(result => {
+          if (result.status === 'success') setGeometry({ segments: result.segments, arcs: [], drill_points: result.drill_points });
+          else alert(`SVG解析エラー: ${result.message}`);
+        }).catch(error => alert(`SVG解析に失敗しました: ${error}`));
+      }
     });
+
     return () => {
+      removeDataListener();
+      removeClosedListener();
+      removeGcodeProgressListener();
       removeStatusListener();
+      removeFileOpenListener();
     };
   }, []);
-
-  const handleJog = (axis: 'X' | 'Y' | 'Z', direction: number) => {
-    if (!isConnected) return;
-    window.electronAPI.jog(axis, direction, jogStep);
-  };
-
-  const handleSetZero = () => {
-    if (!isConnected) return;
-    if (confirm('現在のワーク座標をすべて0に設定します。よろしいですか？')) {
-        window.electronAPI.setZero();
-    }
-  };
-
-  const handleSendGcode = () => {
-    if (gcode.trim() === '') {
-      alert('送信するG-codeがありません。');
-      return;
-    }
-    window.electronAPI.sendGcode(gcode);
-    setGcodeStatus('sending');
-  };
-
-  const handlePauseGcode = () => window.electronAPI.pauseGcode();
-  const handleResumeGcode = () => window.electronAPI.resumeGcode();
-  const handleStopGcode = () => window.electronAPI.stopGcode();
 
   const handleConnect = async () => {
-    if (!selectedPort) {
-      alert('ポートを選択してください。');
-      return;
-    }
+    if (!selectedPort) return alert('ポートを選択してください。');
     const result = await window.electronAPI.connectSerial(selectedPort, baudRate);
     if (result.status === 'success') {
       setIsConnected(true);
@@ -392,133 +397,95 @@ const App = () => {
 
   const handleDisconnect = async () => {
     const result = await window.electronAPI.disconnectSerial();
-    if (result.status === 'success') {
-      setIsConnected(false);
-      // The onSerialClosed listener will also fire and update state
-    } else {
-      alert(`切断エラー: ${result.message}`);
+    if (result.status !== 'success') alert(`切断エラー: ${result.message}`);
+  };
+
+  const handleJog = (axis: 'X' | 'Y' | 'Z', direction: number) => {
+    if (isConnected) window.electronAPI.jog(axis, direction, jogStep);
+  };
+
+  const handleSetZero = () => {
+    if (isConnected && confirm('現在のワーク座標をすべて0に設定します。よろしいですか？')) {
+      window.electronAPI.setZero();
     }
   };
 
+  const handleSendGcode = () => {
+    if (gcode.trim() === '') return alert('送信するG-codeがありません。');
+    window.electronAPI.sendGcode(gcode);
+    setGcodeStatus('sending');
+  };
 
-  // File open listener
-  useEffect(() => {
-    const removeListener = window.electronAPI.onFileOpen((filePath) => {
-      setToolpaths(null);
-      setGeometry(null);
-      setFileToLoad(filePath); // ファイルパスを先にセット
+  const handlePauseGcode = () => window.electronAPI.pauseGcode();
+  const handleResumeGcode = () => window.electronAPI.resumeGcode();
+  const handleStopGcode = () => window.electronAPI.stopGcode();
 
-      const extension = filePath.split('.').pop()?.toLowerCase();
-      if (extension === 'dxf') {
-        window.electronAPI.parseDxfFile(filePath).then(result => {
-          if (result.status === 'success') {
-            setGeometry({ segments: result.segments, arcs: result.arcs, drill_points: result.drill_points });
-          } else {
-            alert(`DXF解析エラー: ${result.message}`);
-          }
-        }).catch(error => {
-          alert(`DXF解析に失敗しました: ${error}`);
-        });
-      } else if (extension === 'svg') {
-        window.electronAPI.parseSvgFile(filePath).then(result => {
-          if (result.status === 'success') {
-            // SVG parser currently only returns segments
-            setGeometry({ segments: result.segments, arcs: [], drill_points: result.drill_points });
-          } else {
-            alert(`SVG解析エラー: ${result.message}`);
-          }
-        }).catch(error => {
-          alert(`SVG解析に失敗しました: ${error}`);
-        });
-      }
-    });
-    return () => { removeListener(); };
-  }, []);
-
-  // Handlers
   const getConnectedGeometries = () => {
     if (!geometry || !geometry.segments || geometry.segments.length === 0) return [];
-
     const pointToKey = (p: [number, number, number]) => p.map(v => v.toFixed(4)).join(',');
     const remaining = new Set(geometry.segments);
     const geometries: Array<Array<[number, number, number]>> = [];
-
     while (remaining.size > 0) {
-        const path: Array<[number, number, number]> = [];
-        const startSeg = remaining.values().next().value;
-        if (!startSeg) continue; // Add null check
-        remaining.delete(startSeg);
-
-        path.push(...startSeg.points);
-        let firstPointKey = pointToKey(path[0]);
-        let lastPointKey = pointToKey(path[path.length - 1]);
-
-        let changed = true;
-        while (changed) {
-            changed = false;
-            for (const seg of remaining) {
-                const p1Key = pointToKey(seg.points[0]);
-                const p2Key = pointToKey(seg.points[1]);
-
-                // --- Forward connection ---
-                if (p1Key === lastPointKey) {
-                    path.push(seg.points[1]);
-                    lastPointKey = p2Key;
-                    remaining.delete(seg);
-                    changed = true;
-                    break;
-                }
-                if (p2Key === lastPointKey) {
-                    path.push(seg.points[0]);
-                    lastPointKey = p1Key;
-                    remaining.delete(seg);
-                    changed = true;
-                    break;
-                }
-                // --- Backward connection ---
-                if (p2Key === firstPointKey) {
-                    path.unshift(seg.points[0]);
-                    firstPointKey = p1Key;
-                    remaining.delete(seg);
-                    changed = true;
-                    break;
-                }
-                if (p1Key === firstPointKey) {
-                    path.unshift(seg.points[1]);
-                    firstPointKey = p2Key;
-                    remaining.delete(seg);
-                    changed = true;
-                    break;
-                }
-            }
+      const path: Array<[number, number, number]> = [];
+      const startSeg = remaining.values().next().value;
+      if (!startSeg) continue;
+      remaining.delete(startSeg);
+      path.push(...startSeg.points);
+      let firstPointKey = pointToKey(path[0]);
+      let lastPointKey = pointToKey(path[path.length - 1]);
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (const seg of remaining) {
+          const p1Key = pointToKey(seg.points[0]);
+          const p2Key = pointToKey(seg.points[1]);
+          if (p1Key === lastPointKey) {
+            path.push(seg.points[1]);
+            lastPointKey = p2Key;
+            remaining.delete(seg);
+            changed = true;
+            break;
+          }
+          if (p2Key === lastPointKey) {
+            path.push(seg.points[0]);
+            lastPointKey = p1Key;
+            remaining.delete(seg);
+            changed = true;
+            break;
+          }
+          if (p2Key === firstPointKey) {
+            path.unshift(seg.points[0]);
+            firstPointKey = p1Key;
+            remaining.delete(seg);
+            changed = true;
+            break;
+          }
+          if (p1Key === firstPointKey) {
+            path.unshift(seg.points[1]);
+            firstPointKey = p2Key;
+            remaining.delete(seg);
+            changed = true;
+            break;
+          }
         }
-        geometries.push(path);
+      }
+      geometries.push(path);
     }
     return geometries;
   };
 
   const handleGenerateContour = async () => {
     const geometries = getConnectedGeometries();
-    if (geometries.length === 0 || !geometry || !geometry.arcs) {
-      alert('ツールパスを生成するための図形が読み込まれていません。DXF/SVGファイルを開いてください。');
-      return;
-    }
+    if (geometries.length === 0 || !geometry || !geometry.arcs) return alert('ツールパスを生成するための図形が読み込まれていません。');
     const vertices = geometries[0];
     try {
-      // Step 1: Generate the linear toolpath
       const linearResult = await window.electronAPI.generateContourPath(toolDiameter, vertices, contourSide);
-      if (linearResult.status !== 'success') {
-        alert(`初期パス生成エラー: ${linearResult.message}`);
-        return;
-      }
-
-      // Step 2: Fit arcs to the linear toolpath
+      if (linearResult.status !== 'success') return alert(`初期パス生成エラー: ${linearResult.message}`);
       const fittedResult = await window.electronAPI.fitArcsToToolpath(linearResult.toolpath, geometry.arcs);
       if (fittedResult.status === 'success') {
         setToolpaths(fittedResult.toolpath_segments);
       } else {
         alert(`円弧フィットエラー: ${fittedResult.message}`);
-        // As a fallback, show the linear path
         setToolpaths([{ type: 'line', points: linearResult.toolpath }]);
       }
     } catch (error) {
@@ -528,16 +495,12 @@ const App = () => {
 
   const handleGeneratePocket = async () => {
     const geometries = getConnectedGeometries();
-    if (geometries.length === 0) {
-      alert('ツールパスを生成するための図形が読み込まれていません。DXF/SVGファイルを開いてください。');
-      return;
-    }
+    if (geometries.length === 0) return alert('ツールパスを生成するための図形が読み込まれていません。');
     const vertices = geometries[0];
     try {
       const params = { geometry: vertices, toolDiameter, stepover: toolDiameter * stepover };
       const result = await window.electronAPI.generatePocketPath(params);
       if (result.status === 'success') {
-        // For now, wrap pocket paths as simple line segments
         const segments: ToolpathSegment[] = result.toolpaths.map((path: number[][]) => ({ type: 'line', points: path }));
         setToolpaths(segments);
       } else {
@@ -549,246 +512,195 @@ const App = () => {
   };
 
   const handleGenerate3dPath = async () => {
-    if (!fileToLoad || !fileToLoad.toLowerCase().endsWith('.stl')) {
-      alert('3D加工パスを生成するには、STLファイルを開いてください。');
-      return;
-    }
+    if (!fileToLoad || !fileToLoad.toLowerCase().endsWith('.stl')) return alert('3D加工パスを生成するには、STLファイルを開いてください。');
     try {
       const params = { filePath: fileToLoad, sliceHeight, toolDiameter, stepoverRatio: stepover };
       const result = await window.electronAPI.generate3dPath(params);
-      if (result.status === 'success') {
-        setToolpaths(result.toolpaths);
-      } else {
-        alert(`3Dパス生成エラー: ${result.message}`);
-      }
+      if (result.status === 'success') setToolpaths(result.toolpaths);
+      else alert(`3Dパス生成エラー: ${result.message}`);
     } catch (error) {
       alert(`3Dパス生成に失敗しました: ${error}`);
     }
   };
 
   const handleGenerateDrillGcode = async () => {
-    if (!geometry || !geometry.drill_points || geometry.drill_points.length === 0) {
-      alert('Gコードを生成するためのドリル点がありません。');
-      return;
-    }
+    if (!geometry || !geometry.drill_points || geometry.drill_points.length === 0) return alert('Gコードを生成するためのドリル点がありません。');
     try {
       const params = { drillPoints: geometry.drill_points, safeZ, retractZ, stepDown, peckQ };
       const result = await window.electronAPI.generateDrillGcode(params);
-      if (result.status === 'success') {
-        alert(`ドリルGコードを保存しました: ${result.filePath}`);
-      } else if (result.status !== 'canceled') {
-        alert(`Gコードの保存に失敗しました: ${result.message}`);
-      }
+      if (result.status === 'success') alert(`ドリルGコードを保存しました: ${result.filePath}`);
+      else if (result.status !== 'canceled') alert(`Gコードの保存に失敗しました: ${result.message}`);
     } catch (error) {
       alert(`Gコードの保存に失敗しました: ${error}`);
     }
   };
 
   const handleSaveGcode = async () => {
-    if (!toolpaths || toolpaths.length === 0) {
-      alert('保存するツールパスがありません。');
-      return;
-    }
+    if (!toolpaths || toolpaths.length === 0) return alert('保存するツールパスがありません。');
     try {
       const params = { toolpaths: toolpaths, feedRate, safeZ, stepDown };
       const result = await window.electronAPI.generateGcode(params);
-      if (result.status === 'success') {
-        alert(`Gコードを保存しました: ${result.filePath}`);
-      } else if (result.status !== 'canceled') {
-        alert(`Gコードの保存に失敗しました: ${result.message}`);
-      }
+      if (result.status === 'success') alert(`Gコードを保存しました: ${result.filePath}`);
+      else if (result.status !== 'canceled') alert(`Gコードの保存に失敗しました: ${result.message}`);
     } catch (error) {
       alert(`Gコードの保存に失敗しました: ${error}`);
     }
   };
 
-  const handleArcTest = async () => {
-    // Create a dummy toolpath: a square with rounded corners
-    const r = 5; // radius
-    const testPath: ToolpathSegment[] = [
-      { type: 'line', points: [[r, 0, 0], [50 - r, 0, 0]] },
-      { type: 'arc', start: [50 - r, 0, 0], end: [50, r, 0], center: [50 - r, r, 0], direction: 'ccw' },
-      { type: 'line', points: [[50, r, 0], [50, 50 - r, 0]] },
-      { type: 'arc', start: [50, 50 - r, 0], end: [50 - r, 50, 0], center: [50 - r, 50 - r, 0], direction: 'ccw' },
-      { type: 'line', points: [[50 - r, 50, 0], [r, 50, 0]] },
-      { type: 'arc', start: [r, 50, 0], end: [0, 50 - r, 0], center: [r, 50 - r, 0], direction: 'ccw' },
-      { type: 'line', points: [[0, 50 - r, 0], [0, r, 0]] },
-      { type: 'arc', start: [0, r, 0], end: [r, 0, 0], center: [r, r, 0], direction: 'ccw' },
-    ];
-    try {
-      const params = { toolpaths: testPath, feedRate, safeZ, stepDown };
-      const result = await window.electronAPI.generateGcode(params);
-      if (result.status === 'success') {
-        alert(`テストGコードを保存しました: ${result.filePath}`);
-      } else if (result.status !== 'canceled') {
-        alert(`Gコードの保存に失敗しました: ${result.message}`);
-      }
-    } catch (error) {
-      alert(`Gコードの保存に失敗しました: ${error}`);
-    }
+  const [activeTab, setActiveTab] = useState(0);
+
+  const TabPanel = (props: { children?: React.ReactNode; index: number; value: number; }) => {
+    const { children, value, index, ...other } = props;
+    return (
+      <div role="tabpanel" hidden={value !== index} {...other}>
+        {value === index && <Box sx={{ p: 3 }}>{children}</Box>}
+      </div>
+    );
   }
 
-  const [activeTab, setActiveTab] = useState('cam'); // 'cam' or 'cnc'
-
-  // Styles
-  const mainStyle: React.CSSProperties = { display: 'flex', height: '100vh', fontFamily: 'sans-serif' };
-  const viewerStyle: React.CSSProperties = { flex: 3, borderRight: '1px solid #ccc' };
-  const panelStyle: React.CSSProperties = { flex: 1, padding: '1rem', overflowY: 'auto', display: 'flex', flexDirection: 'column' };
-  const inputGroupStyle: React.CSSProperties = { marginBottom: '1rem' };
-  const labelStyle: React.CSSProperties = { display: 'block', marginBottom: '0.25rem' };
-  const tabContainerStyle: React.CSSProperties = { display: 'flex', borderBottom: '1px solid #ccc', marginBottom: '1rem' };
-  const tabStyle: React.CSSProperties = { padding: '0.5rem 1rem', cursor: 'pointer', border: 'none', backgroundColor: 'transparent', borderBottom: '2px solid transparent' };
-  const activeTabStyle: React.CSSProperties = { ...tabStyle, borderBottom: '2px solid blue', fontWeight: 'bold' };
-  const tabContentStyle: React.CSSProperties = { flex: 1, overflowY: 'auto' };
-
-
   return (
-    <div style={mainStyle}>
-      <div style={viewerStyle}>
-        <ThreeViewer toolpaths={toolpaths} geometry={geometry} fileToLoad={fileToLoad} />
-      </div>
-      <div style={panelStyle}>
-        <div style={tabContainerStyle}>
-          <button style={activeTab === 'cam' ? activeTabStyle : tabStyle} onClick={() => setActiveTab('cam')}>CAM</button>
-          <button style={activeTab === 'cnc' ? activeTabStyle : tabStyle} onClick={() => setActiveTab('cnc')}>CNC</button>
-        </div>
-
-        <div style={tabContentStyle}>
-          {activeTab === 'cam' && (
-            <div>
-              <h2>CAM設定</h2>
-              <div style={inputGroupStyle}>
-                <h3>加工設定</h3>
-                <label style={labelStyle}>工具径 (mm)</label>
-                <input type="number" value={toolDiameter} onChange={(e) => setToolDiameter(parseFloat(e.target.value))} step="0.1"/>
-                <label style={labelStyle}>安全高さ (Z)</label>
-                <input type="number" value={safeZ} onChange={(e) => setSafeZ(parseFloat(e.target.value))} step="0.1" />
-                <label style={labelStyle}>切り込み深さ (Z)</label>
-                <input type="number" value={stepDown} onChange={(e) => setStepDown(parseFloat(e.target.value))} step="0.1" />
-              </div>
-              <hr />
-              <div style={inputGroupStyle}>
-                <h3>2.5D 加工 (DXF/SVG)</h3>
-                <label style={labelStyle}>ステップオーバー (%)</label>
-                <input type="number" value={stepover * 100} onChange={(e) => setStepover(parseFloat(e.target.value) / 100)} step="1" min="1" max="100" />
-                <label style={labelStyle}>輪郭方向</label>
-                <select value={contourSide} onChange={(e) => setContourSide(e.target.value)}>
-                  <option value="outer">外側</option>
-                  <option value="inner">内側</option>
-                </select>
-                <button onClick={handleGenerateContour}>輪郭パス生成</button>
-                <button onClick={handleGeneratePocket}>ポケットパス生成</button>
-              </div>
-              <div style={inputGroupStyle}>
-                <h3>3D 加工 (STL)</h3>
-                <label style={labelStyle}>スライス厚 (mm)</label>
-                <input type="number" value={sliceHeight} onChange={(e) => setSliceHeight(parseFloat(e.target.value))} step="0.1" />
-                <button onClick={handleGenerate3dPath}>3Dパス生成</button>
-              </div>
-              <hr />
-              <div style={inputGroupStyle}>
-                <h3>ドリル加工</h3>
-                <label style={labelStyle}>R点 (切り込み開始高さ)</label>
-                <input type="number" value={retractZ} onChange={(e) => setRetractZ(parseFloat(e.target.value))} step="0.1" />
-                <label style={labelStyle}>ペック量 (Q)</label>
-                <input type="number" value={peckQ} onChange={(e) => setPeckQ(parseFloat(e.target.value))} step="0.1" />
-                <button onClick={handleGenerateDrillGcode}>ドリルGコード生成</button>
-              </div>
-              <hr />
-              <div style={inputGroupStyle}>
-                <h3>Gコード保存</h3>
-                <label style={labelStyle}>送り速度 (mm/min)</label>
-                <input type="number" value={feedRate} onChange={(e) => setFeedRate(parseFloat(e.target.value))} />
-                <button onClick={handleSaveGcode}>輪郭/ポケットGコードを保存</button>
-                <button onClick={handleArcTest}>円弧Gコードテスト</button>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'cnc' && (
-            <div>
-              <h2>CNC制御</h2>
-              <div style={inputGroupStyle}>
-                <h3>CNC 接続</h3>
-                <label style={labelStyle}>ポート</label>
-                <select value={selectedPort} onChange={(e) => setSelectedPort(e.target.value)} disabled={isConnected}>
-                  {serialPorts.map(port => (
-                    <option key={port.path} value={port.path}>{port.path}</option>
-                  ))}
-                </select>
-                <label style={labelStyle}>ボーレート</label>
-                <input type="number" value={baudRate} onChange={(e) => setBaudRate(parseInt(e.target.value))} disabled={isConnected} />
-                <button onClick={handleRefreshPorts} disabled={isConnected}>更新</button>
-                {!isConnected ? (
-                  <button onClick={handleConnect}>接続</button>
-                ) : (
-                  <button onClick={handleDisconnect}>切断</button>
-                )}
-                <label style={labelStyle}>コンソール</label>
-                <textarea 
-                  readOnly 
-                  style={{ width: '100%', height: '150px', backgroundColor: '#f0f0f0', fontFamily: 'monospace' }}
-                  value={consoleLog.join('\n')}
-                />
-              </div>
-              <hr />
-              <div style={inputGroupStyle}>
-                  <h3>G-Code 送信</h3>
-                  <textarea
-                      style={{ width: '100%', height: '200px', fontFamily: 'monospace' }}
-                      value={gcode}
-                      onChange={(e) => setGcode(e.target.value)}
-                      placeholder="ここにG-codeを貼り付け..."
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+        <AppBar position="static">
+          <Toolbar>
+            <Memory sx={{ mr: 2 }} />
+            <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
+              GeoCraft
+            </Typography>
+          </Toolbar>
+        </AppBar>
+        <Grid container sx={{ flexGrow: 1, overflow: 'hidden' }}>
+          <Grid item xs={8} sx={{ height: '100%', position: 'relative' }}>
+            <ThreeViewer toolpaths={toolpaths} geometry={geometry} fileToLoad={fileToLoad} />
+          </Grid>
+          <Grid item xs={4} sx={{ height: '100%', display: 'flex', flexDirection: 'column', borderLeft: '1px solid #ccc' }}>
+            <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
+              <Tabs value={activeTab} onChange={(e, newValue) => setActiveTab(newValue)} centered>
+                <Tab label="CAM" />
+                <Tab label="CNC" />
+              </Tabs>
+            </Box>
+            <Box sx={{ flexGrow: 1, overflowY: 'auto' }}>
+              <TabPanel value={activeTab} index={0}>
+                <Paper sx={{ p: 2, mb: 2 }}>
+                  <Typography variant="h6" gutterBottom>加工設定</Typography>
+                  <TextField label="工具径 (mm)" type="number" value={toolDiameter} onChange={(e) => setToolDiameter(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
+                  <TextField label="安全高さ (Z)" type="number" value={safeZ} onChange={(e) => setSafeZ(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
+                  <TextField label="切り込み深さ (Z)" type="number" value={stepDown} onChange={(e) => setStepDown(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
+                </Paper>
+                <Paper sx={{ p: 2, mb: 2 }}>
+                  <Typography variant="h6" gutterBottom>2.5D 加工 (DXF/SVG)</Typography>
+                  <TextField label="ステップオーバー (%)" type="number" value={stepover * 100} onChange={(e) => setStepover(parseFloat(e.target.value) / 100)} fullWidth margin="normal" size="small" />
+                  <FormControl fullWidth margin="normal" size="small">
+                    <InputLabel>輪郭方向</InputLabel>
+                    <Select value={contourSide} label="輪郭方向" onChange={(e) => setContourSide(e.target.value)}>
+                      <MenuItem value="outer">外側</MenuItem>
+                      <MenuItem value="inner">内側</MenuItem>
+                    </Select>
+                  </FormControl>
+                  <Button variant="contained" onClick={handleGenerateContour} sx={{ mr: 1 }}>輪郭パス生成</Button>
+                  <Button variant="contained" onClick={handleGeneratePocket}>ポケットパス生成</Button>
+                </Paper>
+                <Paper sx={{ p: 2, mb: 2 }}>
+                  <Typography variant="h6" gutterBottom>3D 加工 (STL)</Typography>
+                  <TextField label="スライス厚 (mm)" type="number" value={sliceHeight} onChange={(e) => setSliceHeight(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
+                  <Button variant="contained" onClick={handleGenerate3dPath}>3Dパス生成</Button>
+                </Paper>
+                <Paper sx={{ p: 2, mb: 2 }}>
+                  <Typography variant="h6" gutterBottom>ドリル加工</Typography>
+                  <TextField label="R点 (切り込み開始高さ)" type="number" value={retractZ} onChange={(e) => setRetractZ(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
+                  <TextField label="ペック量 (Q)" type="number" value={peckQ} onChange={(e) => setPeckQ(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
+                  <Button variant="contained" onClick={handleGenerateDrillGcode}>ドリルGコード生成</Button>
+                </Paper>
+                <Paper sx={{ p: 2, mb: 2 }}>
+                  <Typography variant="h6" gutterBottom>Gコード保存</Typography>
+                  <TextField label="送り速度 (mm/min)" type="number" value={feedRate} onChange={(e) => setFeedRate(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
+                  <Button variant="contained" onClick={handleSaveGcode}>Gコード保存</Button>
+                </Paper>
+              </TabPanel>
+              <TabPanel value={activeTab} index={1}>
+                <Paper sx={{ p: 2, mb: 2 }}>
+                  <Typography variant="h6" gutterBottom>CNC 接続</Typography>
+                  <FormControl fullWidth margin="normal" size="small" disabled={isConnected}>
+                    <InputLabel>ポート</InputLabel>
+                    <Select value={selectedPort} label="ポート" onChange={(e) => setSelectedPort(e.target.value)}>
+                      {serialPorts.map(port => <MenuItem key={port.path} value={port.path}>{port.path}</MenuItem>)}
+                    </Select>
+                  </FormControl>
+                  <TextField label="ボーレート" type="number" value={baudRate} onChange={(e) => setBaudRate(parseInt(e.target.value))} fullWidth margin="normal" size="small" disabled={isConnected} />
+                  <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
+                    <Button variant="outlined" onClick={handleRefreshPorts} disabled={isConnected} startIcon={<Refresh />}>更新</Button>
+                    {!isConnected ? (
+                      <Button variant="contained" onClick={handleConnect} startIcon={<Link />}>接続</Button>
+                    ) : (
+                      <Button variant="contained" color="secondary" onClick={handleDisconnect} startIcon={<LinkOff />}>切断</Button>
+                    )}
+                  </Box>
+                  <TextareaAutosize
+                    readOnly
+                    minRows={5}
+                    value={consoleLog.join('\n')}
+                    style={{ width: '100%', marginTop: '1rem', backgroundColor: '#222', color: '#0f0', fontFamily: 'monospace', padding: '8px' }}
                   />
-                  <button onClick={handleSendGcode} disabled={!isConnected || gcodeStatus !== 'idle'}>
-                      送信開始
-                  </button>
-                  <button onClick={handlePauseGcode} disabled={gcodeStatus !== 'sending'}>
-                      一時停止
-                  </button>
-                  <button onClick={handleResumeGcode} disabled={gcodeStatus !== 'paused'}>
-                      再開
-                  </button>
-                  <button onClick={handleStopGcode} disabled={gcodeStatus === 'idle'}>
-                      停止
-                  </button>
-                  <p>状態: {gcodeStatus} | 進捗: {gcodeProgress.sent}/{gcodeProgress.total}</p>
-              </div>
-              <hr />
-              <div style={inputGroupStyle}>
-                  <h3>手動操作 (Jog)</h3>
-                  <div>
-                      <p>マシン状態: {machinePosition.status}</p>
-                      <p>WPos: X:{machinePosition.wpos.x.toFixed(3)} Y:{machinePosition.wpos.y.toFixed(3)} Z:{machinePosition.wpos.z.toFixed(3)}</p>
-                      <p>MPos: X:{machinePosition.mpos.x.toFixed(3)} Y:{machinePosition.mpos.y.toFixed(3)} Z:{machinePosition.mpos.z.toFixed(3)}</p>
-                  </div>
-                  <div>
-                      <span>移動量 (mm): </span>
-                      {[0.1, 1, 10, 100].map(step => (
-                          <button key={step} onClick={() => setJogStep(step)} style={{ fontWeight: jogStep === step ? 'bold' : 'normal' }}>
-                              {step}
-                          </button>
-                      ))}
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem', marginTop: '0.5rem' }}>
-                      <button onClick={() => handleJog('Y', 1)}>Y+</button>
-                      <div></div>
-                      <button onClick={() => handleJog('Z', 1)}>Z+</button>
-
-                      <button onClick={() => handleJog('X', -1)}>X-</button>
-                      <button onClick={handleSetZero}>原点設定</button>
-                      <button onClick={() => handleJog('X', 1)}>X+</button>
-
-                      <button onClick={() => handleJog('Y', -1)}>Y-</button>
-                      <div></div>
-                      <button onClick={() => handleJog('Z', -1)}>Z-</button>
-                  </div>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
+                </Paper>
+                <Paper sx={{ p: 2, mb: 2 }}>
+                  <Typography variant="h6" gutterBottom>G-Code 送信</Typography>
+                  <TextField
+                    multiline
+                    rows={8}
+                    fullWidth
+                    variant="outlined"
+                    value={gcode}
+                    onChange={(e) => setGcode(e.target.value)}
+                    placeholder="ここにG-codeを貼り付け..."
+                    sx={{ mb: 1, fontFamily: 'monospace' }}
+                  />
+                  <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 1 }}>
+                    <Button variant="contained" onClick={handleSendGcode} disabled={!isConnected || gcodeStatus !== 'idle'} startIcon={<PlayArrow />}>送信</Button>
+                    <Button variant="outlined" onClick={handlePauseGcode} disabled={gcodeStatus !== 'sending'} startIcon={<Pause />}>一時停止</Button>
+                    <Button variant="outlined" onClick={handleResumeGcode} disabled={gcodeStatus !== 'paused'} startIcon={<PlayArrow />}>再開</Button>
+                    <Button variant="outlined" color="secondary" onClick={handleStopGcode} disabled={gcodeStatus === 'idle'} startIcon={<Stop />}>停止</Button>
+                  </Box>
+                  <Box sx={{ width: '100%' }}>
+                    <Typography variant="body2">状態: {gcodeStatus}</Typography>
+                    <LinearProgress variant="determinate" value={(gcodeProgress.total > 0 ? (gcodeProgress.sent / gcodeProgress.total) * 100 : 0)} />
+                    <Typography variant="body2" align="right">{gcodeProgress.sent}/{gcodeProgress.total}</Typography>
+                  </Box>
+                </Paper>
+                <Paper sx={{ p: 2, mb: 2 }}>
+                  <Typography variant="h6" gutterBottom>手動操作 (Jog)</Typography>
+                  <Box sx={{ mb: 2 }}>
+                    <Typography variant="body2">マシン状態: {machinePosition.status}</Typography>
+                    <Typography variant="body2">WPos: X:{machinePosition.wpos.x.toFixed(3)} Y:{machinePosition.wpos.y.toFixed(3)} Z:{machinePosition.wpos.z.toFixed(3)}</Typography>
+                    <Typography variant="body2">MPos: X:{machinePosition.mpos.x.toFixed(3)} Y:{machinePosition.mpos.y.toFixed(3)} Z:{machinePosition.mpos.z.toFixed(3)}</Typography>
+                  </Box>
+                  <Box sx={{ mb: 2 }}>
+                    <Typography component="span" sx={{ mr: 1 }}>移動量(mm):</Typography>
+                    {[0.1, 1, 10, 100].map(step => (
+                      <Button key={step} size="small" variant={jogStep === step ? 'contained' : 'outlined'} onClick={() => setJogStep(step)} sx={{ mr: 1 }}>
+                        {step}
+                      </Button>
+                    ))}
+                  </Box>
+                  <Grid container spacing={1} alignItems="center" justifyContent="center">
+                    <Grid item xs={4} />
+                    <Grid item xs={4}><Button fullWidth variant="outlined" onClick={() => handleJog('Y', 1)}>Y+</Button></Grid>
+                    <Grid item xs={4}><Button fullWidth variant="outlined" onClick={() => handleJog('Z', 1)}>Z+</Button></Grid>
+                    <Grid item xs={4}><Button fullWidth variant="outlined" onClick={() => handleJog('X', -1)}>X-</Button></Grid>
+                    <Grid item xs={4}><Button fullWidth variant="contained" color="secondary" onClick={handleSetZero} startIcon={<Settings />}>原点</Button></Grid>
+                    <Grid item xs={4}><Button fullWidth variant="outlined" onClick={() => handleJog('X', 1)}>X+</Button></Grid>
+                    <Grid item xs={4} />
+                    <Grid item xs={4}><Button fullWidth variant="outlined" onClick={() => handleJog('Y', -1)}>Y-</Button></Grid>
+                    <Grid item xs={4}><Button fullWidth variant="outlined" onClick={() => handleJog('Z', -1)}>Z-</Button></Grid>
+                  </Grid>
+                </Paper>
+              </TabPanel>
+            </Box>
+          </Grid>
+        </Grid>
+      </Box>
+    </ThemeProvider>
   );
 };
 
