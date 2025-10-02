@@ -1,5 +1,20 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
 
+type PocketPathParams = {
+  geometry: number[][];
+  toolDiameter: number;
+  stepover: number;
+};
+
+type RoughingPathParams = {
+  stockPath: string;
+  targetPath: string;
+  sliceHeight: number;
+  toolDiameter: number;
+  stepoverRatio: number;
+};
+
+
 // Define the API we want to expose to the renderer process
 const electronAPI = {
   // --- File/Python Operations ---
@@ -11,8 +26,9 @@ const electronAPI = {
   parseDxfFile: (filePath: string) => ipcRenderer.invoke('parse-dxf-file', filePath),
   parseSvgFile: (filePath: string) => ipcRenderer.invoke('parse-svg-file', filePath),
   generateContourPath: (toolDiameter: number, geometry: any, side: string) => ipcRenderer.invoke('generate-contour-path', toolDiameter, geometry, side),
-  generatePocketPath: (params: any) => ipcRenderer.invoke('generate-pocket-path', params),
-  generate3dPath: (params: any) => ipcRenderer.invoke('generate-3d-path', params),
+  generatePocketPath: (params: PocketPathParams) => ipcRenderer.invoke('generate-pocket-path', params),
+  openFile: (fileType: string) => ipcRenderer.invoke('open-file', fileType),
+  generate3dRoughingPath: (params: RoughingPathParams) => ipcRenderer.invoke('generate-3d-roughing-path', params),
   fitArcsToToolpath: (toolpath: number[][], arcs: any[]) => ipcRenderer.invoke('fit-arcs-to-toolpath', toolpath, arcs),
   generateGcode: (params: any) => ipcRenderer.invoke('generate-gcode', params),
   generateDrillGcode: (params: any) => ipcRenderer.invoke('generate-drill-gcode', params),

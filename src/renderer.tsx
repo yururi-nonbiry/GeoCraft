@@ -43,17 +43,19 @@ type DrillPoint = number[];
 interface ThreeViewerProps {
   toolpaths: ToolpathSegment[] | null;
   geometry: Geometry | null;
-  fileToLoad: string | null;
+  stockStlFile: string | null;
+  targetStlFile: string | null;
 }
 
 const SIDE_PANEL_WIDTH = 360;
 
-const ThreeViewer = ({ toolpaths, geometry, fileToLoad }: ThreeViewerProps) => {
+const ThreeViewer = ({ toolpaths, geometry, stockStlFile, targetStlFile }: ThreeViewerProps) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
-  const modelRef = useRef<THREE.Object3D | null>(null);
+  const stockModelRef = useRef<THREE.Object3D | null>(null);
+  const targetModelRef = useRef<THREE.Object3D | null>(null);
   const toolpathGroupRef = useRef<THREE.Group | null>(null);
   const dxfObjectRef = useRef<THREE.Group | null>(null);
   const dxfArcsRef = useRef<THREE.Group | null>(null);
@@ -117,72 +119,79 @@ const ThreeViewer = ({ toolpaths, geometry, fileToLoad }: ThreeViewerProps) => {
     };
   }, []);
 
-  // ファイル読み込み/クリア処理
+  // STL/OBJ 読み込み処理
   useEffect(() => {
     if (!sceneRef.current) return;
     const scene = sceneRef.current;
-    if (modelRef.current) scene.remove(modelRef.current);
-    if (toolpathGroupRef.current) scene.remove(toolpathGroupRef.current);
-    if (dxfObjectRef.current) scene.remove(dxfObjectRef.current);
-    if (drillPointsRef.current) scene.remove(drillPointsRef.current);
+
+    // 前のモデルを削除
+    if (stockModelRef.current) scene.remove(stockModelRef.current);
+    if (targetModelRef.current) scene.remove(targetModelRef.current);
 
     const fitCameraToObject = (object: THREE.Object3D) => {
-      if (!cameraRef.current || !controlsRef.current) return;
-      const box = new THREE.Box3().setFromObject(object);
-      const center = box.getCenter(new THREE.Vector3());
-      const size = box.getSize(new THREE.Vector3());
-      const maxDim = Math.max(size.x, size.y, size.z);
-      const fov = cameraRef.current.fov * (Math.PI / 180);
-      let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
-      cameraZ *= 1.5;
+        if (!cameraRef.current || !controlsRef.current) return;
+        const box = new THREE.Box3().setFromObject(object);
+        const center = box.getCenter(new THREE.Vector3());
+        const size = box.getSize(new THREE.Vector3());
+        const maxDim = Math.max(size.x, size.y, size.z);
+        const fov = cameraRef.current.fov * (Math.PI / 180);
+        let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
+        cameraZ *= 1.5;
+  
+        // オブジェクトを原点中心に移動させるのではなく、全体のバウンディングボックスの中心にカメラを向ける
+        // object.position.sub(center); 
+  
+        const camPos = new THREE.Vector3();
+        camPos.copy(center);
+        camPos.x -= cameraZ * 0.7;
+        camPos.y -= cameraZ * 0.7;
+        camPos.z += cameraZ * 0.7;
+        cameraRef.current.position.copy(camPos);
+        cameraRef.current.up.set(0, 0, 1);
+  
+        controlsRef.current.target.copy(center);
+        controlsRef.current.update();
+      };
 
-      object.position.sub(center);
-      scene.add(object);
-      modelRef.current = object;
-
-      const camPos = new THREE.Vector3();
-      camPos.copy(center);
-      camPos.x -= cameraZ * 0.7;
-      camPos.y -= cameraZ * 0.7;
-      camPos.z += cameraZ * 0.7;
-      cameraRef.current.position.copy(camPos);
-      cameraRef.current.up.set(0, 0, 1);
-
-      controlsRef.current.target.copy(center);
-      controlsRef.current.update();
-    };
-
-    if (fileToLoad && fileToLoad.toLowerCase().endsWith('.stl')) {
+    const loadStl = (filePath: string, material: THREE.Material, modelRef: React.MutableRefObject<THREE.Object3D | null>) => {
       const loader = new STLLoader();
-      loader.load(fileToLoad, (geometry) => {
+      loader.load(filePath, (geometry) => {
         geometry.computeVertexNormals();
-        const material = new THREE.MeshStandardMaterial({
-          color: 0x999999, metalness: 0.1, roughness: 0.5, side: THREE.DoubleSide,
-        });
         const mesh = new THREE.Mesh(geometry, material);
         mesh.rotation.x = -Math.PI / 2;
-        fitCameraToObject(mesh);
+        scene.add(mesh);
+        modelRef.current = mesh;
+
+        // 両方のモデルが読み込まれた後にカメラを調整
+        const combinedBox = new THREE.Box3();
+        if (stockModelRef.current) combinedBox.expandByObject(stockModelRef.current);
+        if (targetModelRef.current) combinedBox.expandByObject(targetModelRef.current);
+        if (!combinedBox.isEmpty()) {
+            fitCameraToObject(stockModelRef.current ?? targetModelRef.current!);
+        }
       });
-    } else if (fileToLoad && fileToLoad.toLowerCase().endsWith('.obj')) {
-      const loader = new OBJLoader();
-      loader.load(fileToLoad, (group) => {
-        const defaultMaterial = new THREE.MeshStandardMaterial({
-          color: 0x999999, metalness: 0.1, roughness: 0.5, side: THREE.DoubleSide,
-        });
-        group.traverse((child) => {
-          if (child instanceof THREE.Mesh) {
-            const geometry = child.geometry;
-            if (geometry instanceof THREE.BufferGeometry) {
-              geometry.computeVertexNormals();
-            }
-            child.material = defaultMaterial;
-          }
-        });
-        group.rotation.x = -Math.PI / 2;
-        fitCameraToObject(group);
+    };
+
+    // 材料STLの読み込み
+    if (stockStlFile) {
+      const stockMaterial = new THREE.MeshStandardMaterial({
+        color: 0x1565c0, // Blue
+        transparent: true,
+        opacity: 0.3,
+        wireframe: true,
       });
+      loadStl(stockStlFile, stockMaterial, stockModelRef);
     }
-  }, [fileToLoad]);
+
+    // 加工後形状STLの読み込み
+    if (targetStlFile) {
+      const targetMaterial = new THREE.MeshStandardMaterial({
+        color: 0x999999, metalness: 0.1, roughness: 0.5, side: THREE.DoubleSide,
+      });
+      loadStl(targetStlFile, targetMaterial, targetModelRef);
+    }
+
+  }, [stockStlFile, targetStlFile]);
 
   // DXF/SVG描画処理
   useEffect(() => {
@@ -302,7 +311,8 @@ const App = () => {
   const [sliceHeight, setSliceHeight] = useState(1.0);
   const [toolpaths, setToolpaths] = useState<ToolpathSegment[] | null>(null);
   const [geometry, setGeometry] = useState<Geometry | null>(null);
-  const [fileToLoad, setFileToLoad] = useState<string | null>(null);
+  const [stockStlFile, setStockStlFile] = useState<string | null>(null);
+  const [targetStlFile, setTargetStlFile] = useState<string | null>(null);
   const [feedRate, setFeedRate] = useState(100);
   const [safeZ, setSafeZ] = useState(5.0);
   const [stepDown, setStepDown] = useState(-2.0);
@@ -362,7 +372,8 @@ const App = () => {
     const removeFileOpenListener = window.electronAPI.onFileOpen((filePath) => {
       setToolpaths(null);
       setGeometry(null);
-      setFileToLoad(filePath);
+      setStockStlFile(null);
+      setTargetStlFile(null);
       const extension = filePath.split('.').pop()?.toLowerCase();
       if (extension === 'dxf') {
         window.electronAPI.parseDxfFile(filePath).then(result => {
@@ -513,11 +524,33 @@ const App = () => {
     }
   };
 
+  const handleSelectStockStl = async () => {
+    const result = await window.electronAPI.openFile('stl');
+    if (result.status === 'success') {
+      setStockStlFile(result.filePath);
+      setToolpaths(null); // 新しいモデルが読み込まれたらツールパスをクリア
+    }
+  };
+
+  const handleSelectTargetStl = async () => {
+    const result = await window.electronAPI.openFile('stl');
+    if (result.status === 'success') {
+      setTargetStlFile(result.filePath);
+      setToolpaths(null); // 新しいモデルが読み込まれたらツールパスをクリア
+    }
+  };
+
   const handleGenerate3dPath = async () => {
-    if (!fileToLoad || !fileToLoad.toLowerCase().endsWith('.stl')) return alert('3D加工パスを生成するには、STLファイルを開いてください。');
+    if (!stockStlFile || !targetStlFile) return alert('3D加工パスを生成するには、材料と加工後形状の両方のSTLファイルを開いてください。');
     try {
-      const params = { filePath: fileToLoad, sliceHeight, toolDiameter, stepoverRatio: stepover };
-      const result = await window.electronAPI.generate3dPath(params);
+      const params = { 
+        stockPath: stockStlFile, 
+        targetPath: targetStlFile, 
+        sliceHeight, 
+        toolDiameter, 
+        stepoverRatio: stepover 
+      };
+      const result = await window.electronAPI.generate3dRoughingPath(params);
       if (result.status === 'success') setToolpaths(result.toolpaths);
       else alert(`3Dパス生成エラー: ${result.message}`);
     } catch (error) {
@@ -574,7 +607,7 @@ const App = () => {
         </AppBar>
         <Grid container sx={{ flexGrow: 1, overflow: 'hidden' }}>
           <Grid item sx={{ flex: 1, minWidth: 0, height: '100%', position: 'relative' }}>
-            <ThreeViewer toolpaths={toolpaths} geometry={geometry} fileToLoad={fileToLoad} />
+            <ThreeViewer toolpaths={toolpaths} geometry={geometry} stockStlFile={stockStlFile} targetStlFile={targetStlFile} />
           </Grid>
           <Grid
             item
@@ -616,8 +649,16 @@ const App = () => {
                 </Paper>
                 <Paper sx={{ p: 2, mb: 2 }}>
                   <Typography variant="h6" gutterBottom>3D 加工 (STL)</Typography>
+                  <Box sx={{ mb: 2 }}>
+                    <Button variant="outlined" onClick={handleSelectStockStl} fullWidth>材料STLを選択</Button>
+                    {stockStlFile && <Typography variant="caption" display="block" sx={{mt:1, textAlign: 'center'}}>{stockStlFile.split('\\').pop()}</Typography>}
+                  </Box>
+                  <Box sx={{ mb: 2 }}>
+                    <Button variant="outlined" onClick={handleSelectTargetStl} fullWidth>加工後形状STLを選択</Button>
+                    {targetStlFile && <Typography variant="caption" display="block" sx={{mt:1, textAlign: 'center'}}>{targetStlFile.split('\\').pop()}</Typography>}
+                  </Box>
                   <TextField label="スライス厚 (mm)" type="number" value={sliceHeight} onChange={(e) => setSliceHeight(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
-                  <Button variant="contained" onClick={handleGenerate3dPath}>3Dパス生成</Button>
+                  <Button variant="contained" onClick={handleGenerate3dPath} fullWidth>3D荒加工パス生成</Button>
                 </Paper>
                 <Paper sx={{ p: 2, mb: 2 }}>
                   <Typography variant="h6" gutterBottom>ドリル加工</Typography>

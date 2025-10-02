@@ -9,6 +9,21 @@ import { ReadlineParser } from '@serialport/parser-readline';
 let mainWindow: BrowserWindow | null;
 let port: SerialPort | null = null;
 
+type PocketPathParams = {
+  geometry: number[][];
+  toolDiameter: number;
+  stepover: number;
+};
+
+type RoughingPathParams = {
+  stockPath: string;
+  targetPath: string;
+  sliceHeight: number;
+  toolDiameter: number;
+  stepoverRatio: number;
+};
+
+
 // G-code sending job management
 let gcodeQueue: string[] = [];
 let gcodeJobStatus: 'idle' | 'sending' | 'paused' = 'idle';
@@ -36,10 +51,10 @@ function createWindow() {
 
 const menuTemplate: (Electron.MenuItemConstructorOptions | Electron.MenuItem)[] = [
   {
-    label: 'ファイル',
+    label: 'File',
     submenu: [
       {
-        label: 'ファイルを開く...', 
+        label: 'Open File...',
         click: async (item, window) => {
           if (window instanceof BrowserWindow) {
             const result = await dialog.showOpenDialog(window, {
@@ -60,17 +75,17 @@ const menuTemplate: (Electron.MenuItemConstructorOptions | Electron.MenuItem)[] 
       },
       { type: 'separator' },
       {
-        label: '終了',
+        label: 'Quit',
         accelerator: 'CmdOrCtrl+Q',
         click: () => app.quit(),
       },
     ],
   },
   {
-    label: '表示',
+    label: 'View',
     submenu: [
       {
-        label: '開発者ツールを開く',
+        label: 'Toggle Developer Tools',
         accelerator: 'CmdOrCtrl+Shift+I',
         click: (item, window: Electron.BaseWindow | undefined) => {
           if (window instanceof BrowserWindow) {
@@ -82,7 +97,7 @@ const menuTemplate: (Electron.MenuItemConstructorOptions | Electron.MenuItem)[] 
   },
 ];
 
-// Pythonプロセスを呼び出す汎用関数
+// Helper to run Python scripts
 function callPython(scriptName: string, args: (string | number)[]): Promise<any> {
   return new Promise((resolve, reject) => {
     const pythonExecutable = process.platform === 'win32'
@@ -282,11 +297,40 @@ app.whenReady().then(() => {
   ipcMain.handle('run-python-test', () => callPython('test.py', []));
   ipcMain.handle('parse-dxf-file', (event, filePath) => callPython('dxf_parser.py', [filePath]));
   ipcMain.handle('generate-contour-path', (event, toolDiameter, geometry, side) => callPython('contour_generator.py', [toolDiameter, JSON.stringify(geometry), side]));
-  ipcMain.handle('generate-pocket-path', (event, params) => callPython('pocket_generator.py', [JSON.stringify(params.geometry), params.toolDiameter, params.stepover]));
-  ipcMain.handle('generate-3d-path', (event, params) => callPython('z_level_slicer.py', [params.filePath, params.sliceHeight, params.toolDiameter, params.stepoverRatio]));
+  ipcMain.handle('generate-pocket-path', async (event, params: PocketPathParams) => {
+    if (!params || !Array.isArray(params.geometry)) {
+      return { status: 'error', message: 'Invalid geometry for pocket generation.' };
+    }
+
+    const { geometry, toolDiameter, stepover } = params;
+    return callPython('pocket_generator.py', [
+      JSON.stringify(geometry),
+      toolDiameter,
+      stepover,
+    ]);
+  });
+
+  ipcMain.handle('open-file', async (event, fileType: string) => {
+    const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow!, {
+      properties: ['openFile'],
+      filters: [{ name: `${fileType.toUpperCase()} Files`, extensions: [fileType] }],
+    });
+    if (canceled || filePaths.length === 0) {
+      return { status: 'canceled' };
+    }
+    return { status: 'success', filePath: filePaths[0] };
+  });
+
+  ipcMain.handle('generate-3d-roughing-path', async (event, params: RoughingPathParams) => {
+    if (!params?.stockPath || !params?.targetPath) {
+      return { status: 'error', message: 'Missing STL file paths.' };
+    }
+
+    return callPython('z_level_roughing.py', [JSON.stringify(params)]);
+  });
   ipcMain.handle('fit-arcs-to-toolpath', (event, toolpath, arcs) => callPython('arc_fitter.py', [JSON.stringify(toolpath), JSON.stringify(arcs)]));
 
-  // SVGパーサーハンドラ
+  // SVG parser handler
   ipcMain.handle('parse-svg-file', async (event, filePath) => {
     try {
       const data = fs.readFileSync(filePath, 'utf8');
@@ -300,7 +344,7 @@ app.whenReady().then(() => {
         }, [] as [number, number][]);
       }
 
-      // ベジェ曲線ヘルパー
+      // Bezier curve helpers
       const getQuadraticBezierPoint = (t: number, p0: number, p1: number, p2: number) => Math.pow(1 - t, 2) * p0 + 2 * (1 - t) * t * p1 + Math.pow(t, 2) * p2;
       const getCubicBezierPoint = (t: number, p0: number, p1: number, p2: number, p3: number) => Math.pow(1 - t, 3) * p0 + 3 * Math.pow(1 - t, 2) * t * p1 + 3 * (1 - t) * t * t * p2 + Math.pow(t, 3) * p3;
 
@@ -602,7 +646,7 @@ app.whenReady().then(() => {
       if (!focusedWindow) throw new Error('Could not find the focused window.');
 
       const { canceled, filePath } = await dialog.showSaveDialog(focusedWindow, {
-        title: 'G-codeを保存',
+        title: 'Save G-code',
         defaultPath: `${name}.nc`,
         filters: [{ name: 'NC Files', extensions: ['nc', 'gcode', 'txt'] }, { name: 'All Files', extensions: ['*'] }]
       });
@@ -621,7 +665,7 @@ app.whenReady().then(() => {
   setupGcodeGeneratorHandler('generate-gcode', 'gcode_generator.py');
   setupGcodeGeneratorHandler('generate-drill-gcode', 'drill_gcode_generator.py');
 
-  // メニューとウィンドウの作成
+  // Build application menu and window
   const menu = Menu.buildFromTemplate(menuTemplate);
   Menu.setApplicationMenu(menu);
   createWindow();
