@@ -1,11 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
-import * as THREE from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
-import { STLLoader } from 'three/examples/jsm/loaders/STLLoader';
-import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader';
-
-// Material-UI Imports
 import {
   CssBaseline,
   ThemeProvider,
@@ -14,284 +8,13 @@ import {
   Toolbar,
   Typography,
   Grid,
-  Paper,
-  Tabs,
-  Tab,
   Box,
-  TextField,
-  Button,
-  Select,
-  MenuItem,
-  FormControl,
-  InputLabel,
-  TextareaAutosize,
-  LinearProgress,
 } from '@mui/material';
-import { Refresh, Link, LinkOff, PlayArrow, Pause, Stop, Settings, Memory } from '@mui/icons-material';
+import { Memory } from '@mui/icons-material';
 
-
-// 型定義
-type DxfSegment = { points: [[number, number, number], [number, number, number]]; color: string };
-type DxfArc = { center: [number, number, number]; radius: number; start_angle: number; end_angle: number; };
-type Geometry = { segments: DxfSegment[]; arcs: DxfArc[]; drill_points: DrillPoint[] };
-type Toolpath = number[][];
-type ToolpathSegment =
-  | { type: 'line'; points: number[][] }
-  | { type: 'arc'; start: number[]; end: number[]; center: number[]; direction: 'cw' | 'ccw' };
-type DrillPoint = number[];
-
-interface ThreeViewerProps {
-  toolpaths: ToolpathSegment[] | null;
-  geometry: Geometry | null;
-  stockStlFile: string | null;
-  targetStlFile: string | null;
-}
-
-const SIDE_PANEL_WIDTH = 360;
-
-const ThreeViewer = ({ toolpaths, geometry, stockStlFile, targetStlFile }: ThreeViewerProps) => {
-  const mountRef = useRef<HTMLDivElement>(null);
-  const sceneRef = useRef<THREE.Scene | null>(null);
-  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
-  const controlsRef = useRef<OrbitControls | null>(null);
-  const stockModelRef = useRef<THREE.Object3D | null>(null);
-  const targetModelRef = useRef<THREE.Object3D | null>(null);
-  const toolpathGroupRef = useRef<THREE.Group | null>(null);
-  const dxfObjectRef = useRef<THREE.Group | null>(null);
-  const dxfArcsRef = useRef<THREE.Group | null>(null);
-  const drillPointsRef = useRef<THREE.Points | null>(null);
-
-  // 初期セットアップ
-  useEffect(() => {
-    if (!mountRef.current) return;
-    const currentMount = mountRef.current;
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color('#f0f0f0'); // Slightly lighter background
-    sceneRef.current = scene;
-
-    const camera = new THREE.PerspectiveCamera(75, currentMount.clientWidth / currentMount.clientHeight, 0.1, 1000);
-    camera.up.set(0, 0, 1);
-    camera.position.set(10, 10, 15);
-    cameraRef.current = camera;
-
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(currentMount.clientWidth, currentMount.clientHeight);
-    currentMount.appendChild(renderer.domElement);
-
-    // ライトを強化
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
-    scene.add(ambientLight);
-    const directionalLight1 = new THREE.DirectionalLight(0xffffff, 0.9);
-    directionalLight1.position.set(5, 5, 10);
-    scene.add(directionalLight1);
-    const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.4);
-    directionalLight2.position.set(-5, -5, -10);
-    scene.add(directionalLight2);
-
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controlsRef.current = controls;
-
-    const gridHelper = new THREE.GridHelper(20, 20);
-    gridHelper.rotation.x = Math.PI / 2;
-    scene.add(gridHelper);
-    const axesHelper = new THREE.AxesHelper(5);
-    scene.add(axesHelper);
-
-    const animate = () => {
-      requestAnimationFrame(animate);
-      controls.update();
-      renderer.render(scene, camera);
-    };
-    animate();
-
-    const handleResize = () => {
-      if (!mountRef.current || !cameraRef.current) return;
-      camera.aspect = mountRef.current.clientWidth / mountRef.current.clientHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
-    };
-    window.addEventListener('resize', handleResize);
-
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      currentMount.removeChild(renderer.domElement);
-    };
-  }, []);
-
-  // STL/OBJ 読み込み処理
-  useEffect(() => {
-    if (!sceneRef.current) return;
-    const scene = sceneRef.current;
-
-    // 前のモデルを削除
-    if (stockModelRef.current) scene.remove(stockModelRef.current);
-    if (targetModelRef.current) scene.remove(targetModelRef.current);
-
-    const fitCameraToObject = (object: THREE.Object3D) => {
-      if (!cameraRef.current || !controlsRef.current) return;
-      const box = new THREE.Box3().setFromObject(object);
-      const center = box.getCenter(new THREE.Vector3());
-      const size = box.getSize(new THREE.Vector3());
-      const maxDim = Math.max(size.x, size.y, size.z);
-      const fov = cameraRef.current.fov * (Math.PI / 180);
-      let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
-      cameraZ *= 1.5;
-
-      // オブジェクトを原点中心に移動させるのではなく、全体のバウンディングボックスの中心にカメラを向ける
-      // object.position.sub(center); 
-
-      const camPos = new THREE.Vector3();
-      camPos.copy(center);
-      camPos.x -= cameraZ * 0.7;
-      camPos.y -= cameraZ * 0.7;
-      camPos.z += cameraZ * 0.7;
-      cameraRef.current.position.copy(camPos);
-      cameraRef.current.up.set(0, 0, 1);
-
-      controlsRef.current.target.copy(center);
-      controlsRef.current.update();
-    };
-
-    const loadStl = (filePath: string, material: THREE.Material, modelRef: React.MutableRefObject<THREE.Object3D | null>) => {
-      const loader = new STLLoader();
-      loader.load(filePath, (geometry) => {
-        geometry.computeVertexNormals();
-        const mesh = new THREE.Mesh(geometry, material);
-        mesh.rotation.x = -Math.PI / 2;
-        scene.add(mesh);
-        modelRef.current = mesh;
-
-        // 両方のモデルが読み込まれた後にカメラを調整
-        const combinedBox = new THREE.Box3();
-        if (stockModelRef.current) combinedBox.expandByObject(stockModelRef.current);
-        if (targetModelRef.current) combinedBox.expandByObject(targetModelRef.current);
-        if (!combinedBox.isEmpty()) {
-          fitCameraToObject(stockModelRef.current ?? targetModelRef.current!);
-        }
-      });
-    };
-
-    // 材料STLの読み込み
-    if (stockStlFile) {
-      const stockMaterial = new THREE.MeshStandardMaterial({
-        color: 0x1565c0, // Blue
-        transparent: true,
-        opacity: 0.3,
-        wireframe: true,
-      });
-      loadStl(stockStlFile, stockMaterial, stockModelRef);
-    }
-
-    // 加工後形状STLの読み込み
-    if (targetStlFile) {
-      const targetMaterial = new THREE.MeshStandardMaterial({
-        color: 0x999999, metalness: 0.1, roughness: 0.5, side: THREE.DoubleSide,
-      });
-      loadStl(targetStlFile, targetMaterial, targetModelRef);
-    }
-
-  }, [stockStlFile, targetStlFile]);
-
-  // DXF/SVG描画処理
-  useEffect(() => {
-    if (dxfObjectRef.current && sceneRef.current) sceneRef.current.remove(dxfObjectRef.current);
-    if (geometry && geometry.segments && sceneRef.current) {
-      const group = new THREE.Group();
-      for (const segment of geometry.segments) {
-        const material = new THREE.LineBasicMaterial({ color: segment.color || 0x333333 });
-        const points = segment.points.map(p => new THREE.Vector3(p[0], p[1], p[2]));
-        const geometry = new THREE.BufferGeometry().setFromPoints(points);
-        const line = new THREE.Line(geometry, material);
-        group.add(line);
-      }
-      sceneRef.current.add(group);
-      dxfObjectRef.current = group;
-    }
-  }, [geometry]);
-
-  // ドリル点描画処理
-  useEffect(() => {
-    if (drillPointsRef.current && sceneRef.current) sceneRef.current.remove(drillPointsRef.current);
-    if (geometry && geometry.drill_points && sceneRef.current) {
-      const pointsGeometry = new THREE.BufferGeometry();
-      const vertices = new Float32Array(geometry.drill_points.flat());
-      pointsGeometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
-      const material = new THREE.PointsMaterial({ color: 0x00ff00, size: 0.5, sizeAttenuation: false });
-      const points = new THREE.Points(pointsGeometry, material);
-      sceneRef.current.add(points);
-      drillPointsRef.current = points;
-    }
-  }, [geometry]);
-
-  // 円弧描画処理
-  useEffect(() => {
-    if (dxfArcsRef.current && sceneRef.current) sceneRef.current.remove(dxfArcsRef.current);
-    if (geometry && geometry.arcs && sceneRef.current) {
-      const group = new THREE.Group();
-      const material = new THREE.LineBasicMaterial({ color: 0x3333cc }); // Arc color
-      for (const arc of geometry.arcs) {
-        const curve = new THREE.ArcCurve(
-          arc.center[0],
-          arc.center[1],
-          arc.radius,
-          arc.start_angle * (Math.PI / 180), // Convert to radians
-          arc.end_angle * (Math.PI / 180),   // Convert to radians
-          false // Clockwise
-        );
-        const points = curve.getPoints(50);
-        const arcGeometry = new THREE.BufferGeometry().setFromPoints(points);
-        const arcLine = new THREE.Line(arcGeometry, material);
-        // Arcs are usually on the XY plane, no rotation needed if Z is handled
-        arcLine.position.z = arc.center[2];
-        group.add(arcLine);
-      }
-      sceneRef.current.add(group);
-      dxfArcsRef.current = group;
-    }
-  }, [geometry]);
-
-  // ツールパス描画処理
-  useEffect(() => {
-    if (toolpathGroupRef.current && sceneRef.current) sceneRef.current.remove(toolpathGroupRef.current);
-    if (toolpaths && sceneRef.current) {
-      const group = new THREE.Group();
-      const lineMaterial = new THREE.LineBasicMaterial({ color: 0xff0000 });
-      const arcMaterial = new THREE.LineBasicMaterial({ color: 0x0000ff }); // Use a different color for arcs to distinguish
-
-      for (const segment of toolpaths) {
-        if (segment.type === 'line') {
-          const points = segment.points.map(p => new THREE.Vector3(p[0], p[1], p[2] || 0));
-          const geometry = new THREE.BufferGeometry().setFromPoints(points);
-          const line = new THREE.Line(geometry, lineMaterial);
-          group.add(line);
-        } else if (segment.type === 'arc') {
-          const { start, end, center, direction } = segment;
-          // Note: ArcCurve needs 2D coordinates for its constructor.
-          // The Z coordinate is applied to the resulting line's position.
-          const curve = new THREE.ArcCurve(
-            center[0],
-            center[1],
-            Math.hypot(start[0] - center[0], start[1] - center[1]), // radius
-            Math.atan2(start[1] - center[1], start[0] - center[0]), // startAngle
-            Math.atan2(end[1] - center[1], end[0] - center[0]),     // endAngle
-            direction === 'cw'
-          );
-          const points = curve.getPoints(50);
-          const arcGeometry = new THREE.BufferGeometry().setFromPoints(points);
-          const arcLine = new THREE.Line(arcGeometry, arcMaterial);
-          // Assuming arcs are on the XY plane, their Z is constant
-          arcLine.position.z = start[2] || 0;
-          group.add(arcLine);
-        }
-      }
-      sceneRef.current.add(group);
-      toolpathGroupRef.current = group;
-    }
-  }, [toolpaths]);
-
-  return <div ref={mountRef} style={{ width: '100%', height: '100%', position: 'relative' }} />;
-};
+import ThreeViewer from './components/ThreeViewer';
+import ControlPanel from './components/ControlPanel';
+import { Geometry, ToolpathSegment, Toolpath } from './types';
 
 const theme = createTheme({
   palette: {
@@ -582,17 +305,6 @@ const App = () => {
     }
   };
 
-  const [activeTab, setActiveTab] = useState(0);
-
-  const TabPanel = (props: { children?: React.ReactNode; index: number; value: number; }) => {
-    const { children, value, index, ...other } = props;
-    return (
-      <div role="tabpanel" hidden={value !== index} {...other}>
-        {value === index && <Box sx={{ p: 3 }}>{children}</Box>}
-      </div>
-    );
-  }
-
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
@@ -609,153 +321,58 @@ const App = () => {
           <Grid item sx={{ flex: 1, minWidth: 0, height: '100%', position: 'relative' }}>
             <ThreeViewer toolpaths={toolpaths} geometry={geometry} stockStlFile={stockStlFile} targetStlFile={targetStlFile} />
           </Grid>
-          <Grid
-            item
-            sx={{
-              width: SIDE_PANEL_WIDTH,
-              flexShrink: 0,
-              height: '100%',
-              display: 'flex',
-              flexDirection: 'column',
-              borderLeft: '1px solid #ccc',
-            }}
-          >
-            <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
-              <Tabs value={activeTab} onChange={(e, newValue) => setActiveTab(newValue)} centered>
-                <Tab label="CAM" />
-                <Tab label="CNC" />
-              </Tabs>
-            </Box>
-            <Box sx={{ flexGrow: 1, overflowY: 'auto' }}>
-              <TabPanel value={activeTab} index={0}>
-                <Paper sx={{ p: 2, mb: 2 }}>
-                  <Typography variant="h6" gutterBottom>ツール設定</Typography>
-                  <TextField label="工具径 (mm)" type="number" value={toolDiameter} onChange={(e) => setToolDiameter(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
-                </Paper>
-                <Paper sx={{ p: 2, mb: 2 }}>
-                  <Typography variant="h6" gutterBottom>2.5D 加工 (DXF/SVG)</Typography>
-                  <TextField label="ステップオーバー (%)" type="number" value={stepover * 100} onChange={(e) => setStepover(parseFloat(e.target.value) / 100)} fullWidth margin="normal" size="small" />
-                  <FormControl fullWidth margin="normal" size="small">
-                    <InputLabel>輪郭方向</InputLabel>
-                    <Select value={contourSide} label="輪郭方向" onChange={(e) => setContourSide(e.target.value)}>
-                      <MenuItem value="outer">外側</MenuItem>
-                      <MenuItem value="inner">内側</MenuItem>
-                    </Select>
-                  </FormControl>
-                  <Button variant="contained" onClick={handleGenerateContour} sx={{ mr: 1 }}>輪郭パス生成</Button>
-                  <Button variant="contained" onClick={handleGeneratePocket}>ポケットパス生成</Button>
-                </Paper>
-                <Paper sx={{ p: 2, mb: 2 }}>
-                  <Typography variant="h6" gutterBottom>3D 加工 (STL)</Typography>
-                  <Box sx={{ mb: 2 }}>
-                    <Button variant="outlined" onClick={handleSelectStockStl} fullWidth>材料STLを選択</Button>
-                    {stockStlFile && <Typography variant="caption" display="block" sx={{ mt: 1, textAlign: 'center' }}>{stockStlFile.split('\\').pop()}</Typography>}
-                  </Box>
-                  <Box sx={{ mb: 2 }}>
-                    <Button variant="outlined" onClick={handleSelectTargetStl} fullWidth>加工後形状STLを選択</Button>
-                    {targetStlFile && <Typography variant="caption" display="block" sx={{ mt: 1, textAlign: 'center' }}>{targetStlFile.split('\\').pop()}</Typography>}
-                  </Box>
-                  <TextField label="スライス厚 (mm)" type="number" value={sliceHeight} onChange={(e) => setSliceHeight(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
-                  <Button variant="contained" onClick={handleGenerate3dPath} fullWidth>3D荒加工パス生成</Button>
-                </Paper>
-                <Paper sx={{ p: 2, mb: 2 }}>
-                  <Typography variant="h6" gutterBottom>ドリル加工</Typography>
-                  <TextField label="R点 (切り込み開始高さ)" type="number" value={retractZ} onChange={(e) => setRetractZ(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
-                  <TextField label="ペック量 (Q)" type="number" value={peckQ} onChange={(e) => setPeckQ(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
-                  <Button variant="contained" onClick={handleGenerateDrillGcode}>ドリルGコード生成</Button>
-                </Paper>
-                <Paper sx={{ p: 2, mb: 2 }}>
-                  <Typography variant="h6" gutterBottom>Gコード保存</Typography>
-                  <TextField label="送り速度 (mm/min)" type="number" value={feedRate} onChange={(e) => setFeedRate(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
-                  <Button variant="contained" onClick={handleSaveGcode}>Gコード保存</Button>
-                </Paper>
-              </TabPanel>
-              <TabPanel value={activeTab} index={1}>
-                <Paper sx={{ p: 2, mb: 2 }}>
-                  <Typography variant="h6" gutterBottom>マシン設定</Typography>
-                  <TextField label="安全高さ (mm)" type="number" value={safeZ} onChange={(e) => setSafeZ(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
-                  <TextField label="切り込み深さ (mm)" type="number" value={stepDown} onChange={(e) => setStepDown(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
-                  <TextField label="リトラクト高さ (mm)" type="number" value={retractZ} onChange={(e) => setRetractZ(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
-                  <TextField label="ペック量 (Q)" type="number" value={peckQ} onChange={(e) => setPeckQ(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
-                </Paper>
-                <Paper sx={{ p: 2, mb: 2 }}>
-                  <Typography variant="h6" gutterBottom>CNC 接続</Typography>
-                  <FormControl fullWidth margin="normal" size="small" disabled={isConnected}>
-                    <InputLabel>ポート</InputLabel>
-                    <Select value={selectedPort} label="ポート" onChange={(e) => setSelectedPort(e.target.value)}>
-                      {serialPorts.map(port => <MenuItem key={port.path} value={port.path}>{port.path}</MenuItem>)}
-                    </Select>
-                  </FormControl>
-                  <TextField label="ボーレート" type="number" value={baudRate} onChange={(e) => setBaudRate(parseInt(e.target.value))} fullWidth margin="normal" size="small" disabled={isConnected} />
-                  <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
-                    <Button variant="outlined" onClick={handleRefreshPorts} disabled={isConnected} startIcon={<Refresh />}>更新</Button>
-                    {!isConnected ? (
-                      <Button variant="contained" onClick={handleConnect} startIcon={<Link />}>接続</Button>
-                    ) : (
-                      <Button variant="contained" color="secondary" onClick={handleDisconnect} startIcon={<LinkOff />}>切断</Button>
-                    )}
-                  </Box>
-                  <TextareaAutosize
-                    readOnly
-                    minRows={5}
-                    value={consoleLog.join('\n')}
-                    style={{ width: '100%', marginTop: '1rem', backgroundColor: '#222', color: '#0f0', fontFamily: 'monospace', padding: '8px' }}
-                  />
-                </Paper>
-                <Paper sx={{ p: 2, mb: 2 }}>
-                  <Typography variant="h6" gutterBottom>Gコード送信</Typography>
-                  <TextField
-                    multiline
-                    rows={8}
-                    fullWidth
-                    variant="outlined"
-                    value={gcode}
-                    onChange={(e) => setGcode(e.target.value)}
-                    placeholder="ここにG-codeを貼り付け..."
-                    sx={{ mb: 1, fontFamily: 'monospace' }}
-                  />
-                  <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 1 }}>
-                    <Button variant="contained" onClick={handleSendGcode} disabled={!isConnected || gcodeStatus !== 'idle'} startIcon={<PlayArrow />}>送信</Button>
-                    <Button variant="outlined" onClick={handlePauseGcode} disabled={gcodeStatus !== 'sending'} startIcon={<Pause />}>一時停止</Button>
-                    <Button variant="outlined" onClick={handleResumeGcode} disabled={gcodeStatus !== 'paused'} startIcon={<PlayArrow />}>再開</Button>
-                    <Button variant="outlined" color="secondary" onClick={handleStopGcode} disabled={gcodeStatus === 'idle'} startIcon={<Stop />}>停止</Button>
-                  </Box>
-                  <Box sx={{ width: '100%' }}>
-                    <Typography variant="body2">状態: {{ 'idle': '待機中', 'sending': '送信中', 'paused': '一時停止中', 'finished': '完了', 'error': 'エラー' }[gcodeStatus] || gcodeStatus}</Typography>
-                    <LinearProgress variant="determinate" value={(gcodeProgress.total > 0 ? (gcodeProgress.sent / gcodeProgress.total) * 100 : 0)} />
-                    <Typography variant="body2" align="right">{gcodeProgress.sent}/{gcodeProgress.total}</Typography>
-                  </Box>
-                </Paper>
-                <Paper sx={{ p: 2, mb: 2 }}>
-                  <Typography variant="h6" gutterBottom>手動操作 (Jog)</Typography>
-                  <Box sx={{ mb: 2 }}>
-                    <Typography variant="body2">マシン状態: {machinePosition.status}</Typography>
-                    <Typography variant="body2">WPos: X:{machinePosition.wpos.x.toFixed(3)} Y:{machinePosition.wpos.y.toFixed(3)} Z:{machinePosition.wpos.z.toFixed(3)}</Typography>
-                    <Typography variant="body2">MPos: X:{machinePosition.mpos.x.toFixed(3)} Y:{machinePosition.mpos.y.toFixed(3)} Z:{machinePosition.mpos.z.toFixed(3)}</Typography>
-                  </Box>
-                  <Box sx={{ mb: 2 }}>
-                    <Typography component="span" sx={{ mr: 1 }}>移動量(mm):</Typography>
-                    {[0.1, 1, 10, 100].map(step => (
-                      <Button key={step} size="small" variant={jogStep === step ? 'contained' : 'outlined'} onClick={() => setJogStep(step)} sx={{ mr: 1 }}>
-                        {step}
-                      </Button>
-                    ))}
-                  </Box>
-                  <Grid container spacing={1} alignItems="center" justifyContent="center">
-                    <Grid item xs={4} />
-                    <Grid item xs={4}><Button fullWidth variant="outlined" onClick={() => handleJog('Y', 1)}>Y+</Button></Grid>
-                    <Grid item xs={4}><Button fullWidth variant="outlined" onClick={() => handleJog('Z', 1)}>Z+</Button></Grid>
-                    <Grid item xs={4}><Button fullWidth variant="outlined" onClick={() => handleJog('X', -1)}>X-</Button></Grid>
-                    <Grid item xs={4}><Button fullWidth variant="contained" color="secondary" onClick={handleSetZero} startIcon={<Settings />}>原点</Button></Grid>
-                    <Grid item xs={4}><Button fullWidth variant="outlined" onClick={() => handleJog('X', 1)}>X+</Button></Grid>
-                    <Grid item xs={4} />
-                    <Grid item xs={4}><Button fullWidth variant="outlined" onClick={() => handleJog('Y', -1)}>Y-</Button></Grid>
-                    <Grid item xs={4}><Button fullWidth variant="outlined" onClick={() => handleJog('Z', -1)}>Z-</Button></Grid>
-                  </Grid>
-                </Paper>
-              </TabPanel>
-            </Box>
-          </Grid>
+          <ControlPanel
+            toolDiameter={toolDiameter}
+            setToolDiameter={setToolDiameter}
+            stepover={stepover}
+            setStepover={setStepover}
+            contourSide={contourSide}
+            setContourSide={setContourSide}
+            handleGenerateContour={handleGenerateContour}
+            handleGeneratePocket={handleGeneratePocket}
+            stockStlFile={stockStlFile}
+            targetStlFile={targetStlFile}
+            handleSelectStockStl={handleSelectStockStl}
+            handleSelectTargetStl={handleSelectTargetStl}
+            sliceHeight={sliceHeight}
+            setSliceHeight={setSliceHeight}
+            handleGenerate3dPath={handleGenerate3dPath}
+            retractZ={retractZ}
+            setRetractZ={setRetractZ}
+            peckQ={peckQ}
+            setPeckQ={setPeckQ}
+            handleGenerateDrillGcode={handleGenerateDrillGcode}
+            feedRate={feedRate}
+            setFeedRate={setFeedRate}
+            handleSaveGcode={handleSaveGcode}
+            safeZ={safeZ}
+            setSafeZ={setSafeZ}
+            stepDown={stepDown}
+            setStepDown={setStepDown}
+            isConnected={isConnected}
+            selectedPort={selectedPort}
+            setSelectedPort={setSelectedPort}
+            serialPorts={serialPorts}
+            baudRate={baudRate}
+            setBaudRate={setBaudRate}
+            handleRefreshPorts={handleRefreshPorts}
+            handleConnect={handleConnect}
+            handleDisconnect={handleDisconnect}
+            consoleLog={consoleLog}
+            gcode={gcode}
+            setGcode={setGcode}
+            handleSendGcode={handleSendGcode}
+            gcodeStatus={gcodeStatus}
+            handlePauseGcode={handlePauseGcode}
+            handleResumeGcode={handleResumeGcode}
+            handleStopGcode={handleStopGcode}
+            gcodeProgress={gcodeProgress}
+            machinePosition={machinePosition}
+            jogStep={jogStep}
+            setJogStep={setJogStep}
+            handleJog={handleJog}
+            handleSetZero={handleSetZero}
+          />
         </Grid>
       </Box>
     </ThemeProvider>
