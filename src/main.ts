@@ -82,20 +82,20 @@ ipcMain.handle('save-settings', async (event, settings) => {
   }
 });
 
-  // Create the browser window.
+// Create the browser window.
 
 const menuTemplate: (Electron.MenuItemConstructorOptions | Electron.MenuItem)[] = [
   {
-    label: 'File',
+    label: 'ファイル',
     submenu: [
       {
-        label: 'Open File...',
+        label: 'ファイルを開く...',
         click: async (item, window) => {
           if (window instanceof BrowserWindow) {
             const result = await dialog.showOpenDialog(window, {
               properties: ['openFile'],
               filters: [
-                { name: '3D/2D Files', extensions: ['stl', 'dxf', 'svg', 'obj'] },
+                { name: '3D/2Dファイル', extensions: ['stl', 'dxf', 'svg', 'obj'] },
                 { name: 'STL Files', extensions: ['stl'] },
                 { name: 'OBJ Files', extensions: ['obj'] },
                 { name: 'DXF Files', extensions: ['dxf'] },
@@ -110,17 +110,17 @@ const menuTemplate: (Electron.MenuItemConstructorOptions | Electron.MenuItem)[] 
       },
       { type: 'separator' },
       {
-        label: 'Quit',
+        label: '終了',
         accelerator: 'CmdOrCtrl+Q',
         click: () => app.quit(),
       },
     ],
   },
   {
-    label: 'View',
+    label: '表示',
     submenu: [
       {
-        label: 'Toggle Developer Tools',
+        label: '開発者ツール',
         accelerator: 'CmdOrCtrl+Shift+I',
         click: (item, window: Electron.BaseWindow | undefined) => {
           if (window instanceof BrowserWindow) {
@@ -222,28 +222,28 @@ app.whenReady().then(() => {
 
         // Parse status reports like <Idle|WPos:0.000,0.000,0.000|MPos:0.000,0.000,0.000|FS:0,0>
         if (line.startsWith('<') && line.endsWith('>')) {
-            const status = line.substring(1, line.length - 1).split('|');
-            const machineStatus = {
-                status: status[0],
-                wpos: { x: 0, y: 0, z: 0 },
-                mpos: { x: 0, y: 0, z: 0 },
-            };
-            status.forEach((part: string) => {
-                if (part.startsWith('WPos:')) {
-                    const coords = part.substring(5).split(',');
-                    machineStatus.wpos = { x: parseFloat(coords[0]), y: parseFloat(coords[1]), z: parseFloat(coords[2]) };
-                }
-                if (part.startsWith('MPos:')) {
-                    const coords = part.substring(5).split(',');
-                    machineStatus.mpos = { x: parseFloat(coords[0]), y: parseFloat(coords[1]), z: parseFloat(coords[2]) };
-                }
-            });
-            mainWindow?.webContents.send('serial:status', machineStatus);
+          const status = line.substring(1, line.length - 1).split('|');
+          const machineStatus = {
+            status: status[0],
+            wpos: { x: 0, y: 0, z: 0 },
+            mpos: { x: 0, y: 0, z: 0 },
+          };
+          status.forEach((part: string) => {
+            if (part.startsWith('WPos:')) {
+              const coords = part.substring(5).split(',');
+              machineStatus.wpos = { x: parseFloat(coords[0]), y: parseFloat(coords[1]), z: parseFloat(coords[2]) };
+            }
+            if (part.startsWith('MPos:')) {
+              const coords = part.substring(5).split(',');
+              machineStatus.mpos = { x: parseFloat(coords[0]), y: parseFloat(coords[1]), z: parseFloat(coords[2]) };
+            }
+          });
+          mainWindow?.webContents.send('serial:status', machineStatus);
         }
 
         if (line.startsWith('ok') || line.startsWith('error')) {
-            mainWindow?.webContents.send('serial:gcode-progress', { sent: totalLines - gcodeQueue.length, total: totalLines, status: gcodeJobStatus });
-            sendNextLine();
+          mainWindow?.webContents.send('serial:gcode-progress', { sent: totalLines - gcodeQueue.length, total: totalLines, status: gcodeJobStatus });
+          sendNextLine();
         }
       });
 
@@ -309,23 +309,23 @@ app.whenReady().then(() => {
     gcodeQueue = [];
     gcodeJobStatus = 'idle';
     if (port && port.isOpen) {
-        // Send a soft reset to Grbl to clear any running commands
-        port.write('\x18'); 
+      // Send a soft reset to Grbl to clear any running commands
+      port.write('\x18');
     }
     mainWindow?.webContents.send('serial:gcode-progress', { sent: 0, total: 0, status: 'idle' });
   });
 
   ipcMain.on('serial:jog', (event, { axis, direction, step }) => {
-      if (port && port.isOpen) {
-          const command = `$J=G91 ${axis}${step * direction} F1000\n`; // Using a fixed feedrate for jogging
-          port.write(command);
-      }
+    if (port && port.isOpen) {
+      const command = `$J=G91 ${axis}${step * direction} F1000\n`; // Using a fixed feedrate for jogging
+      port.write(command);
+    }
   });
 
   ipcMain.on('serial:set-zero', () => {
-      if (port && port.isOpen) {
-          port.write('G10 L20 P1 X0 Y0 Z0\n');
-      }
+    if (port && port.isOpen) {
+      port.write('G10 L20 P1 X0 Y0 Z0\n');
+    }
   });
 
   // --- Python Handlers ---
@@ -374,7 +374,7 @@ app.whenReady().then(() => {
 
       function parsePoints(pointsStr: string): [number, number][] {
         return pointsStr.split(/[\s,]+/).filter(p => p).reduce((acc, val, i, arr) => {
-          if (i % 2 === 0 && arr[i+1] !== undefined) acc.push([parseFloat(val), parseFloat(arr[i + 1])]);
+          if (i % 2 === 0 && arr[i + 1] !== undefined) acc.push([parseFloat(val), parseFloat(arr[i + 1])]);
           return acc;
         }, [] as [number, number][]);
       }
@@ -411,8 +411,8 @@ app.whenReady().then(() => {
               [currentX, currentY] = [args[0], args[1]];
               [startX, startY] = [currentX, currentY];
               for (let i = 2; i < args.length; i += 2) {
-                addSegment([currentX, currentY], [args[i], args[i+1]]);
-                [currentX, currentY] = [args[i], args[i+1]];
+                addSegment([currentX, currentY], [args[i], args[i + 1]]);
+                [currentX, currentY] = [args[i], args[i + 1]];
               }
               break;
             case 'm':
@@ -420,22 +420,22 @@ app.whenReady().then(() => {
               currentY += args[1];
               [startX, startY] = [currentX, currentY];
               for (let i = 2; i < args.length; i += 2) {
-                addSegment([currentX, currentY], [currentX + args[i], currentY + args[i+1]]);
+                addSegment([currentX, currentY], [currentX + args[i], currentY + args[i + 1]]);
                 currentX += args[i];
-                currentY += args[i+1];
+                currentY += args[i + 1];
               }
               break;
             case 'L':
               for (let i = 0; i < args.length; i += 2) {
-                addSegment([currentX, currentY], [args[i], args[i+1]]);
-                [currentX, currentY] = [args[i], args[i+1]];
+                addSegment([currentX, currentY], [args[i], args[i + 1]]);
+                [currentX, currentY] = [args[i], args[i + 1]];
               }
               break;
             case 'l':
               for (let i = 0; i < args.length; i += 2) {
-                addSegment([currentX, currentY], [currentX + args[i], currentY + args[i+1]]);
+                addSegment([currentX, currentY], [currentX + args[i], currentY + args[i + 1]]);
                 currentX += args[i];
-                currentY += args[i+1];
+                currentY += args[i + 1];
               }
               break;
             case 'H':
@@ -469,7 +469,7 @@ app.whenReady().then(() => {
 
             case 'Q':
               for (let i = 0; i < args.length; i += 4) {
-                const x1 = args[i], y1 = args[i+1], x2 = args[i+2], y2 = args[i+3];
+                const x1 = args[i], y1 = args[i + 1], x2 = args[i + 2], y2 = args[i + 3];
                 const divisions = 16;
                 for (let j = 0; j < divisions; j++) {
                   const t1 = j / divisions, t2 = (j + 1) / divisions;
@@ -484,7 +484,7 @@ app.whenReady().then(() => {
               break;
             case 'q':
               for (let i = 0; i < args.length; i += 4) {
-                const x1 = currentX + args[i], y1 = currentY + args[i+1], x2 = currentX + args[i+2], y2 = currentY + args[i+3];
+                const x1 = currentX + args[i], y1 = currentY + args[i + 1], x2 = currentX + args[i + 2], y2 = currentY + args[i + 3];
                 const divisions = 16;
                 for (let j = 0; j < divisions; j++) {
                   const t1 = j / divisions, t2 = (j + 1) / divisions;
@@ -499,7 +499,7 @@ app.whenReady().then(() => {
               break;
             case 'T':
               for (let i = 0; i < args.length; i += 2) {
-                const endX = args[i], endY = args[i+1];
+                const endX = args[i], endY = args[i + 1];
                 const controlX = 'QqTt'.includes(lastCommand) ? 2 * currentX - lastControlX : currentX;
                 const controlY = 'QqTt'.includes(lastCommand) ? 2 * currentY - lastControlY : currentY;
                 const divisions = 16;
@@ -515,8 +515,8 @@ app.whenReady().then(() => {
               }
               break;
             case 't':
-               for (let i = 0; i < args.length; i += 2) {
-                const endX = currentX + args[i], endY = currentY + args[i+1];
+              for (let i = 0; i < args.length; i += 2) {
+                const endX = currentX + args[i], endY = currentY + args[i + 1];
                 const controlX = 'QqTt'.includes(lastCommand) ? 2 * currentX - lastControlX : currentX;
                 const controlY = 'QqTt'.includes(lastCommand) ? 2 * currentY - lastControlY : currentY;
                 const divisions = 16;
@@ -533,7 +533,7 @@ app.whenReady().then(() => {
               break;
             case 'C':
               for (let i = 0; i < args.length; i += 6) {
-                const x1 = args[i], y1 = args[i+1], x2 = args[i+2], y2 = args[i+3], x3 = args[i+4], y3 = args[i+5];
+                const x1 = args[i], y1 = args[i + 1], x2 = args[i + 2], y2 = args[i + 3], x3 = args[i + 4], y3 = args[i + 5];
                 const divisions = 16;
                 for (let j = 0; j < divisions; j++) {
                   const t1 = j / divisions, t2 = (j + 1) / divisions;
@@ -548,7 +548,7 @@ app.whenReady().then(() => {
               break;
             case 'c':
               for (let i = 0; i < args.length; i += 6) {
-                const x1 = currentX + args[i], y1 = currentY + args[i+1], x2 = currentX + args[i+2], y2 = currentY + args[i+3], x3 = currentX + args[i+4], y3 = currentY + args[i+5];
+                const x1 = currentX + args[i], y1 = currentY + args[i + 1], x2 = currentX + args[i + 2], y2 = currentY + args[i + 3], x3 = currentX + args[i + 4], y3 = currentY + args[i + 5];
                 const divisions = 16;
                 for (let j = 0; j < divisions; j++) {
                   const t1 = j / divisions, t2 = (j + 1) / divisions;
@@ -563,13 +563,13 @@ app.whenReady().then(() => {
               break;
             case 'S':
               for (let i = 0; i < args.length; i += 4) {
-                const x2 = args[i], y2 = args[i+1], x3 = args[i+2], y3 = args[i+3];
+                const x2 = args[i], y2 = args[i + 1], x3 = args[i + 2], y3 = args[i + 3];
                 const x1 = 'CcSs'.includes(lastCommand) ? 2 * currentX - lastControlX : currentX;
                 const y1 = 'CcSs'.includes(lastCommand) ? 2 * currentY - lastControlY : currentY;
                 const divisions = 16;
                 for (let j = 0; j < divisions; j++) {
                   const t1 = j / divisions, t2 = (j + 1) / divisions;
-                   addSegment(
+                  addSegment(
                     [getCubicBezierPoint(t1, currentX, x1, x2, x3), getCubicBezierPoint(t1, currentY, y1, y2, y3)],
                     [getCubicBezierPoint(t2, currentX, x1, x2, x3), getCubicBezierPoint(t2, currentY, y1, y2, y3)]
                   );
@@ -580,13 +580,13 @@ app.whenReady().then(() => {
               break;
             case 's':
               for (let i = 0; i < args.length; i += 4) {
-                const x2 = currentX + args[i], y2 = currentY + args[i+1], x3 = currentX + args[i+2], y3 = currentY + args[i+3];
+                const x2 = currentX + args[i], y2 = currentY + args[i + 1], x3 = currentX + args[i + 2], y3 = currentY + args[i + 3];
                 const x1 = 'CcSs'.includes(lastCommand) ? 2 * currentX - lastControlX : currentX;
                 const y1 = 'CcSs'.includes(lastCommand) ? 2 * currentY - lastControlY : currentY;
                 const divisions = 16;
                 for (let j = 0; j < divisions; j++) {
                   const t1 = j / divisions, t2 = (j + 1) / divisions;
-                   addSegment(
+                  addSegment(
                     [getCubicBezierPoint(t1, currentX, x1, x2, x3), getCubicBezierPoint(t1, currentY, y1, y2, y3)],
                     [getCubicBezierPoint(t2, currentX, x1, x2, x3), getCubicBezierPoint(t2, currentY, y1, y2, y3)]
                   );
@@ -634,7 +634,7 @@ app.whenReady().then(() => {
             const points = parsePoints(props.points || '');
             if (points.length < 2) break;
             for (let i = 0; i < points.length - 1; i++) {
-              segments.push({ points: [[points[i][0], -points[i][1], 0], [points[i+1][0], -points[i+1][1], 0]], color });
+              segments.push({ points: [[points[i][0], -points[i][1], 0], [points[i + 1][0], -points[i + 1][1], 0]], color });
             }
             segments.push({ points: [[points[points.length - 1][0], -points[points.length - 1][1], 0], [points[0][0], -points[0][1], 0]], color });
             break;

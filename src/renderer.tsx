@@ -129,29 +129,29 @@ const ThreeViewer = ({ toolpaths, geometry, stockStlFile, targetStlFile }: Three
     if (targetModelRef.current) scene.remove(targetModelRef.current);
 
     const fitCameraToObject = (object: THREE.Object3D) => {
-        if (!cameraRef.current || !controlsRef.current) return;
-        const box = new THREE.Box3().setFromObject(object);
-        const center = box.getCenter(new THREE.Vector3());
-        const size = box.getSize(new THREE.Vector3());
-        const maxDim = Math.max(size.x, size.y, size.z);
-        const fov = cameraRef.current.fov * (Math.PI / 180);
-        let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
-        cameraZ *= 1.5;
-  
-        // オブジェクトを原点中心に移動させるのではなく、全体のバウンディングボックスの中心にカメラを向ける
-        // object.position.sub(center); 
-  
-        const camPos = new THREE.Vector3();
-        camPos.copy(center);
-        camPos.x -= cameraZ * 0.7;
-        camPos.y -= cameraZ * 0.7;
-        camPos.z += cameraZ * 0.7;
-        cameraRef.current.position.copy(camPos);
-        cameraRef.current.up.set(0, 0, 1);
-  
-        controlsRef.current.target.copy(center);
-        controlsRef.current.update();
-      };
+      if (!cameraRef.current || !controlsRef.current) return;
+      const box = new THREE.Box3().setFromObject(object);
+      const center = box.getCenter(new THREE.Vector3());
+      const size = box.getSize(new THREE.Vector3());
+      const maxDim = Math.max(size.x, size.y, size.z);
+      const fov = cameraRef.current.fov * (Math.PI / 180);
+      let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
+      cameraZ *= 1.5;
+
+      // オブジェクトを原点中心に移動させるのではなく、全体のバウンディングボックスの中心にカメラを向ける
+      // object.position.sub(center); 
+
+      const camPos = new THREE.Vector3();
+      camPos.copy(center);
+      camPos.x -= cameraZ * 0.7;
+      camPos.y -= cameraZ * 0.7;
+      camPos.z += cameraZ * 0.7;
+      cameraRef.current.position.copy(camPos);
+      cameraRef.current.up.set(0, 0, 1);
+
+      controlsRef.current.target.copy(center);
+      controlsRef.current.update();
+    };
 
     const loadStl = (filePath: string, material: THREE.Material, modelRef: React.MutableRefObject<THREE.Object3D | null>) => {
       const loader = new STLLoader();
@@ -167,7 +167,7 @@ const ThreeViewer = ({ toolpaths, geometry, stockStlFile, targetStlFile }: Three
         if (stockModelRef.current) combinedBox.expandByObject(stockModelRef.current);
         if (targetModelRef.current) combinedBox.expandByObject(targetModelRef.current);
         if (!combinedBox.isEmpty()) {
-            fitCameraToObject(stockModelRef.current ?? targetModelRef.current!);
+          fitCameraToObject(stockModelRef.current ?? targetModelRef.current!);
         }
       });
     };
@@ -543,12 +543,12 @@ const App = () => {
   const handleGenerate3dPath = async () => {
     if (!stockStlFile || !targetStlFile) return alert('3D加工パスを生成するには、材料と加工後形状の両方のSTLファイルを開いてください。');
     try {
-      const params = { 
-        stockPath: stockStlFile, 
-        targetPath: targetStlFile, 
-        sliceHeight, 
-        toolDiameter, 
-        stepoverRatio: stepover 
+      const params = {
+        stockPath: stockStlFile,
+        targetPath: targetStlFile,
+        sliceHeight,
+        toolDiameter,
+        stepoverRatio: stepover
       };
       const result = await window.electronAPI.generate3dRoughingPath(params);
       if (result.status === 'success') setToolpaths(result.toolpaths);
@@ -629,8 +629,8 @@ const App = () => {
             <Box sx={{ flexGrow: 1, overflowY: 'auto' }}>
               <TabPanel value={activeTab} index={0}>
                 <Paper sx={{ p: 2, mb: 2 }}>
-                  <Typography variant="h6" gutterBottom>Tool Settings</Typography>
-                  <TextField label="Tool Diameter (mm)" type="number" value={toolDiameter} onChange={(e) => setToolDiameter(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
+                  <Typography variant="h6" gutterBottom>ツール設定</Typography>
+                  <TextField label="工具径 (mm)" type="number" value={toolDiameter} onChange={(e) => setToolDiameter(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
                 </Paper>
                 <Paper sx={{ p: 2, mb: 2 }}>
                   <Typography variant="h6" gutterBottom>2.5D 加工 (DXF/SVG)</Typography>
@@ -649,11 +649,11 @@ const App = () => {
                   <Typography variant="h6" gutterBottom>3D 加工 (STL)</Typography>
                   <Box sx={{ mb: 2 }}>
                     <Button variant="outlined" onClick={handleSelectStockStl} fullWidth>材料STLを選択</Button>
-                    {stockStlFile && <Typography variant="caption" display="block" sx={{mt:1, textAlign: 'center'}}>{stockStlFile.split('\\').pop()}</Typography>}
+                    {stockStlFile && <Typography variant="caption" display="block" sx={{ mt: 1, textAlign: 'center' }}>{stockStlFile.split('\\').pop()}</Typography>}
                   </Box>
                   <Box sx={{ mb: 2 }}>
                     <Button variant="outlined" onClick={handleSelectTargetStl} fullWidth>加工後形状STLを選択</Button>
-                    {targetStlFile && <Typography variant="caption" display="block" sx={{mt:1, textAlign: 'center'}}>{targetStlFile.split('\\').pop()}</Typography>}
+                    {targetStlFile && <Typography variant="caption" display="block" sx={{ mt: 1, textAlign: 'center' }}>{targetStlFile.split('\\').pop()}</Typography>}
                   </Box>
                   <TextField label="スライス厚 (mm)" type="number" value={sliceHeight} onChange={(e) => setSliceHeight(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
                   <Button variant="contained" onClick={handleGenerate3dPath} fullWidth>3D荒加工パス生成</Button>
@@ -672,11 +672,11 @@ const App = () => {
               </TabPanel>
               <TabPanel value={activeTab} index={1}>
                 <Paper sx={{ p: 2, mb: 2 }}>
-                  <Typography variant="h6" gutterBottom>Machine Settings</Typography>
-                  <TextField label="Safe Z (mm)" type="number" value={safeZ} onChange={(e) => setSafeZ(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
-                  <TextField label="Step Down (mm)" type="number" value={stepDown} onChange={(e) => setStepDown(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
-                  <TextField label="Retract Z (mm)" type="number" value={retractZ} onChange={(e) => setRetractZ(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
-                  <TextField label="Peck Amount (Q)" type="number" value={peckQ} onChange={(e) => setPeckQ(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
+                  <Typography variant="h6" gutterBottom>マシン設定</Typography>
+                  <TextField label="安全高さ (mm)" type="number" value={safeZ} onChange={(e) => setSafeZ(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
+                  <TextField label="切り込み深さ (mm)" type="number" value={stepDown} onChange={(e) => setStepDown(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
+                  <TextField label="リトラクト高さ (mm)" type="number" value={retractZ} onChange={(e) => setRetractZ(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
+                  <TextField label="ペック量 (Q)" type="number" value={peckQ} onChange={(e) => setPeckQ(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
                 </Paper>
                 <Paper sx={{ p: 2, mb: 2 }}>
                   <Typography variant="h6" gutterBottom>CNC 接続</Typography>
@@ -703,7 +703,7 @@ const App = () => {
                   />
                 </Paper>
                 <Paper sx={{ p: 2, mb: 2 }}>
-                  <Typography variant="h6" gutterBottom>G-Code 送信</Typography>
+                  <Typography variant="h6" gutterBottom>Gコード送信</Typography>
                   <TextField
                     multiline
                     rows={8}
@@ -721,7 +721,7 @@ const App = () => {
                     <Button variant="outlined" color="secondary" onClick={handleStopGcode} disabled={gcodeStatus === 'idle'} startIcon={<Stop />}>停止</Button>
                   </Box>
                   <Box sx={{ width: '100%' }}>
-                    <Typography variant="body2">状態: {gcodeStatus}</Typography>
+                    <Typography variant="body2">状態: {{ 'idle': '待機中', 'sending': '送信中', 'paused': '一時停止中', 'finished': '完了', 'error': 'エラー' }[gcodeStatus] || gcodeStatus}</Typography>
                     <LinearProgress variant="determinate" value={(gcodeProgress.total > 0 ? (gcodeProgress.sent / gcodeProgress.total) * 100 : 0)} />
                     <Typography variant="body2" align="right">{gcodeProgress.sent}/{gcodeProgress.total}</Typography>
                   </Box>
