@@ -12,6 +12,8 @@ import {
 } from '@mui/material';
 import { Memory } from '@mui/icons-material';
 
+import { api } from './api';
+
 import ThreeViewer from './components/ThreeViewer';
 import ControlPanel from './components/ControlPanel';
 import { Geometry, ToolpathSegment, Toolpath } from './types';
@@ -61,7 +63,7 @@ const App = () => {
 
   // --- CNC Connection Logic ---
   const handleRefreshPorts = () => {
-    window.electronAPI.listSerialPorts().then(result => {
+    api.listSerialPorts().then(result => {
       if (result.status === 'success') {
         setSerialPorts(result.ports);
         if (result.ports.length > 0 && !selectedPort) {
@@ -75,12 +77,12 @@ const App = () => {
 
   useEffect(() => {
     handleRefreshPorts();
-    const removeDataListener = window.electronAPI.onSerialData((data) => setConsoleLog(prev => [...prev, `> ${data}`]));
-    const removeClosedListener = window.electronAPI.onSerialClosed(() => {
+    const removeDataListener = api.onSerialData((data) => setConsoleLog(prev => [...prev, `> ${data}`]));
+    const removeClosedListener = api.onSerialClosed(() => {
       setIsConnected(false);
       setConsoleLog(prev => [...prev, '--- 接続が切断されました ---']);
     });
-    const removeGcodeProgressListener = window.electronAPI.onGcodeProgress(progress => {
+    const removeGcodeProgressListener = api.onGcodeProgress(progress => {
       setGcodeProgress({ sent: progress.sent, total: progress.total });
       setGcodeStatus(progress.status);
       if (progress.status === 'finished') {
@@ -91,20 +93,20 @@ const App = () => {
         setGcodeStatus('idle');
       }
     });
-    const removeStatusListener = window.electronAPI.onStatus(status => setMachinePosition(status));
-    const removeFileOpenListener = window.electronAPI.onFileOpen((filePath) => {
+    const removeStatusListener = api.onStatus(status => setMachinePosition(status));
+    const removeFileOpenListener = api.onFileOpen((filePath) => {
       setToolpaths(null);
       setGeometry(null);
       setStockStlFile(null);
       setTargetStlFile(null);
       const extension = filePath.split('.').pop()?.toLowerCase();
       if (extension === 'dxf') {
-        window.electronAPI.parseDxfFile(filePath).then(result => {
+        api.parseDxfFile(filePath).then(result => {
           if (result.status === 'success') setGeometry({ segments: result.segments, arcs: result.arcs, drill_points: result.drill_points });
           else alert(`DXF解析エラー: ${result.message}`);
         }).catch(error => alert(`DXF解析に失敗しました: ${error}`));
       } else if (extension === 'svg') {
-        window.electronAPI.parseSvgFile(filePath).then(result => {
+        api.parseSvgFile(filePath).then(result => {
           if (result.status === 'success') setGeometry({ segments: result.segments, arcs: [], drill_points: result.drill_points });
           else alert(`SVG解析エラー: ${result.message}`);
         }).catch(error => alert(`SVG解析に失敗しました: ${error}`));
@@ -122,7 +124,7 @@ const App = () => {
 
   const handleConnect = async () => {
     if (!selectedPort) return alert('ポートを選択してください。');
-    const result = await window.electronAPI.connectSerial(selectedPort, baudRate);
+    const result = await api.connectSerial(selectedPort, baudRate);
     if (result.status === 'success') {
       setIsConnected(true);
       setConsoleLog(prev => [...prev, `--- ${selectedPort}に接続しました ---`]);
@@ -132,29 +134,29 @@ const App = () => {
   };
 
   const handleDisconnect = async () => {
-    const result = await window.electronAPI.disconnectSerial();
+    const result = await api.disconnectSerial();
     if (result.status !== 'success') alert(`切断エラー: ${result.message}`);
   };
 
   const handleJog = (axis: 'X' | 'Y' | 'Z', direction: number) => {
-    if (isConnected) window.electronAPI.jog(axis, direction, jogStep);
+    if (isConnected) api.jog(axis, direction, jogStep);
   };
 
   const handleSetZero = () => {
     if (isConnected && confirm('現在のワーク座標をすべて0に設定します。よろしいですか？')) {
-      window.electronAPI.setZero();
+      api.setZero();
     }
   };
 
   const handleSendGcode = () => {
     if (gcode.trim() === '') return alert('送信するG-codeがありません。');
-    window.electronAPI.sendGcode(gcode);
+    api.sendGcode(gcode);
     setGcodeStatus('sending');
   };
 
-  const handlePauseGcode = () => window.electronAPI.pauseGcode();
-  const handleResumeGcode = () => window.electronAPI.resumeGcode();
-  const handleStopGcode = () => window.electronAPI.stopGcode();
+  const handlePauseGcode = () => api.pauseGcode();
+  const handleResumeGcode = () => api.resumeGcode();
+  const handleStopGcode = () => api.stopGcode();
 
   const getConnectedGeometries = () => {
     if (!geometry || !geometry.segments || geometry.segments.length === 0) return [];
@@ -215,9 +217,9 @@ const App = () => {
     if (geometries.length === 0 || !geometry || !geometry.arcs) return alert('ツールパスを生成するための図形が読み込まれていません。');
     const vertices = geometries[0];
     try {
-      const linearResult = await window.electronAPI.generateContourPath(toolDiameter, vertices, contourSide);
+      const linearResult = await api.generateContourPath(toolDiameter, vertices, contourSide);
       if (linearResult.status !== 'success') return alert(`初期パス生成エラー: ${linearResult.message}`);
-      const fittedResult = await window.electronAPI.fitArcsToToolpath(linearResult.toolpath, geometry.arcs);
+      const fittedResult = await api.fitArcsToToolpath(linearResult.toolpath, geometry.arcs);
       if (fittedResult.status === 'success') {
         setToolpaths(fittedResult.toolpath_segments);
       } else {
@@ -235,7 +237,7 @@ const App = () => {
     const vertices = geometries[0];
     try {
       const params = { geometry: vertices, toolDiameter, stepover: toolDiameter * stepover };
-      const result = await window.electronAPI.generatePocketPath(params);
+      const result = await api.generatePocketPath(params);
       if (result.status === 'success') {
         const segments: ToolpathSegment[] = result.toolpaths.map((path: number[][]) => ({ type: 'line', points: path }));
         setToolpaths(segments);
@@ -248,7 +250,7 @@ const App = () => {
   };
 
   const handleSelectStockStl = async () => {
-    const result = await window.electronAPI.openFile('stl');
+    const result = await api.openFile('stl');
     if (result.status === 'success') {
       setStockStlFile(result.filePath);
       setToolpaths(null); // 新しいモデルが読み込まれたらツールパスをクリア
@@ -256,7 +258,7 @@ const App = () => {
   };
 
   const handleSelectTargetStl = async () => {
-    const result = await window.electronAPI.openFile('stl');
+    const result = await api.openFile('stl');
     if (result.status === 'success') {
       setTargetStlFile(result.filePath);
       setToolpaths(null); // 新しいモデルが読み込まれたらツールパスをクリア
@@ -273,7 +275,7 @@ const App = () => {
         toolDiameter,
         stepoverRatio: stepover
       };
-      const result = await window.electronAPI.generate3dRoughingPath(params);
+      const result = await api.generate3dRoughingPath(params);
       if (result.status === 'success') setToolpaths(result.toolpaths);
       else alert(`3Dパス生成エラー: ${result.message}`);
     } catch (error) {
@@ -285,7 +287,7 @@ const App = () => {
     if (!geometry || !geometry.drill_points || geometry.drill_points.length === 0) return alert('Gコードを生成するためのドリル点がありません。');
     try {
       const params = { drillPoints: geometry.drill_points, feedRate, safeZ, retractZ, stepDown, peckQ };
-      const result = await window.electronAPI.generateDrillGcode(params);
+      const result = await api.generateDrillGcode(params);
       if (result.status === 'success') alert(`ドリルGコードを保存しました: ${result.filePath}`);
       else if (result.status !== 'canceled') alert(`Gコードの保存に失敗しました: ${result.message}`);
     } catch (error) {
@@ -297,7 +299,7 @@ const App = () => {
     if (!toolpaths || toolpaths.length === 0) return alert('保存するツールパスがありません。');
     try {
       const params = { toolpaths: toolpaths, feedRate, safeZ, stepDown, retractZ };
-      const result = await window.electronAPI.generateGcode(params);
+      const result = await api.generateGcode(params);
       if (result.status === 'success') alert(`Gコードを保存しました: ${result.filePath}`);
       else if (result.status !== 'canceled') alert(`Gコードの保存に失敗しました: ${result.message}`);
     } catch (error) {
@@ -379,7 +381,9 @@ const App = () => {
   );
 };
 
+console.log('Renderer script executing...');
 const container = document.getElementById('root');
+
 if (container) {
   const root = createRoot(container);
   root.render(<App />);

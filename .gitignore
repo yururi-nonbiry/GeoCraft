@@ -3,6 +3,7 @@
 
 # Build output
 /dist
+/build
 
 # Logs
 npm-debug.log*
@@ -17,18 +18,35 @@ yarn-error.log*
 .env.production.local
 
 # IDEs and editors
-.vscode/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
 .idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln.docstates
+*.user
+*.userosscache
+*.sln.docstates
+
+# C# / .NET
+/bin/
+/obj/
+**/bin/
+**/obj/
+.vs/
+*.csproj.user
 
 # OS-generated files
 .DS_Store
 Thumbs.db
 
-# Python cache
+# Python (Legacy/Scripts)
 __pycache__/
 *.pyc
-
-# Python virtual environments
 .venv
 venv
 env
