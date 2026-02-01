@@ -44,9 +44,4 @@ yarn-error.log*
 .DS_Store
 Thumbs.db
 
-# Python (Legacy/Scripts)
-__pycache__/
-*.pyc
-.venv
-venv
-env
+
