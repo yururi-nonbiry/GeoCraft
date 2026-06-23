@@ -6,3 +6,7 @@ export type Toolpath = number[][];
 export type ToolpathSegment =
     | { type: 'line'; points: number[][] }
     | { type: 'arc'; start: number[]; end: number[]; center: number[]; direction: 'cw' | 'ccw' };
+
+export interface SerialPortInfo {
+  path: string;
+}

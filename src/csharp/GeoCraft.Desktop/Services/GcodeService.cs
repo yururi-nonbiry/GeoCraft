@@ -20,12 +20,10 @@ namespace GeoCraft.Desktop.Services
                 double stepDown = p.stepDown;
                 double retractZ = p.retractZ ?? 2.0;
 
-                StringBuilder sb = new StringBuilder();
-                sb.AppendLine("%");
-                sb.AppendLine("O0001");
-                sb.AppendLine("G90 G21 G17");
-                sb.AppendLine("M03 S1000");
-                sb.AppendLine($"G00 Z{Format(safeZ)}");
+                GcodeWriter writer = new GcodeWriter();
+                writer.WriteHeader("G90 G21 G17");
+                writer.SpindleOn(1000);
+                writer.RapidMove(z: safeZ);
 
                 double[] currentXy = null;
                 bool isCutting = false;
@@ -45,24 +43,21 @@ namespace GeoCraft.Desktop.Services
                     {
                         if (isCutting)
                         {
-                            sb.AppendLine($"G00 Z{Format(retractZ)}");
+                            writer.RapidMove(z: retractZ);
                             isCutting = false;
                         }
-                        sb.AppendLine($"G00 X{Format(start[0])} Y{Format(start[1])}");
-                        sb.AppendLine($"G01 Z{Format(stepDown)} F{Format(feedRate / 2)}");
+                        writer.RapidMove(x: start[0], y: start[1]);
+                        writer.LinearMove(z: stepDown, feed: feedRate / 2);
                         isCutting = true;
                     } 
                     else if (!isCutting)
                     {
-                        sb.AppendLine($"G01 Z{Format(stepDown)} F{Format(feedRate / 2)}");
+                        writer.LinearMove(z: stepDown, feed: feedRate / 2);
                         isCutting = true;
                     }
 
                     if (type == "arc")
                     {
-                         // Handle Arc
-                         // Frontend sends: { type: 'arc', start, end, center, direction }
-                         // But wait, the paramsJson might have toolpaths as list of segments.
                          var end = segment.end.ToObject<double[]>();
                          var center = segment.center.ToObject<double[]>();
                          string direction = segment.direction;
@@ -71,7 +66,7 @@ namespace GeoCraft.Desktop.Services
                          double j = center[1] - start[1];
                          string code = direction == "cw" ? "G02" : "G03";
                          
-                         sb.AppendLine($"{code} X{Format(end[0])} Y{Format(end[1])} I{Format(i)} J{Format(j)} F{Format(feedRate)}");
+                         writer.ArcMove(code, end[0], end[1], i, j, feedRate);
                          currentXy = end;
                     }
                     else // line
@@ -79,7 +74,7 @@ namespace GeoCraft.Desktop.Services
                         for (int k = 1; k < points.Count; k++)
                         {
                             var pt = points[k];
-                            sb.AppendLine($"G01 X{Format(pt[0])} Y{Format(pt[1])} F{Format(feedRate)}");
+                            writer.LinearMove(x: pt[0], y: pt[1], feed: feedRate);
                             currentXy = pt;
                         }
                     }
@@ -87,25 +82,12 @@ namespace GeoCraft.Desktop.Services
 
                 if (isCutting)
                 {
-                    sb.AppendLine($"G00 Z{Format(safeZ)}");
+                    writer.RapidMove(z: safeZ);
                 }
 
-                sb.AppendLine("M05");
-                sb.AppendLine("M30");
-                sb.AppendLine("%");
+                writer.WriteFooter(null);
 
-                // Save to file? Original python returned gcode string, and main.ts saved it.
-                // The main.ts called dialog.showSaveDialog.
-                // Here I can return the gcode string, and let the bridge handle saving?
-                // Or I can handle saving here.
-                // The Bridge stub calling GenerateGcode currently expects to return JSON status.
-                // And main.ts logic: "ipcMain.handle... callPython... showSaveDialog... writeFileSync"
-                
-                // My Bridge stub signature: `GenerateGcode(string paramsJson)`.
-                // I should replicate main.ts logic: Generate string -> Show Save Dialog -> Save.
-                // So this service should return the string, and Bridge will show dialog.
-                
-                return new { status = "success", gcode = sb.ToString() };
+                return new { status = "success", gcode = writer.ToString() };
 
             }
             catch (Exception ex)
@@ -119,12 +101,6 @@ namespace GeoCraft.Desktop.Services
              // TODO: Implement Drill GCode
              return new { status = "error", message = "Not implemented yet" };
         }
-
-        private string Format(double val)
-        {
-            return val.ToString("F3", CultureInfo.InvariantCulture);
-        }
-
 
         private bool IsClose(double[] p1, double[]? p2)
         {

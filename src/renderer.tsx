@@ -38,7 +38,7 @@ import { api } from './api';
 
 import ThreeViewer from './components/ThreeViewer';
 import ControlPanel from './components/ControlPanel';
-import { Geometry, ToolpathSegment, Toolpath } from './types';
+import { Geometry, ToolpathSegment, Toolpath, SerialPortInfo } from './types';
 
 const theme = createTheme({
   palette: {
@@ -149,7 +149,7 @@ const App = () => {
   const [editingTool, setEditingTool] = useState<EditableToolSetting>({ ...EMPTY_TOOL });
 
   // CNC Connection State
-  const [serialPorts, setSerialPorts] = useState<any[]>([]);
+  const [serialPorts, setSerialPorts] = useState<SerialPortInfo[]>([]);
   const [selectedPort, setSelectedPort] = useState<string>('');
   const [isConnected, setIsConnected] = useState(false);
   const [baudRate, setBaudRate] = useState(115200);

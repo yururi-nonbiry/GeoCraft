@@ -61,6 +61,32 @@ namespace GeoCraft.Desktop
             };
         }
 
+        private string ExecuteSafe(Func<object> action)
+        {
+            try
+            {
+                var result = action();
+                return JsonConvert.SerializeObject(result);
+            }
+            catch (Exception ex)
+            {
+                LogService.Log($"Error in bridge execution: {ex.Message}\n{ex.StackTrace}");
+                return JsonConvert.SerializeObject(new { status = "error", message = ex.Message });
+            }
+        }
+
+        private void ExecuteSafeVoid(Action action)
+        {
+            try
+            {
+                action();
+            }
+            catch (Exception ex)
+            {
+                LogService.Log($"Error in bridge void execution: {ex.Message}\n{ex.StackTrace}");
+            }
+        }
+
         private void ProcessReceivedLine(string line)
         {
             if (line == "ok" || line.StartsWith("error"))
@@ -110,162 +136,185 @@ namespace GeoCraft.Desktop
 
         public string GetSettings()
         {
-            // TODO: Implement actual settings loading
-            return JsonConvert.SerializeObject(new { test = "Settings from C#" });
+            return ExecuteSafe(() => {
+                // TODO: Implement actual settings loading
+                return new { test = "Settings from C#" };
+            });
         }
 
         public void SaveSettings(string settingsJson)
         {
-            // TODO: Implement settings saving
-            System.Diagnostics.Debug.WriteLine($"Saving settings: {settingsJson}");
+            ExecuteSafeVoid(() => {
+                // TODO: Implement settings saving
+                LogService.Log($"Saving settings: {settingsJson}");
+            });
         }
 
         public string ParseDxfFile(string filePath) {
-             return JsonConvert.SerializeObject(_dxfService.ParseDxf(filePath));
+             return ExecuteSafe(() => _dxfService.ParseDxf(filePath));
         }
 
-        public string ParseSvgFile(string filePath) { return JsonConvert.SerializeObject(new { status = "error", message = "Not implemented" }); }
+        public string ParseSvgFile(string filePath) { 
+             return ExecuteSafe(() => new { status = "error", message = "Not implemented" }); 
+        }
         
         public string GenerateContourPath(double toolDiameter, string geometryJson, string side) {
-             try {
+             return ExecuteSafe(() => {
                 var geometry = JsonConvert.DeserializeObject<List<double[]>>(geometryJson);
-                if (geometry == null) return JsonConvert.SerializeObject(new { status = "error", message = "Invalid geometry" });
-                return JsonConvert.SerializeObject(_contourService.GenerateContour(toolDiameter, geometry, side));
-             } catch (Exception ex) {
-                return JsonConvert.SerializeObject(new { status = "error", message = ex.Message });
-             }
+                if (geometry == null) throw new ArgumentException("Invalid geometry");
+                return _contourService.GenerateContour(toolDiameter, geometry, side);
+             });
         }
 
         public string GeneratePocketPath(string paramsJson) {
-             try {
+             return ExecuteSafe(() => {
                  dynamic p = JsonConvert.DeserializeObject(paramsJson);
                  List<double[]> geometry = p.geometry.ToObject<List<double[]>>();
                  double toolDiameter = p.toolDiameter;
                  double stepover = p.stepover;
-                 return JsonConvert.SerializeObject(_pocketService.GeneratePocket(geometry, toolDiameter, stepover));
-             } catch (Exception ex) {
-                 return JsonConvert.SerializeObject(new { status = "error", message = ex.Message });
-             }
+                 return _pocketService.GeneratePocket(geometry, toolDiameter, stepover);
+             });
         }
         
         public string OpenFile(string fileType) { 
-            return JsonConvert.SerializeObject(_mainWindow.Dispatcher.Invoke<object>(() => _fileService.OpenFile(fileType)));
+            return ExecuteSafe(() => _mainWindow.Dispatcher.Invoke<object>(() => _fileService.OpenFile(fileType)));
         }
         
-        public string Generate3dRoughingPath(string paramsJson) { return JsonConvert.SerializeObject(new { status = "error", message = "Not implemented" }); }
-        public string FitArcsToToolpath(string toolpathJson, string arcsJson) { return JsonConvert.SerializeObject(new { status = "error", message = "Not implemented" }); }
-        
-        public string GenerateGcode(string paramsJson) { 
-             object result = _gcodeService.GenerateGcode(paramsJson);
-             dynamic r = result;
-             if (r != null && r.status == "success")
-             {
-                 // Show Save Dialog
-                 return JsonConvert.SerializeObject(_mainWindow.Dispatcher.Invoke<object>(() => {
-                     var dialog = new Microsoft.Win32.SaveFileDialog();
-                     dialog.Filter = "G-Code|*.nc;*.gcode|All Files|*.*";
-                     if (dialog.ShowDialog() == true)
-                     {
-                         System.IO.File.WriteAllText(dialog.FileName, (string)r.gcode);
-                          return new { status = "success", filePath = dialog.FileName };
-                     }
-                     return new { status = "canceled" };
-                 }));
-             }
-             return JsonConvert.SerializeObject(result);
+        public string Generate3dRoughingPath(string paramsJson) { 
+            return ExecuteSafe(() => new { status = "error", message = "Not implemented" }); 
         }
 
-        public string GenerateDrillGcode(string paramsJson) { return JsonConvert.SerializeObject(new { status = "error", message = "Not implemented" }); }
+        public string FitArcsToToolpath(string toolpathJson, string arcsJson) { 
+            return ExecuteSafe(() => new { status = "error", message = "Not implemented" }); 
+        }
+        
+        public string GenerateGcode(string paramsJson) { 
+             return ExecuteSafe(() => {
+                 object result = _gcodeService.GenerateGcode(paramsJson);
+                 dynamic r = result;
+                 if (r != null && r.status == "success")
+                 {
+                     // Show Save Dialog
+                     return _mainWindow.Dispatcher.Invoke<object>(() => {
+                         var dialog = new Microsoft.Win32.SaveFileDialog();
+                         dialog.Filter = "G-Code|*.nc;*.gcode|All Files|*.*";
+                         if (dialog.ShowDialog() == true)
+                         {
+                             System.IO.File.WriteAllText(dialog.FileName, (string)r.gcode);
+                             return new { status = "success", filePath = dialog.FileName };
+                         }
+                         return new { status = "canceled" };
+                     });
+                 }
+                 return result;
+             });
+        }
+
+        public string GenerateDrillGcode(string paramsJson) { 
+            return ExecuteSafe(() => new { status = "error", message = "Not implemented" }); 
+        }
         
         // --- Serial Port Stubs ---
         public string ListSerialPorts()
         {
-             return JsonConvert.SerializeObject(_serialService.ListPorts());
+             return ExecuteSafe(() => _serialService.ListPorts());
         }
         
         public string ConnectSerial(string path, int baudRate) { 
-            return JsonConvert.SerializeObject(_serialService.Connect(path, baudRate));
+            return ExecuteSafe(() => _serialService.Connect(path, baudRate));
         }
 
         public string DisconnectSerial() { 
-            return JsonConvert.SerializeObject(_serialService.Disconnect());
+            return ExecuteSafe(() => _serialService.Disconnect());
         }
 
         public void SendGcode(string gcode) { 
-             lock (_stateLock)
-             {
-                 _gcodeQueue.Clear();
-                 var lines = gcode.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-                 foreach (var line in lines)
+             ExecuteSafeVoid(() => {
+                 lock (_stateLock)
                  {
-                     _gcodeQueue.Enqueue(line.Trim());
-                 }
+                     _gcodeQueue.Clear();
+                     var lines = gcode.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                     foreach (var line in lines)
+                     {
+                         _gcodeQueue.Enqueue(line.Trim());
+                     }
 
-                 _totalLines = _gcodeQueue.Count;
-                 _sentLines = 0;
-                 _isSending = true;
-                 _isPaused = false;
+                     _totalLines = _gcodeQueue.Count;
+                     _sentLines = 0;
+                     _isSending = true;
+                     _isPaused = false;
 
-                 if (_totalLines > 0)
-                 {
-                     SendNextLine();
+                     if (_totalLines > 0)
+                     {
+                         SendNextLine();
+                     }
+                     else
+                     {
+                         _isSending = false;
+                         Broadcast("gcode-progress", new { sent = 0, total = 0, status = "finished" });
+                     }
                  }
-                 else
-                 {
-                     _isSending = false;
-                     Broadcast("gcode-progress", new { sent = 0, total = 0, status = "finished" });
-                 }
-             }
+             });
         }
         
         public void PauseGcode() { 
-            lock (_stateLock)
-            {
-                if (_isSending && !_isPaused)
+            ExecuteSafeVoid(() => {
+                lock (_stateLock)
                 {
-                    _isPaused = true;
-                    // Grbl feed hold command '!'
-                    _serialService.Write("!\n");
-                    Broadcast("gcode-progress", new { sent = _sentLines, total = _totalLines, status = "paused" });
+                    if (_isSending && !_isPaused)
+                    {
+                        _isPaused = true;
+                        // Grbl feed hold command '!'
+                        _serialService.Write("!\n");
+                        Broadcast("gcode-progress", new { sent = _sentLines, total = _totalLines, status = "paused" });
+                    }
                 }
-            }
+            });
         }
 
         public void ResumeGcode() { 
-            lock (_stateLock)
-            {
-                if (_isSending && _isPaused)
+            ExecuteSafeVoid(() => {
+                lock (_stateLock)
                 {
-                    _isPaused = false;
-                    // Grbl cycle start command '~'
-                    _serialService.Write("~\n");
-                    SendNextLine();
+                    if (_isSending && _isPaused)
+                    {
+                        _isPaused = false;
+                        // Grbl cycle start command '~'
+                        _serialService.Write("~\n");
+                        SendNextLine();
+                    }
                 }
-            }
+            });
         }
 
         public void StopGcode() { 
-            lock (_stateLock)
-            {
-                if (_isSending)
+            ExecuteSafeVoid(() => {
+                lock (_stateLock)
                 {
-                    _isSending = false;
-                    _isPaused = false;
-                    _gcodeQueue.Clear();
-                    // Grbl reset command (ctrl-x)
-                    _serialService.Write("\x18");
-                    Broadcast("gcode-progress", new { sent = _sentLines, total = _totalLines, status = "idle" });
+                    if (_isSending)
+                    {
+                        _isSending = false;
+                        _isPaused = false;
+                        _gcodeQueue.Clear();
+                        // Grbl reset command (ctrl-x)
+                        _serialService.Write("\x18");
+                        Broadcast("gcode-progress", new { sent = _sentLines, total = _totalLines, status = "idle" });
+                    }
                 }
-            }
+            });
         }
 
         public void Jog(string axis, double direction, double step) {
-             string cmd = $"$J=G91 {axis}{step * direction} F1000\n";
-             _serialService.Write(cmd);
+             ExecuteSafeVoid(() => {
+                 string cmd = $"$J=G91 {axis}{step * direction} F1000\n";
+                 _serialService.Write(cmd);
+             });
         }
 
         public void SetZero() {
-             _serialService.Write("G10 L20 P1 X0 Y0 Z0\n");
+             ExecuteSafeVoid(() => {
+                 _serialService.Write("G10 L20 P1 X0 Y0 Z0\n");
+             });
         }
 
         // --- Helper to Emit Events ---

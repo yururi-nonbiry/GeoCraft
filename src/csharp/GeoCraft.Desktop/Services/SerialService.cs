@@ -4,7 +4,7 @@ using System.Linq;
 
 namespace GeoCraft.Desktop.Services
 {
-    public class SerialService
+    public class SerialService : IDisposable
     {
         private SerialPort? _port;
         public event Action<string>? OnDataReceived;
@@ -45,6 +45,7 @@ namespace GeoCraft.Desktop.Services
                     _port.DataReceived -= Port_DataReceived;
                     _port.Close();
                 }
+                _port.Dispose();
                 _port = null;
                 return new { status = "success", message = (string?)null };
             }
@@ -70,6 +71,33 @@ namespace GeoCraft.Desktop.Services
                     string data = _port.ReadExisting();
                     OnDataReceived?.Invoke(data);
                 } catch {}
+            }
+        }
+
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                if (_port != null)
+                {
+                    try
+                    {
+                        if (_port.IsOpen)
+                        {
+                            _port.DataReceived -= Port_DataReceived;
+                            _port.Close();
+                        }
+                    }
+                    catch { }
+                    _port.Dispose();
+                    _port = null;
+                }
             }
         }
     }
