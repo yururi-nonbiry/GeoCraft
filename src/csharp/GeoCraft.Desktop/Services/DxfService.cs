@@ -61,22 +61,32 @@ namespace GeoCraft.Desktop.Services
                     }
                     else if (entity is DxfPolyline oldPoly)
                     {
-                         // Treat same as LwPolyline but usually no bulge? 
-                         // Just segments
                          var verts = oldPoly.Vertices;
-                         for(int i=0; i<verts.Count-1; i++)
+                         int count = verts.Count;
+                         if (count >= 2)
                          {
-                             result.segments.Add(new List<double[]> {
-                                 new[] { verts[i].Location.X, verts[i].Location.Y, verts[i].Location.Z },
-                                 new[] { verts[i+1].Location.X, verts[i+1].Location.Y, verts[i+1].Location.Z }
-                             });
-                         }
-                         if (oldPoly.IsClosed && verts.Count > 1)
-                         {
-                             result.segments.Add(new List<double[]> {
-                                 new[] { verts.Last().Location.X, verts.Last().Location.Y, verts.Last().Location.Z },
-                                 new[] { verts[0].Location.X, verts[0].Location.Y, verts[0].Location.Z }
-                             });
+                             for (int i = 0; i < count; i++)
+                             {
+                                 int nextIdx = (i + 1) % count;
+                                 if (nextIdx == 0 && !oldPoly.IsClosed) break;
+
+                                 var v1 = verts[i];
+                                 var v2 = verts[nextIdx];
+
+                                 var start = new[] { v1.Location.X, v1.Location.Y, v1.Location.Z };
+                                 var end = new[] { v2.Location.X, v2.Location.Y, v2.Location.Z };
+
+                                 result.segments.Add(new List<double[]> { start, end });
+
+                                 if (Math.Abs(v1.Bulge) > 1e-8)
+                                 {
+                                     var arcData = BulgeToArc(start, end, v1.Bulge, v1.Location.Z);
+                                     if (arcData != null)
+                                     {
+                                         result.arcs.Add(arcData);
+                                     }
+                                 }
+                             }
                          }
                     }
                     else if (entity is DxfSpline spline)
@@ -143,15 +153,14 @@ namespace GeoCraft.Desktop.Services
             double perpX = -dirY;
             double perpY = dirX;
 
-            double sagitta = Math.Sqrt(Math.Max(0, radius * radius - (chord / 2) * (chord / 2)));
-            double sign = bulge > 0 ? 1 : -1;
-
-            double centerX = midX + perpX * sagitta * sign;
-            double centerY = midY + perpY * sagitta * sign;
+            double d = (chord / 2.0) * ((1.0 - bulge * bulge) / (2.0 * bulge));
+            double centerX = midX - perpX * d;
+            double centerY = midY - perpY * d;
 
             double startAngle = Math.Atan2(start[1] - centerY, start[0] - centerX) * 180.0 / Math.PI;
             double endAngle = Math.Atan2(end[1] - centerY, end[0] - centerX) * 180.0 / Math.PI;
 
+            double sign = bulge > 0 ? 1 : -1;
             if (sign > 0 && endAngle <= startAngle) endAngle += 360;
             else if (sign < 0 && endAngle >= startAngle) endAngle -= 360;
 

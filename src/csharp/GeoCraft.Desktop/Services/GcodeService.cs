@@ -18,6 +18,7 @@ namespace GeoCraft.Desktop.Services
                 double feedRate = p.feedRate;
                 double safeZ = p.safeZ;
                 double stepDown = p.stepDown;
+                double retractZ = p.retractZ ?? 2.0;
 
                 StringBuilder sb = new StringBuilder();
                 sb.AppendLine("%");
@@ -44,7 +45,7 @@ namespace GeoCraft.Desktop.Services
                     {
                         if (isCutting)
                         {
-                            sb.AppendLine($"G00 Z{Format(safeZ)}");
+                            sb.AppendLine($"G00 Z{Format(retractZ)}");
                             isCutting = false;
                         }
                         sb.AppendLine($"G00 X{Format(start[0])} Y{Format(start[1])}");

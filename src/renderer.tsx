@@ -8,9 +8,31 @@ import {
   Toolbar,
   Typography,
   Grid,
+  Paper,
+  Tabs,
+  Tab,
   Box,
+  TextField,
+  Button,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
+  TextareaAutosize,
+  LinearProgress,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  IconButton,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
 } from '@mui/material';
-import { Memory } from '@mui/icons-material';
+import { Refresh, Link, LinkOff, PlayArrow, Pause, Stop, Settings, Memory } from '@mui/icons-material';
 
 import { api } from './api';
 
@@ -29,8 +51,84 @@ const theme = createTheme({
   },
 });
 
+type MachineSettings = {
+  safeZ: number;
+  retractZ: number;
+  stepDown: number;
+  peckQ: number;
+  gcodeHeader: string;
+  gcodeFooter: string;
+};
+
+type MaterialSetting = {
+  id: number;
+  name: string;
+  feedRate: number;
+  plungeRate: number;
+  rpm: number;
+  depthPerPass: number;
+};
+
+type EditableMaterialSetting = Omit<MaterialSetting, 'id'> & { id: number | null };
+
+type ToolSetting = {
+  id: number;
+  name: string;
+  diameter: number;
+  type: string;
+};
+
+type EditableToolSetting = Omit<ToolSetting, 'id'> & { id: number | null };
+
+type PersistedSettings = {
+  machineSettings?: Partial<MachineSettings>;
+  materialSettings?: MaterialSetting[];
+  toolSettings?: ToolSetting[];
+  selectedMaterialId?: number;
+  selectedToolId?: number;
+};
+
+const SIDE_PANEL_WIDTH = 360;
+
+const DEFAULT_MACHINE_SETTINGS: MachineSettings = {
+  safeZ: 5.0,
+  retractZ: 2.0,
+  stepDown: -2.0,
+  peckQ: 1.0,
+  gcodeHeader: 'G90 G21 G17',
+  gcodeFooter: 'M30',
+};
+
+const DEFAULT_MATERIALS: MaterialSetting[] = [
+  { id: 1, name: 'MDF', feedRate: 800, plungeRate: 200, rpm: 12000, depthPerPass: 2 },
+  { id: 2, name: 'Aluminum', feedRate: 400, plungeRate: 100, rpm: 18000, depthPerPass: 0.5 },
+];
+
+const DEFAULT_TOOLS: ToolSetting[] = [
+  { id: 1, name: '6mm Endmill', diameter: 6.0, type: 'endmill' },
+  { id: 2, name: '3mm Endmill', diameter: 3.0, type: 'endmill' },
+  { id: 3, name: '1mm Drill', diameter: 1.0, type: 'drill' },
+];
+
+const EMPTY_MATERIAL: EditableMaterialSetting = {
+  id: null,
+  name: '',
+  feedRate: 1000,
+  plungeRate: 300,
+  rpm: 15000,
+  depthPerPass: 1,
+};
+
+const EMPTY_TOOL: EditableToolSetting = {
+  id: null,
+  name: '',
+  diameter: 3,
+  type: 'endmill',
+};
+
 const App = () => {
   // states
+  const [machineSettings, setMachineSettings] = useState<MachineSettings>(DEFAULT_MACHINE_SETTINGS);
   const [toolDiameter, setToolDiameter] = useState(3.0);
   const [stepover, setStepover] = useState(0.5);
   const [sliceHeight, setSliceHeight] = useState(1.0);
@@ -38,12 +136,17 @@ const App = () => {
   const [geometry, setGeometry] = useState<Geometry | null>(null);
   const [stockStlFile, setStockStlFile] = useState<string | null>(null);
   const [targetStlFile, setTargetStlFile] = useState<string | null>(null);
-  const [feedRate, setFeedRate] = useState(100);
-  const [safeZ, setSafeZ] = useState(5.0);
-  const [stepDown, setStepDown] = useState(-2.0);
-  const [retractZ, setRetractZ] = useState(2.0);
-  const [peckQ, setPeckQ] = useState(1.0);
+  const [feedRate, setFeedRate] = useState<number>(DEFAULT_MATERIALS[0]?.feedRate ?? 100);
   const [contourSide, setContourSide] = useState('outer');
+  const [materialSettings, setMaterialSettings] = useState<MaterialSetting[]>(DEFAULT_MATERIALS);
+  const [selectedMaterialId, setSelectedMaterialId] = useState<number | ''>(DEFAULT_MATERIALS[0]?.id ?? '');
+  const [toolSettings, setToolSettings] = useState<ToolSetting[]>(DEFAULT_TOOLS);
+  const [selectedToolId, setSelectedToolId] = useState<number | ''>(DEFAULT_TOOLS[0]?.id ?? '');
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isMaterialDialogOpen, setIsMaterialDialogOpen] = useState(false);
+  const [editingMaterial, setEditingMaterial] = useState<EditableMaterialSetting>({ ...EMPTY_MATERIAL });
+  const [isToolDialogOpen, setIsToolDialogOpen] = useState(false);
+  const [editingTool, setEditingTool] = useState<EditableToolSetting>({ ...EMPTY_TOOL });
 
   // CNC Connection State
   const [serialPorts, setSerialPorts] = useState<any[]>([]);
@@ -60,6 +163,10 @@ const App = () => {
   // Jog & Status State
   const [jogStep, setJogStep] = useState(10);
   const [machinePosition, setMachinePosition] = useState({ wpos: { x: 0, y: 0, z: 0 }, mpos: { x: 0, y: 0, z: 0 }, status: 'Unknown' });
+
+  const updateMachineSetting = <K extends keyof MachineSettings>(key: K, value: MachineSettings[K]) => {
+    setMachineSettings((prev) => ({ ...prev, [key]: value }));
+  };
 
   // --- CNC Connection Logic ---
   const handleRefreshPorts = () => {
@@ -120,6 +227,62 @@ const App = () => {
       removeStatusListener();
       removeFileOpenListener();
     };
+  }, []);
+
+  useEffect(() => {
+    const selectedTool = toolSettings.find((tool) => tool.id === selectedToolId);
+    if (selectedTool) {
+      setToolDiameter(selectedTool.diameter);
+    } else if (toolSettings.length > 0 && selectedToolId !== toolSettings[0].id) {
+      setSelectedToolId(toolSettings[0].id);
+    }
+  }, [selectedToolId, toolSettings]);
+
+  useEffect(() => {
+    const selectedMaterial = materialSettings.find((material) => material.id === selectedMaterialId);
+    if (selectedMaterial) {
+      setFeedRate(selectedMaterial.feedRate);
+      updateMachineSetting('stepDown', -Math.abs(selectedMaterial.depthPerPass));
+    } else if (materialSettings.length > 0 && selectedMaterialId !== materialSettings[0].id) {
+      setSelectedMaterialId(materialSettings[0].id);
+    }
+  }, [selectedMaterialId, materialSettings]);
+
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const stored: PersistedSettings = await window.electronAPI.getSettings();
+
+        if (stored.materialSettings && stored.materialSettings.length > 0) {
+          setMaterialSettings(stored.materialSettings);
+          if (stored.selectedMaterialId && stored.materialSettings.some((m) => m.id === stored.selectedMaterialId)) {
+            setSelectedMaterialId(stored.selectedMaterialId);
+          } else {
+            setSelectedMaterialId(stored.materialSettings[0].id);
+          }
+        }
+
+        if (stored.toolSettings && stored.toolSettings.length > 0) {
+          setToolSettings(stored.toolSettings);
+          if (stored.selectedToolId && stored.toolSettings.some((t) => t.id === stored.selectedToolId)) {
+            setSelectedToolId(stored.selectedToolId);
+          } else {
+            setSelectedToolId(stored.toolSettings[0].id);
+          }
+        }
+
+        if (stored.machineSettings) {
+          setMachineSettings((prev) => ({
+            ...prev,
+            ...stored.machineSettings,
+          }));
+        }
+      } catch (error) {
+        console.error('Failed to load settings', error);
+      }
+    };
+
+    loadSettings();
   }, []);
 
   const handleConnect = async () => {
@@ -253,7 +416,7 @@ const App = () => {
     const result = await api.openFile('stl');
     if (result.status === 'success') {
       setStockStlFile(result.filePath);
-      setToolpaths(null); // 新しいモデルが読み込まれたらツールパスをクリア
+      setToolpaths(null);
     }
   };
 
@@ -261,7 +424,7 @@ const App = () => {
     const result = await api.openFile('stl');
     if (result.status === 'success') {
       setTargetStlFile(result.filePath);
-      setToolpaths(null); // 新しいモデルが読み込まれたらツールパスをクリア
+      setToolpaths(null);
     }
   };
 
@@ -286,7 +449,14 @@ const App = () => {
   const handleGenerateDrillGcode = async () => {
     if (!geometry || !geometry.drill_points || geometry.drill_points.length === 0) return alert('Gコードを生成するためのドリル点がありません。');
     try {
-      const params = { drillPoints: geometry.drill_points, feedRate, safeZ, retractZ, stepDown, peckQ };
+      const params = {
+        drillPoints: geometry.drill_points,
+        feedRate,
+        safeZ: machineSettings.safeZ,
+        retractZ: machineSettings.retractZ,
+        stepDown: machineSettings.stepDown,
+        peckQ: machineSettings.peckQ,
+      };
       const result = await api.generateDrillGcode(params);
       if (result.status === 'success') alert(`ドリルGコードを保存しました: ${result.filePath}`);
       else if (result.status !== 'canceled') alert(`Gコードの保存に失敗しました: ${result.message}`);
@@ -298,7 +468,13 @@ const App = () => {
   const handleSaveGcode = async () => {
     if (!toolpaths || toolpaths.length === 0) return alert('保存するツールパスがありません。');
     try {
-      const params = { toolpaths: toolpaths, feedRate, safeZ, stepDown, retractZ };
+      const params = {
+        toolpaths: toolpaths,
+        feedRate,
+        safeZ: machineSettings.safeZ,
+        stepDown: machineSettings.stepDown,
+        retractZ: machineSettings.retractZ,
+      };
       const result = await api.generateGcode(params);
       if (result.status === 'success') alert(`Gコードを保存しました: ${result.filePath}`);
       else if (result.status !== 'canceled') alert(`Gコードの保存に失敗しました: ${result.message}`);
@@ -317,6 +493,9 @@ const App = () => {
             <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
               GeoCraft
             </Typography>
+            <IconButton color="inherit" onClick={() => setIsSettingsOpen(true)} aria-label="open settings">
+              <Settings />
+            </IconButton>
           </Toolbar>
         </AppBar>
         <Grid container sx={{ flexGrow: 1, overflow: 'hidden' }}>
@@ -339,18 +518,18 @@ const App = () => {
             sliceHeight={sliceHeight}
             setSliceHeight={setSliceHeight}
             handleGenerate3dPath={handleGenerate3dPath}
-            retractZ={retractZ}
-            setRetractZ={setRetractZ}
-            peckQ={peckQ}
-            setPeckQ={setPeckQ}
+            retractZ={machineSettings.retractZ}
+            setRetractZ={(val) => updateMachineSetting('retractZ', val)}
+            peckQ={machineSettings.peckQ}
+            setPeckQ={(val) => updateMachineSetting('peckQ', val)}
             handleGenerateDrillGcode={handleGenerateDrillGcode}
             feedRate={feedRate}
             setFeedRate={setFeedRate}
             handleSaveGcode={handleSaveGcode}
-            safeZ={safeZ}
-            setSafeZ={setSafeZ}
-            stepDown={stepDown}
-            setStepDown={setStepDown}
+            safeZ={machineSettings.safeZ}
+            setSafeZ={(val) => updateMachineSetting('safeZ', val)}
+            stepDown={machineSettings.stepDown}
+            setStepDown={(val) => updateMachineSetting('stepDown', val)}
             isConnected={isConnected}
             selectedPort={selectedPort}
             setSelectedPort={setSelectedPort}
@@ -377,6 +556,281 @@ const App = () => {
           />
         </Grid>
       </Box>
+
+      <Dialog open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle>設定</DialogTitle>
+        <DialogContent dividers>
+          <Typography variant="subtitle1" gutterBottom>マシン設定</Typography>
+          <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, mb: 3 }}>
+            <TextField
+              label="安全高さ (Z)"
+              type="number"
+              value={machineSettings.safeZ}
+              onChange={(e) => updateMachineSetting('safeZ', Number(e.target.value) || 0)}
+              size="small"
+            />
+            <TextField
+              label="切込み深さ (Z)"
+              type="number"
+              value={machineSettings.stepDown}
+              onChange={(e) => updateMachineSetting('stepDown', Number(e.target.value) || 0)}
+              size="small"
+            />
+            <TextField
+              label="R点 (切込み開始高さ)"
+              type="number"
+              value={machineSettings.retractZ}
+              onChange={(e) => updateMachineSetting('retractZ', Number(e.target.value) || 0)}
+              size="small"
+            />
+            <TextField
+              label="ペック量 (Q)"
+              type="number"
+              value={machineSettings.peckQ}
+              onChange={(e) => updateMachineSetting('peckQ', Number(e.target.value) || 0)}
+              size="small"
+            />
+            <TextField
+              label="G-code ヘッダー"
+              value={machineSettings.gcodeHeader}
+              onChange={(e) => updateMachineSetting('gcodeHeader', e.target.value)}
+              multiline
+              minRows={2}
+            />
+            <TextField
+              label="G-code フッター"
+              value={machineSettings.gcodeFooter}
+              onChange={(e) => updateMachineSetting('gcodeFooter', e.target.value)}
+              multiline
+              minRows={2}
+            />
+          </Box>
+
+          <Typography variant="subtitle1" gutterBottom>材料設定</Typography>
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
+            <Button variant="contained" size="small" onClick={() => { setEditingMaterial({ ...EMPTY_MATERIAL }); setIsMaterialDialogOpen(true); }}>材料を追加</Button>
+          </Box>
+          <TableContainer component={Paper} sx={{ mb: 3 }}>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>名称</TableCell>
+                  <TableCell align="right">送り (mm/min)</TableCell>
+                  <TableCell align="right">突っ込み (mm/min)</TableCell>
+                  <TableCell align="right">RPM</TableCell>
+                  <TableCell align="right">切込み深さ (mm)</TableCell>
+                  <TableCell align="center">操作</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {materialSettings.map((material) => (
+                  <TableRow key={material.id} hover selected={material.id === selectedMaterialId}>
+                    <TableCell>{material.name}</TableCell>
+                    <TableCell align="right">{material.feedRate}</TableCell>
+                    <TableCell align="right">{material.plungeRate}</TableCell>
+                    <TableCell align="right">{material.rpm}</TableCell>
+                    <TableCell align="right">{material.depthPerPass}</TableCell>
+                    <TableCell align="center">
+                      <Button size="small" onClick={() => { setEditingMaterial({ ...material }); setIsMaterialDialogOpen(true); }} sx={{ mr: 1 }}>編集</Button>
+                      <Button size="small" color="secondary" onClick={() => {
+                        if (confirm('この材料を削除しますか？')) {
+                          setMaterialSettings((prev) => {
+                            const updated = prev.filter((m) => m.id !== material.id);
+                            if (material.id === selectedMaterialId) {
+                              setSelectedMaterialId(updated.length ? updated[0].id : '');
+                            }
+                            return updated;
+                          });
+                        }
+                      }}>削除</Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+
+          <Typography variant="subtitle1" gutterBottom>工具設定</Typography>
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
+            <Button variant="contained" size="small" onClick={() => { setEditingTool({ ...EMPTY_TOOL }); setIsToolDialogOpen(true); }}>工具を追加</Button>
+          </Box>
+          <TableContainer component={Paper}>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>名称</TableCell>
+                  <TableCell align="right">径 (mm)</TableCell>
+                  <TableCell>種類</TableCell>
+                  <TableCell align="center">操作</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {toolSettings.map((tool) => (
+                  <TableRow key={tool.id} hover selected={tool.id === selectedToolId}>
+                    <TableCell>{tool.name}</TableCell>
+                    <TableCell align="right">{tool.diameter}</TableCell>
+                    <TableCell>{tool.type}</TableCell>
+                    <TableCell align="center">
+                      <Button size="small" onClick={() => { setEditingTool({ ...tool }); setIsToolDialogOpen(true); }} sx={{ mr: 1 }}>編集</Button>
+                      <Button size="small" color="secondary" onClick={() => {
+                        if (confirm('この工具を削除しますか？')) {
+                          setToolSettings((prev) => {
+                            const updated = prev.filter((t) => t.id !== tool.id);
+                            if (tool.id === selectedToolId) {
+                              setSelectedToolId(updated.length ? updated[0].id : '');
+                            }
+                            return updated;
+                          });
+                        }
+                      }}>削除</Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setIsSettingsOpen(false)}>キャンセル</Button>
+          <Button
+            variant="contained"
+            onClick={async () => {
+              try {
+                await window.electronAPI.saveSettings({
+                  machineSettings,
+                  materialSettings,
+                  toolSettings,
+                  selectedMaterialId: typeof selectedMaterialId === 'number' ? selectedMaterialId : undefined,
+                  selectedToolId: typeof selectedToolId === 'number' ? selectedToolId : undefined,
+                });
+                setIsSettingsOpen(false);
+              } catch (error) {
+                console.error('Failed to save settings', error);
+                alert('設定の保存に失敗しました。');
+              }
+            }}
+          >保存</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={isMaterialDialogOpen} onClose={() => setIsMaterialDialogOpen(false)}>
+        <DialogTitle>{editingMaterial.id ? '材料を編集' : '材料を追加'}</DialogTitle>
+        <DialogContent dividers>
+          <TextField
+            label="名称"
+            value={editingMaterial.name}
+            onChange={(e) => setEditingMaterial((prev) => ({ ...prev, name: e.target.value }))}
+            fullWidth
+            margin="dense"
+          />
+          <TextField
+            label="送り速度 (mm/min)"
+            type="number"
+            value={editingMaterial.feedRate}
+            onChange={(e) => setEditingMaterial((prev) => ({ ...prev, feedRate: Number(e.target.value) || 0 }))}
+            fullWidth
+            margin="dense"
+          />
+          <TextField
+            label="突っ込み速度 (mm/min)"
+            type="number"
+            value={editingMaterial.plungeRate}
+            onChange={(e) => setEditingMaterial((prev) => ({ ...prev, plungeRate: Number(e.target.value) || 0 }))}
+            fullWidth
+            margin="dense"
+          />
+          <TextField
+            label="主軸回転数 (RPM)"
+            type="number"
+            value={editingMaterial.rpm}
+            onChange={(e) => setEditingMaterial((prev) => ({ ...prev, rpm: Number(e.target.value) || 0 }))}
+            fullWidth
+            margin="dense"
+          />
+          <TextField
+            label="切込み深さ (mm)"
+            type="number"
+            value={editingMaterial.depthPerPass}
+            onChange={(e) => setEditingMaterial((prev) => ({ ...prev, depthPerPass: Number(e.target.value) || 0 }))}
+            fullWidth
+            margin="dense"
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setIsMaterialDialogOpen(false)}>キャンセル</Button>
+          <Button
+            variant="contained"
+            onClick={() => {
+              if (!editingMaterial.name.trim()) {
+                alert('材料名を入力してください。');
+                return;
+              }
+              if (editingMaterial.id !== null) {
+                setMaterialSettings((prev) => prev.map((material) => (material.id === editingMaterial.id ? { ...editingMaterial, id: editingMaterial.id } : material)));
+              } else {
+                const newMaterial: MaterialSetting = { ...editingMaterial, id: Date.now() };
+                setMaterialSettings((prev) => [...prev, newMaterial]);
+                setSelectedMaterialId(newMaterial.id);
+              }
+              setIsMaterialDialogOpen(false);
+            }}
+          >保存</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={isToolDialogOpen} onClose={() => setIsToolDialogOpen(false)}>
+        <DialogTitle>{editingTool.id ? '工具を編集' : '工具を追加'}</DialogTitle>
+        <DialogContent dividers>
+          <TextField
+            label="名称"
+            value={editingTool.name}
+            onChange={(e) => setEditingTool((prev) => ({ ...prev, name: e.target.value }))}
+            fullWidth
+            margin="dense"
+          />
+          <TextField
+            label="径 (mm)"
+            type="number"
+            value={editingTool.diameter}
+            onChange={(e) => setEditingTool((prev) => ({ ...prev, diameter: Number(e.target.value) || 0 }))}
+            fullWidth
+            margin="dense"
+          />
+          <FormControl fullWidth margin="dense">
+            <InputLabel>種類</InputLabel>
+            <Select
+              value={editingTool.type}
+              label="種類"
+              onChange={(e) => setEditingTool((prev) => ({ ...prev, type: e.target.value }))}
+            >
+              <MenuItem value="endmill">エンドミル</MenuItem>
+              <MenuItem value="ballend">ボールエンドミル</MenuItem>
+              <MenuItem value="drill">ドリル</MenuItem>
+              <MenuItem value="vbit">Vビット</MenuItem>
+            </Select>
+          </FormControl>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setIsToolDialogOpen(false)}>キャンセル</Button>
+          <Button
+            variant="contained"
+            onClick={() => {
+              if (!editingTool.name.trim()) {
+                alert('工具名を入力してください。');
+                return;
+              }
+              if (editingTool.id !== null) {
+                setToolSettings((prev) => prev.map((tool) => (tool.id === editingTool.id ? { ...editingTool, id: editingTool.id } : tool)));
+              } else {
+                const newTool: ToolSetting = { ...editingTool, id: Date.now() };
+                setToolSettings((prev) => [...prev, newTool]);
+                setSelectedToolId(newTool.id);
+              }
+              setIsToolDialogOpen(false);
+            }}
+          >保存</Button>
+        </DialogActions>
+      </Dialog>
     </ThemeProvider>
   );
 };

@@ -13,6 +13,11 @@ namespace GeoCraft.Desktop.Services
 
         public object GeneratePocket(List<double[]> geometryData, double toolDiameter, double stepover)
         {
+             if (stepover <= 0)
+             {
+                 return new { status = "error", message = "Stepover must be greater than zero." };
+             }
+
              if (geometryData == null || geometryData.Count < 3)
             {
                 return new { status = "error", message = "Invalid geometry. At least 3 points required." };
@@ -30,8 +35,19 @@ namespace GeoCraft.Desktop.Services
                 var mainPoly = _factory.CreatePolygon(coordinates);
                 if (!mainPoly.IsValid)
                 {
-                     mainPoly = (Polygon)mainPoly.Buffer(0);
-                     if (!mainPoly.IsValid) return new { status = "error", message = "Invalid polygon geometry." };
+                     var fixedGeom = mainPoly.Buffer(0);
+                     if (fixedGeom is Polygon poly)
+                     {
+                         mainPoly = poly;
+                     }
+                     else if (fixedGeom is MultiPolygon mp && mp.NumGeometries > 0)
+                     {
+                         mainPoly = (Polygon)mp.GetGeometryN(0);
+                     }
+                     else
+                     {
+                         return new { status = "error", message = "Invalid polygon geometry." };
+                     }
                 }
 
                 List<List<double[]>> allPaths = new List<List<double[]>>();
