@@ -16,6 +16,7 @@ import {
     Grid,
 } from '@mui/material';
 import { Refresh, Link, LinkOff, PlayArrow, Pause, Stop, Settings } from '@mui/icons-material';
+import { MachineSetting } from '../types';
 
 interface ControlPanelProps {
     toolDiameter: number;
@@ -68,6 +69,9 @@ interface ControlPanelProps {
     setJogStep: (val: number) => void;
     handleJog: (axis: 'X' | 'Y' | 'Z', direction: number) => void;
     handleSetZero: () => void;
+    machineSettings: MachineSetting[];
+    selectedMachineId: number | '';
+    setSelectedMachineId: (val: number) => void;
 }
 
 const SIDE_PANEL_WIDTH = 360;
@@ -149,6 +153,18 @@ const ControlPanel = (props: ControlPanelProps) => {
                 <TabPanel value={activeTab} index={1}>
                     <Paper sx={{ p: 2, mb: 2 }}>
                         <Typography variant="h6" gutterBottom>マシン設定</Typography>
+                        <FormControl fullWidth margin="normal" size="small">
+                            <InputLabel>加工機</InputLabel>
+                            <Select
+                                value={props.selectedMachineId}
+                                label="加工機"
+                                onChange={(e) => props.setSelectedMachineId(e.target.value as number)}
+                            >
+                                {props.machineSettings.map(machine => (
+                                    <MenuItem key={machine.id} value={machine.id}>{machine.name}</MenuItem>
+                                ))}
+                            </Select>
+                        </FormControl>
                         <TextField label="安全高さ (mm)" type="number" value={props.safeZ} onChange={(e) => props.setSafeZ(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
                         <TextField label="切り込み深さ (mm)" type="number" value={props.stepDown} onChange={(e) => props.setStepDown(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
                         <TextField label="リトラクト高さ (mm)" type="number" value={props.retractZ} onChange={(e) => props.setRetractZ(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />

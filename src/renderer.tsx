@@ -38,7 +38,7 @@ import { api } from './api';
 
 import ThreeViewer from './components/ThreeViewer';
 import ControlPanel from './components/ControlPanel';
-import { Geometry, ToolpathSegment, Toolpath, SerialPortInfo } from './types';
+import { Geometry, ToolpathSegment, Toolpath, SerialPortInfo, MachineSetting, EditableMachineSetting } from './types';
 
 const theme = createTheme({
   palette: {
@@ -50,15 +50,6 @@ const theme = createTheme({
     },
   },
 });
-
-type MachineSettings = {
-  safeZ: number;
-  retractZ: number;
-  stepDown: number;
-  peckQ: number;
-  gcodeHeader: string;
-  gcodeFooter: string;
-};
 
 type MaterialSetting = {
   id: number;
@@ -81,7 +72,8 @@ type ToolSetting = {
 type EditableToolSetting = Omit<ToolSetting, 'id'> & { id: number | null };
 
 type PersistedSettings = {
-  machineSettings?: Partial<MachineSettings>;
+  machineSettings?: MachineSetting[];
+  selectedMachineId?: number;
   materialSettings?: MaterialSetting[];
   toolSettings?: ToolSetting[];
   selectedMaterialId?: number;
@@ -90,14 +82,18 @@ type PersistedSettings = {
 
 const SIDE_PANEL_WIDTH = 360;
 
-const DEFAULT_MACHINE_SETTINGS: MachineSettings = {
-  safeZ: 5.0,
-  retractZ: 2.0,
-  stepDown: -2.0,
-  peckQ: 1.0,
-  gcodeHeader: 'G90 G21 G17',
-  gcodeFooter: 'M30',
-};
+const DEFAULT_MACHINES: MachineSetting[] = [
+  {
+    id: 1,
+    name: 'Standard CNC',
+    safeZ: 5.0,
+    retractZ: 2.0,
+    stepDown: -2.0,
+    peckQ: 1.0,
+    gcodeHeader: 'G90 G21 G17',
+    gcodeFooter: 'M30',
+  }
+];
 
 const DEFAULT_MATERIALS: MaterialSetting[] = [
   { id: 1, name: 'MDF', feedRate: 800, plungeRate: 200, rpm: 12000, depthPerPass: 2 },
@@ -109,6 +105,17 @@ const DEFAULT_TOOLS: ToolSetting[] = [
   { id: 2, name: '3mm Endmill', diameter: 3.0, type: 'endmill' },
   { id: 3, name: '1mm Drill', diameter: 1.0, type: 'drill' },
 ];
+
+const EMPTY_MACHINE: EditableMachineSetting = {
+  id: null,
+  name: '',
+  safeZ: 5.0,
+  retractZ: 2.0,
+  stepDown: -2.0,
+  peckQ: 1.0,
+  gcodeHeader: 'G90 G21 G17',
+  gcodeFooter: 'M30',
+};
 
 const EMPTY_MATERIAL: EditableMaterialSetting = {
   id: null,
@@ -128,7 +135,8 @@ const EMPTY_TOOL: EditableToolSetting = {
 
 const App = () => {
   // states
-  const [machineSettings, setMachineSettings] = useState<MachineSettings>(DEFAULT_MACHINE_SETTINGS);
+  const [machineSettings, setMachineSettings] = useState<MachineSetting[]>(DEFAULT_MACHINES);
+  const [selectedMachineId, setSelectedMachineId] = useState<number | ''>(DEFAULT_MACHINES[0]?.id ?? '');
   const [toolDiameter, setToolDiameter] = useState(3.0);
   const [stepover, setStepover] = useState(0.5);
   const [sliceHeight, setSliceHeight] = useState(1.0);
@@ -143,6 +151,8 @@ const App = () => {
   const [toolSettings, setToolSettings] = useState<ToolSetting[]>(DEFAULT_TOOLS);
   const [selectedToolId, setSelectedToolId] = useState<number | ''>(DEFAULT_TOOLS[0]?.id ?? '');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isMachineDialogOpen, setIsMachineDialogOpen] = useState(false);
+  const [editingMachine, setEditingMachine] = useState<EditableMachineSetting>({ ...EMPTY_MACHINE });
   const [isMaterialDialogOpen, setIsMaterialDialogOpen] = useState(false);
   const [editingMaterial, setEditingMaterial] = useState<EditableMaterialSetting>({ ...EMPTY_MATERIAL });
   const [isToolDialogOpen, setIsToolDialogOpen] = useState(false);
@@ -164,8 +174,12 @@ const App = () => {
   const [jogStep, setJogStep] = useState(10);
   const [machinePosition, setMachinePosition] = useState({ wpos: { x: 0, y: 0, z: 0 }, mpos: { x: 0, y: 0, z: 0 }, status: 'Unknown' });
 
-  const updateMachineSetting = <K extends keyof MachineSettings>(key: K, value: MachineSettings[K]) => {
-    setMachineSettings((prev) => ({ ...prev, [key]: value }));
+  const currentMachine = machineSettings.find((m) => m.id === selectedMachineId) || machineSettings[0] || DEFAULT_MACHINES[0];
+
+  const updateMachineSetting = <K extends keyof Omit<MachineSetting, 'id'>>(key: K, value: MachineSetting[K]) => {
+    setMachineSettings((prev) =>
+      prev.map((m) => (m.id === selectedMachineId ? { ...m, [key]: value } : m))
+    );
   };
 
   // --- CNC Connection Logic ---
@@ -249,6 +263,13 @@ const App = () => {
   }, [selectedMaterialId, materialSettings]);
 
   useEffect(() => {
+    const selectedMachine = machineSettings.find((m) => m.id === selectedMachineId);
+    if (!selectedMachine && machineSettings.length > 0 && selectedMachineId !== machineSettings[0].id) {
+      setSelectedMachineId(machineSettings[0].id);
+    }
+  }, [selectedMachineId, machineSettings]);
+
+  useEffect(() => {
     const loadSettings = async () => {
       try {
         const stored: PersistedSettings = await window.electronAPI.getSettings();
@@ -271,11 +292,13 @@ const App = () => {
           }
         }
 
-        if (stored.machineSettings) {
-          setMachineSettings((prev) => ({
-            ...prev,
-            ...stored.machineSettings,
-          }));
+        if (stored.machineSettings && stored.machineSettings.length > 0) {
+          setMachineSettings(stored.machineSettings);
+          if (stored.selectedMachineId && stored.machineSettings.some((m) => m.id === stored.selectedMachineId)) {
+            setSelectedMachineId(stored.selectedMachineId);
+          } else {
+            setSelectedMachineId(stored.machineSettings[0].id);
+          }
         }
       } catch (error) {
         console.error('Failed to load settings', error);
@@ -452,10 +475,10 @@ const App = () => {
       const params = {
         drillPoints: geometry.drill_points,
         feedRate,
-        safeZ: machineSettings.safeZ,
-        retractZ: machineSettings.retractZ,
-        stepDown: machineSettings.stepDown,
-        peckQ: machineSettings.peckQ,
+        safeZ: currentMachine.safeZ,
+        retractZ: currentMachine.retractZ,
+        stepDown: currentMachine.stepDown,
+        peckQ: currentMachine.peckQ,
       };
       const result = await api.generateDrillGcode(params);
       if (result.status === 'success') alert(`ドリルGコードを保存しました: ${result.filePath}`);
@@ -471,9 +494,9 @@ const App = () => {
       const params = {
         toolpaths: toolpaths,
         feedRate,
-        safeZ: machineSettings.safeZ,
-        stepDown: machineSettings.stepDown,
-        retractZ: machineSettings.retractZ,
+        safeZ: currentMachine.safeZ,
+        stepDown: currentMachine.stepDown,
+        retractZ: currentMachine.retractZ,
       };
       const result = await api.generateGcode(params);
       if (result.status === 'success') alert(`Gコードを保存しました: ${result.filePath}`);
@@ -518,17 +541,17 @@ const App = () => {
             sliceHeight={sliceHeight}
             setSliceHeight={setSliceHeight}
             handleGenerate3dPath={handleGenerate3dPath}
-            retractZ={machineSettings.retractZ}
+            retractZ={currentMachine.retractZ}
             setRetractZ={(val) => updateMachineSetting('retractZ', val)}
-            peckQ={machineSettings.peckQ}
+            peckQ={currentMachine.peckQ}
             setPeckQ={(val) => updateMachineSetting('peckQ', val)}
             handleGenerateDrillGcode={handleGenerateDrillGcode}
             feedRate={feedRate}
             setFeedRate={setFeedRate}
             handleSaveGcode={handleSaveGcode}
-            safeZ={machineSettings.safeZ}
+            safeZ={currentMachine.safeZ}
             setSafeZ={(val) => updateMachineSetting('safeZ', val)}
-            stepDown={machineSettings.stepDown}
+            stepDown={currentMachine.stepDown}
             setStepDown={(val) => updateMachineSetting('stepDown', val)}
             isConnected={isConnected}
             selectedPort={selectedPort}
@@ -553,6 +576,9 @@ const App = () => {
             setJogStep={setJogStep}
             handleJog={handleJog}
             handleSetZero={handleSetZero}
+            machineSettings={machineSettings}
+            selectedMachineId={selectedMachineId}
+            setSelectedMachineId={setSelectedMachineId}
           />
         </Grid>
       </Box>
@@ -560,53 +586,51 @@ const App = () => {
       <Dialog open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} maxWidth="md" fullWidth>
         <DialogTitle>設定</DialogTitle>
         <DialogContent dividers>
-          <Typography variant="subtitle1" gutterBottom>マシン設定</Typography>
-          <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, mb: 3 }}>
-            <TextField
-              label="安全高さ (Z)"
-              type="number"
-              value={machineSettings.safeZ}
-              onChange={(e) => updateMachineSetting('safeZ', Number(e.target.value) || 0)}
-              size="small"
-            />
-            <TextField
-              label="切込み深さ (Z)"
-              type="number"
-              value={machineSettings.stepDown}
-              onChange={(e) => updateMachineSetting('stepDown', Number(e.target.value) || 0)}
-              size="small"
-            />
-            <TextField
-              label="R点 (切込み開始高さ)"
-              type="number"
-              value={machineSettings.retractZ}
-              onChange={(e) => updateMachineSetting('retractZ', Number(e.target.value) || 0)}
-              size="small"
-            />
-            <TextField
-              label="ペック量 (Q)"
-              type="number"
-              value={machineSettings.peckQ}
-              onChange={(e) => updateMachineSetting('peckQ', Number(e.target.value) || 0)}
-              size="small"
-            />
-            <TextField
-              label="G-code ヘッダー"
-              value={machineSettings.gcodeHeader}
-              onChange={(e) => updateMachineSetting('gcodeHeader', e.target.value)}
-              multiline
-              minRows={2}
-            />
-            <TextField
-              label="G-code フッター"
-              value={machineSettings.gcodeFooter}
-              onChange={(e) => updateMachineSetting('gcodeFooter', e.target.value)}
-              multiline
-              minRows={2}
-            />
+          <Typography variant="subtitle1" gutterBottom sx={{ mt: 2 }}>加工機設定</Typography>
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
+            <Button variant="contained" size="small" onClick={() => { setEditingMachine({ ...EMPTY_MACHINE }); setIsMachineDialogOpen(true); }}>加工機を追加</Button>
           </Box>
+          <TableContainer component={Paper} sx={{ mb: 3 }}>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>名称</TableCell>
+                  <TableCell align="right">安全高さ (Z)</TableCell>
+                  <TableCell align="right">切込み深さ (Z)</TableCell>
+                  <TableCell align="right">R点 (退避Z)</TableCell>
+                  <TableCell align="right">ペック量 (Q)</TableCell>
+                  <TableCell align="center">操作</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {machineSettings.map((machine) => (
+                  <TableRow key={machine.id} hover selected={machine.id === selectedMachineId}>
+                    <TableCell>{machine.name}</TableCell>
+                    <TableCell align="right">{machine.safeZ}</TableCell>
+                    <TableCell align="right">{machine.stepDown}</TableCell>
+                    <TableCell align="right">{machine.retractZ}</TableCell>
+                    <TableCell align="right">{machine.peckQ}</TableCell>
+                    <TableCell align="center">
+                      <Button size="small" onClick={() => { setEditingMachine({ ...machine }); setIsMachineDialogOpen(true); }} sx={{ mr: 1 }}>編集</Button>
+                      <Button size="small" color="secondary" onClick={() => {
+                        if (confirm('この加工機を削除しますか？')) {
+                          setMachineSettings((prev) => {
+                            const updated = prev.filter((m) => m.id !== machine.id);
+                            if (machine.id === selectedMachineId) {
+                              setSelectedMachineId(updated.length ? updated[0].id : '');
+                            }
+                            return updated;
+                          });
+                        }
+                      }}>削除</Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
 
-          <Typography variant="subtitle1" gutterBottom>材料設定</Typography>
+          <Typography variant="subtitle1" gutterBottom sx={{ mt: 2 }}>材料設定</Typography>
           <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
             <Button variant="contained" size="small" onClick={() => { setEditingMaterial({ ...EMPTY_MATERIAL }); setIsMaterialDialogOpen(true); }}>材料を追加</Button>
           </Box>
@@ -650,7 +674,7 @@ const App = () => {
             </Table>
           </TableContainer>
 
-          <Typography variant="subtitle1" gutterBottom>工具設定</Typography>
+          <Typography variant="subtitle1" gutterBottom sx={{ mt: 2 }}>工具設定</Typography>
           <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
             <Button variant="contained" size="small" onClick={() => { setEditingTool({ ...EMPTY_TOOL }); setIsToolDialogOpen(true); }}>工具を追加</Button>
           </Box>
@@ -698,6 +722,7 @@ const App = () => {
               try {
                 await window.electronAPI.saveSettings({
                   machineSettings,
+                  selectedMachineId: typeof selectedMachineId === 'number' ? selectedMachineId : undefined,
                   materialSettings,
                   toolSettings,
                   selectedMaterialId: typeof selectedMaterialId === 'number' ? selectedMaterialId : undefined,
@@ -708,6 +733,89 @@ const App = () => {
                 console.error('Failed to save settings', error);
                 alert('設定の保存に失敗しました。');
               }
+            }}
+          >保存</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={isMachineDialogOpen} onClose={() => setIsMachineDialogOpen(false)}>
+        <DialogTitle>{editingMachine.id ? '加工機を編集' : '加工機を追加'}</DialogTitle>
+        <DialogContent dividers>
+          <TextField
+            label="名称"
+            value={editingMachine.name}
+            onChange={(e) => setEditingMachine((prev) => ({ ...prev, name: e.target.value }))}
+            fullWidth
+            margin="dense"
+          />
+          <TextField
+            label="安全高さ (Z)"
+            type="number"
+            value={editingMachine.safeZ}
+            onChange={(e) => setEditingMachine((prev) => ({ ...prev, safeZ: Number(e.target.value) || 0 }))}
+            fullWidth
+            margin="dense"
+          />
+          <TextField
+            label="切込み深さ (Z)"
+            type="number"
+            value={editingMachine.stepDown}
+            onChange={(e) => setEditingMachine((prev) => ({ ...prev, stepDown: Number(e.target.value) || 0 }))}
+            fullWidth
+            margin="dense"
+          />
+          <TextField
+            label="R点 (切込み開始高さ)"
+            type="number"
+            value={editingMachine.retractZ}
+            onChange={(e) => setEditingMachine((prev) => ({ ...prev, retractZ: Number(e.target.value) || 0 }))}
+            fullWidth
+            margin="dense"
+          />
+          <TextField
+            label="ペック量 (Q)"
+            type="number"
+            value={editingMachine.peckQ}
+            onChange={(e) => setEditingMachine((prev) => ({ ...prev, peckQ: Number(e.target.value) || 0 }))}
+            fullWidth
+            margin="dense"
+          />
+          <TextField
+            label="G-code ヘッダー"
+            value={editingMachine.gcodeHeader}
+            onChange={(e) => setEditingMachine((prev) => ({ ...prev, gcodeHeader: e.target.value }))}
+            fullWidth
+            margin="dense"
+            multiline
+            minRows={2}
+          />
+          <TextField
+            label="G-code フッター"
+            value={editingMachine.gcodeFooter}
+            onChange={(e) => setEditingMachine((prev) => ({ ...prev, gcodeFooter: e.target.value }))}
+            fullWidth
+            margin="dense"
+            multiline
+            minRows={2}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setIsMachineDialogOpen(false)}>キャンセル</Button>
+          <Button
+            variant="contained"
+            onClick={() => {
+              if (!editingMachine.name.trim()) {
+                alert('加工機名を入力してください。');
+                return;
+              }
+              if (editingMachine.id !== null) {
+                setMachineSettings((prev) => prev.map((machine) => (machine.id === editingMachine.id ? { ...editingMachine, id: editingMachine.id } : machine)));
+              } else {
+                const newMachine: MachineSetting = { ...editingMachine, id: Date.now() };
+                setMachineSettings((prev) => [...prev, newMachine]);
+                setSelectedMachineId(newMachine.id);
+              }
+              setIsMachineDialogOpen(false);
             }}
           >保存</Button>
         </DialogActions>

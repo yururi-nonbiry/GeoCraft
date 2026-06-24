@@ -10,3 +10,16 @@ export type ToolpathSegment =
 export interface SerialPortInfo {
   path: string;
 }
+
+export type MachineSetting = {
+  id: number;
+  name: string;
+  safeZ: number;
+  retractZ: number;
+  stepDown: number;
+  peckQ: number;
+  gcodeHeader: string;
+  gcodeFooter: string;
+};
+
+export type EditableMachineSetting = Omit<MachineSetting, 'id'> & { id: number | null };
