@@ -173,6 +173,14 @@ const App = () => {
   // Jog & Status State
   const [jogStep, setJogStep] = useState(10);
   const [machinePosition, setMachinePosition] = useState({ wpos: { x: 0, y: 0, z: 0 }, mpos: { x: 0, y: 0, z: 0 }, status: 'Unknown' });
+  const [grblSettings, setGrblSettings] = useState({
+    stepsX: 250,
+    stepsY: 250,
+    stepsZ: 250,
+    invertX: false,
+    invertY: false,
+    invertZ: false,
+  });
 
   const currentMachine = machineSettings.find((m) => m.id === selectedMachineId) || machineSettings[0] || DEFAULT_MACHINES[0];
 
@@ -233,6 +241,21 @@ const App = () => {
         }).catch(error => alert(`SVG解析に失敗しました: ${error}`));
       }
     });
+    const removeGrblSettingListener = api.onGrblSetting((setting) => {
+      setGrblSettings(prev => {
+        const next = { ...prev };
+        if (setting.id === 100) next.stepsX = setting.value;
+        if (setting.id === 101) next.stepsY = setting.value;
+        if (setting.id === 102) next.stepsZ = setting.value;
+        if (setting.id === 3) {
+          const val = Math.round(setting.value);
+          next.invertX = (val & 1) !== 0;
+          next.invertY = (val & 2) !== 0;
+          next.invertZ = (val & 4) !== 0;
+        }
+        return next;
+      });
+    });
 
     return () => {
       removeDataListener();
@@ -240,6 +263,7 @@ const App = () => {
       removeGcodeProgressListener();
       removeStatusListener();
       removeFileOpenListener();
+      removeGrblSettingListener();
     };
   }, []);
 
@@ -314,6 +338,9 @@ const App = () => {
     if (result.status === 'success') {
       setIsConnected(true);
       setConsoleLog(prev => [...prev, `--- ${selectedPort}に接続しました ---`]);
+      setTimeout(() => {
+        api.requestGrblSettings();
+      }, 500);
     } else {
       alert(`接続エラー: ${result.message}`);
     }
@@ -331,6 +358,26 @@ const App = () => {
   const handleSetZero = () => {
     if (isConnected && confirm('現在のワーク座標をすべて0に設定します。よろしいですか？')) {
       api.setZero();
+    }
+  };
+
+  const handleRequestGrblSettings = () => {
+    if (isConnected) {
+      api.requestGrblSettings();
+    }
+  };
+
+  const handleSaveGrblSettings = () => {
+    if (isConnected) {
+      api.saveGrblSettings(
+        grblSettings.stepsX,
+        grblSettings.stepsY,
+        grblSettings.stepsZ,
+        grblSettings.invertX,
+        grblSettings.invertY,
+        grblSettings.invertZ
+      );
+      alert('設定書き込みコマンドを送信しました。');
     }
   };
 
@@ -579,6 +626,10 @@ const App = () => {
             machineSettings={machineSettings}
             selectedMachineId={selectedMachineId}
             setSelectedMachineId={setSelectedMachineId}
+            grblSettings={grblSettings}
+            setGrblSettings={setGrblSettings}
+            handleRequestGrblSettings={handleRequestGrblSettings}
+            handleSaveGrblSettings={handleSaveGrblSettings}
           />
         </Grid>
       </Box>

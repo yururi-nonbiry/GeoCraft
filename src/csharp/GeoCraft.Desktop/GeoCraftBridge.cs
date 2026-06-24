@@ -96,6 +96,21 @@ namespace GeoCraft.Desktop
                     SendNextLine();
                 }
             }
+            else if (line.StartsWith("$") && line.Contains("="))
+            {
+                try
+                {
+                    var parts = line.Substring(1).Split('=');
+                    if (parts.Length == 2 && int.TryParse(parts[0], out int id) && double.TryParse(parts[1], out double val))
+                    {
+                        Broadcast("grbl-setting", new { id = id, value = val });
+                    }
+                }
+                catch (Exception ex)
+                {
+                    LogService.Log($"Error parsing Grbl setting line '{line}': {ex.Message}");
+                }
+            }
         }
 
         private void SendNextLine()
@@ -314,6 +329,22 @@ namespace GeoCraft.Desktop
         public void SetZero() {
              ExecuteSafeVoid(() => {
                  _serialService.Write("G10 L20 P1 X0 Y0 Z0\n");
+             });
+        }
+
+        public void RequestGrblSettings() {
+             ExecuteSafeVoid(() => {
+                 _serialService.Write("$$\n");
+             });
+        }
+
+        public void SaveGrblSettings(double stepsX, double stepsY, double stepsZ, bool invertX, bool invertY, bool invertZ) {
+             ExecuteSafeVoid(() => {
+                 int mask = (invertX ? 1 : 0) | (invertY ? 2 : 0) | (invertZ ? 4 : 0);
+                 _serialService.Write($"$100={stepsX}\n");
+                 _serialService.Write($"$101={stepsY}\n");
+                 _serialService.Write($"$102={stepsZ}\n");
+                 _serialService.Write($"$3={mask}\n");
              });
         }
 

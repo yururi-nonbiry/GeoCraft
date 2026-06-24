@@ -14,6 +14,8 @@ import {
     TextareaAutosize,
     LinearProgress,
     Grid,
+    Checkbox,
+    FormControlLabel,
 } from '@mui/material';
 import { Refresh, Link, LinkOff, PlayArrow, Pause, Stop, Settings } from '@mui/icons-material';
 import { MachineSetting } from '../types';
@@ -72,6 +74,10 @@ interface ControlPanelProps {
     machineSettings: MachineSetting[];
     selectedMachineId: number | '';
     setSelectedMachineId: (val: number) => void;
+    grblSettings: { stepsX: number; stepsY: number; stepsZ: number; invertX: boolean; invertY: boolean; invertZ: boolean };
+    setGrblSettings: React.Dispatch<React.SetStateAction<{ stepsX: number; stepsY: number; stepsZ: number; invertX: boolean; invertY: boolean; invertZ: boolean }>>;
+    handleRequestGrblSettings: () => void;
+    handleSaveGrblSettings: () => void;
 }
 
 const SIDE_PANEL_WIDTH = 360;
@@ -170,6 +176,73 @@ const ControlPanel = (props: ControlPanelProps) => {
                         <TextField label="リトラクト高さ (mm)" type="number" value={props.retractZ} onChange={(e) => props.setRetractZ(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
                         <TextField label="ペック量 (Q)" type="number" value={props.peckQ} onChange={(e) => props.setPeckQ(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
                     </Paper>
+                    {props.isConnected && (
+                        <Paper sx={{ p: 2, mb: 2 }}>
+                            <Typography variant="h6" gutterBottom>加工機パラメータ (Grbl)</Typography>
+                            <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
+                                <Button variant="outlined" size="small" onClick={props.handleRequestGrblSettings} fullWidth>
+                                    設定読み込み
+                                </Button>
+                                <Button variant="contained" size="small" onClick={props.handleSaveGrblSettings} fullWidth>
+                                    設定書き込み
+                                </Button>
+                            </Box>
+                            <TextField
+                                label="X軸ステップ数 (step/mm)"
+                                type="number"
+                                value={props.grblSettings.stepsX}
+                                onChange={(e) => props.setGrblSettings(prev => ({ ...prev, stepsX: parseFloat(e.target.value) || 0 }))}
+                                fullWidth margin="normal" size="small"
+                            />
+                            <TextField
+                                label="Y軸ステップ数 (step/mm)"
+                                type="number"
+                                value={props.grblSettings.stepsY}
+                                onChange={(e) => props.setGrblSettings(prev => ({ ...prev, stepsY: parseFloat(e.target.value) || 0 }))}
+                                fullWidth margin="normal" size="small"
+                            />
+                            <TextField
+                                label="Z軸ステップ数 (step/mm)"
+                                type="number"
+                                value={props.grblSettings.stepsZ}
+                                onChange={(e) => props.setGrblSettings(prev => ({ ...prev, stepsZ: parseFloat(e.target.value) || 0 }))}
+                                fullWidth margin="normal" size="small"
+                            />
+                            <Box sx={{ mt: 1, display: 'flex', flexDirection: 'column' }}>
+                                <Typography variant="body2" sx={{ mb: 0.5 }}>移動方向の反転 (逆転)</Typography>
+                                <FormControlLabel
+                                    control={
+                                        <Checkbox
+                                            checked={props.grblSettings.invertX}
+                                            onChange={(e) => props.setGrblSettings(prev => ({ ...prev, invertX: e.target.checked }))}
+                                            size="small"
+                                        />
+                                    }
+                                    label="X軸反転"
+                                />
+                                <FormControlLabel
+                                    control={
+                                        <Checkbox
+                                            checked={props.grblSettings.invertY}
+                                            onChange={(e) => props.setGrblSettings(prev => ({ ...prev, invertY: e.target.checked }))}
+                                            size="small"
+                                        />
+                                    }
+                                    label="Y軸反転"
+                                />
+                                <FormControlLabel
+                                    control={
+                                        <Checkbox
+                                            checked={props.grblSettings.invertZ}
+                                            onChange={(e) => props.setGrblSettings(prev => ({ ...prev, invertZ: e.target.checked }))}
+                                            size="small"
+                                        />
+                                    }
+                                    label="Z軸反転"
+                                />
+                            </Box>
+                        </Paper>
+                    )}
                     <Paper sx={{ p: 2, mb: 2 }}>
                         <Typography variant="h6" gutterBottom>CNC 接続</Typography>
                         <FormControl fullWidth margin="normal" size="small" disabled={props.isConnected}>
