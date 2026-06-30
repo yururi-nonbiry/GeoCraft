@@ -11,7 +11,7 @@ namespace GeoCraft.Desktop.Services
     {
         private GeometryFactory _factory = new GeometryFactory();
 
-        public object GeneratePocket(List<double[]> geometryData, double toolDiameter, double stepover)
+        public object GeneratePocket(List<double[]> geometryData, double toolDiameter, double stepover, double stockToLeave = 0.0)
         {
              if (stepover <= 0)
              {
@@ -51,7 +51,7 @@ namespace GeoCraft.Desktop.Services
                 }
 
                 List<List<double[]>> allPaths = new List<List<double[]>>();
-                double currentOffset = -(toolDiameter / 2.0); // Start inside
+                double currentOffset = -((toolDiameter / 2.0) + stockToLeave); // Start inside
 
                 var bufferParams = new BufferParameters();
                 bufferParams.EndCapStyle = EndCapStyle.Flat; // Python used default? Python join_style=2 (MITRE). NTS default is ROUND.

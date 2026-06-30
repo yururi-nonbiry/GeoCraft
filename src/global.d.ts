@@ -21,6 +21,7 @@ export type PocketPathParams = {
     geometry: number[][];
     toolDiameter: number;
     stepover: number;
+    stockToLeave?: number;
 };
 
 export type RoughingPathParams = {
@@ -48,7 +49,7 @@ export interface ElectronAPI {
     onFileOpen: (callback: (filePath: string) => void) => () => void;
     parseDxfFile: (filePath: string) => Promise<any>;
     parseSvgFile: (filePath: string) => Promise<any>;
-    generateContourPath: (toolDiameter: number, geometry: any, side: string) => Promise<any>;
+    generateContourPath: (toolDiameter: number, geometry: any, side: string, stockToLeave?: number) => Promise<any>;
     generatePocketPath: (params: PocketPathParams) => Promise<any>;
     openFile: (fileType: string) => Promise<any>;
     generate3dRoughingPath: (params: RoughingPathParams) => Promise<any>;

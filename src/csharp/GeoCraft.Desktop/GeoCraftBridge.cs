@@ -152,16 +152,22 @@ namespace GeoCraft.Desktop
         public string GetSettings()
         {
             return ExecuteSafe(() => {
-                // TODO: Implement actual settings loading
-                return new { test = "Settings from C#" };
+                string filePath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "settings.json");
+                if (System.IO.File.Exists(filePath))
+                {
+                    string content = System.IO.File.ReadAllText(filePath);
+                    return JsonConvert.DeserializeObject<object>(content) ?? new object();
+                }
+                return new object();
             });
         }
 
         public void SaveSettings(string settingsJson)
         {
             ExecuteSafeVoid(() => {
-                // TODO: Implement settings saving
-                LogService.Log($"Saving settings: {settingsJson}");
+                string filePath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "settings.json");
+                System.IO.File.WriteAllText(filePath, settingsJson);
+                LogService.Log($"Saved settings to {filePath}");
             });
         }
 
@@ -172,22 +178,22 @@ namespace GeoCraft.Desktop
         public string ParseSvgFile(string filePath) { 
              return ExecuteSafe(() => new { status = "error", message = "Not implemented" }); 
         }
-        
-        public string GenerateContourPath(double toolDiameter, string geometryJson, string side) {
+
+        public string GenerateContourPath(double toolDiameter, string geometryJson, string side, double stockToLeave = 0.0) {
              return ExecuteSafe(() => {
-                var geometry = JsonConvert.DeserializeObject<List<double[]>>(geometryJson);
-                if (geometry == null) throw new ArgumentException("Invalid geometry");
-                return _contourService.GenerateContour(toolDiameter, geometry, side);
+                  var geometry = JsonConvert.DeserializeObject<List<double[]>>(geometryJson);
+                  return _contourService.GenerateContour(toolDiameter, geometry, side, stockToLeave);
              });
         }
 
-        public string GeneratePocketPath(string paramsJson) {
+        public string GeneratePocketPath(string paramsJson) { 
              return ExecuteSafe(() => {
                  dynamic p = JsonConvert.DeserializeObject(paramsJson);
-                 List<double[]> geometry = p.geometry.ToObject<List<double[]>>();
+                 List<double[]> geometry = JsonConvert.DeserializeObject<List<double[]>>(Convert.ToString(p.geometry));
                  double toolDiameter = p.toolDiameter;
                  double stepover = p.stepover;
-                 return _pocketService.GeneratePocket(geometry, toolDiameter, stepover);
+                 double stockToLeave = p.stockToLeave ?? 0.0;
+                 return _pocketService.GeneratePocket(geometry, toolDiameter, stepover, stockToLeave);
              });
         }
         

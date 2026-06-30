@@ -23,3 +23,22 @@ export type MachineSetting = {
 };
 
 export type EditableMachineSetting = Omit<MachineSetting, 'id'> & { id: number | null };
+
+export type ToolCutSetting = {
+  depthPerPass: number;
+  feedRate: number;
+  plungeRate: number;
+  rpm: number;
+};
+
+export type ToolSetting = {
+  id: number;
+  machineId: number;
+  name: string;
+  diameter: number;
+  type: string;
+  roughing: ToolCutSetting;
+  finishing: ToolCutSetting & { stockToLeave: number };
+};
+
+export type EditableToolSetting = Omit<ToolSetting, 'id'> & { id: number | null };

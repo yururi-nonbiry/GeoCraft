@@ -11,7 +11,7 @@ namespace GeoCraft.Desktop.Services
     {
         private GeometryFactory _factory = new GeometryFactory();
 
-        public object GenerateContour(double toolDiameter, List<double[]> geometryData, string side)
+        public object GenerateContour(double toolDiameter, List<double[]> geometryData, string side, double stockToLeave = 0.0)
         {
              if (geometryData == null || geometryData.Count < 3)
             {
@@ -34,7 +34,7 @@ namespace GeoCraft.Desktop.Services
                 }
 
                 double toolRadius = toolDiameter / 2.0;
-                double offsetDistance = side == "outer" ? toolRadius : -toolRadius;
+                double offsetDistance = side == "outer" ? (toolRadius + stockToLeave) : -(toolRadius + stockToLeave);
 
                 var bufferParams = new BufferParameters();
                 bufferParams.EndCapStyle = EndCapStyle.Round;

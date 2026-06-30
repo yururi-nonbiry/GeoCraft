@@ -74,8 +74,8 @@ class WebView2API implements ElectronAPI {
 
     parseDxfFile(filePath: string) { return this.callBridge('ParseDxfFile', filePath); }
     parseSvgFile(filePath: string) { return this.callBridge('ParseSvgFile', filePath); }
-    generateContourPath(toolDiameter: number, geometry: any, side: string) {
-        return this.callBridge('GenerateContourPath', toolDiameter, JSON.stringify(geometry), side);
+    generateContourPath(toolDiameter: number, geometry: any, side: string, stockToLeave?: number) {
+        return this.callBridge('GenerateContourPath', toolDiameter, JSON.stringify(geometry), side, stockToLeave ?? 0.0);
     }
     generatePocketPath(params: PocketPathParams) {
         return this.callBridge('GeneratePocketPath', JSON.stringify(params));

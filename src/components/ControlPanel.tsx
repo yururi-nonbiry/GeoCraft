@@ -18,7 +18,7 @@ import {
     FormControlLabel,
 } from '@mui/material';
 import { Refresh, Link, LinkOff, PlayArrow, Pause, Stop, Settings } from '@mui/icons-material';
-import { MachineSetting } from '../types';
+import { MachineSetting, ToolSetting } from '../types';
 
 interface ControlPanelProps {
     toolDiameter: number;
@@ -78,6 +78,13 @@ interface ControlPanelProps {
     setGrblSettings: React.Dispatch<React.SetStateAction<{ stepsX: number; stepsY: number; stepsZ: number; invertX: boolean; invertY: boolean; invertZ: boolean }>>;
     handleRequestGrblSettings: () => void;
     handleSaveGrblSettings: () => void;
+    toolSettings: ToolSetting[];
+    selectedToolId: number | '';
+    setSelectedToolId: (val: number) => void;
+    processType: 'roughing' | 'finishing';
+    setProcessType: (val: 'roughing' | 'finishing') => void;
+    stockToLeave: number;
+    setStockToLeave: (val: number) => void;
 }
 
 const SIDE_PANEL_WIDTH = 360;
@@ -115,8 +122,66 @@ const ControlPanel = (props: ControlPanelProps) => {
             <Box sx={{ flexGrow: 1, overflowY: 'auto' }}>
                 <TabPanel value={activeTab} index={0}>
                     <Paper sx={{ p: 2, mb: 2 }}>
-                        <Typography variant="h6" gutterBottom>ツール設定</Typography>
-                        <TextField label="工具径 (mm)" type="number" value={props.toolDiameter} onChange={(e) => props.setToolDiameter(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
+                        <Typography variant="h6" gutterBottom>加工機・工具設定</Typography>
+                        <FormControl fullWidth margin="normal" size="small">
+                            <InputLabel>加工機</InputLabel>
+                            <Select
+                                value={props.selectedMachineId}
+                                label="加工機"
+                                onChange={(e) => props.setSelectedMachineId(e.target.value as number)}
+                            >
+                                {props.machineSettings.map(machine => (
+                                    <MenuItem key={machine.id} value={machine.id}>{machine.name}</MenuItem>
+                                ))}
+                            </Select>
+                        </FormControl>
+                        <FormControl fullWidth margin="normal" size="small">
+                            <InputLabel>工具</InputLabel>
+                            <Select
+                                value={props.selectedToolId}
+                                label="工具"
+                                onChange={(e) => props.setSelectedToolId(e.target.value as number)}
+                            >
+                                {props.toolSettings
+                                    .filter(t => t.machineId === props.selectedMachineId)
+                                    .map(tool => (
+                                        <MenuItem key={tool.id} value={tool.id}>{tool.name} (Φ{tool.diameter}mm)</MenuItem>
+                                    ))}
+                            </Select>
+                        </FormControl>
+                        <TextField
+                            label="工具径 (mm)"
+                            type="number"
+                            value={props.toolDiameter}
+                            onChange={(e) => props.setToolDiameter(parseFloat(e.target.value) || 0)}
+                            fullWidth
+                            margin="normal"
+                            size="small"
+                            InputProps={{ readOnly: true }}
+                            helperText="選択した工具の直径（編集不可）"
+                        />
+                        <FormControl fullWidth margin="normal" size="small">
+                            <InputLabel>加工方法</InputLabel>
+                            <Select
+                                value={props.processType}
+                                label="加工方法"
+                                onChange={(e) => props.setProcessType(e.target.value as 'roughing' | 'finishing')}
+                            >
+                                <MenuItem value="roughing">粗削り</MenuItem>
+                                <MenuItem value="finishing">仕上げ</MenuItem>
+                            </Select>
+                        </FormControl>
+                        {props.processType === 'finishing' && (
+                            <TextField
+                                label="仕上げで残す量 (mm)"
+                                type="number"
+                                value={props.stockToLeave}
+                                onChange={(e) => props.setStockToLeave(parseFloat(e.target.value) || 0)}
+                                fullWidth
+                                margin="normal"
+                                size="small"
+                            />
+                        )}
                     </Paper>
                     <Paper sx={{ p: 2, mb: 2 }}>
                         <Typography variant="h6" gutterBottom>2.5D 加工 (DXF/SVG)</Typography>

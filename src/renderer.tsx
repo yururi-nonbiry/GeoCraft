@@ -38,7 +38,7 @@ import { api } from './api';
 
 import ThreeViewer from './components/ThreeViewer';
 import ControlPanel from './components/ControlPanel';
-import { Geometry, ToolpathSegment, Toolpath, SerialPortInfo, MachineSetting, EditableMachineSetting } from './types';
+import { Geometry, ToolpathSegment, Toolpath, SerialPortInfo, MachineSetting, EditableMachineSetting, ToolSetting, EditableToolSetting } from './types';
 
 const theme = createTheme({
   palette: {
@@ -61,15 +61,6 @@ type MaterialSetting = {
 };
 
 type EditableMaterialSetting = Omit<MaterialSetting, 'id'> & { id: number | null };
-
-type ToolSetting = {
-  id: number;
-  name: string;
-  diameter: number;
-  type: string;
-};
-
-type EditableToolSetting = Omit<ToolSetting, 'id'> & { id: number | null };
 
 type PersistedSettings = {
   machineSettings?: MachineSetting[];
@@ -101,9 +92,24 @@ const DEFAULT_MATERIALS: MaterialSetting[] = [
 ];
 
 const DEFAULT_TOOLS: ToolSetting[] = [
-  { id: 1, name: '6mm Endmill', diameter: 6.0, type: 'endmill' },
-  { id: 2, name: '3mm Endmill', diameter: 3.0, type: 'endmill' },
-  { id: 3, name: '1mm Drill', diameter: 1.0, type: 'drill' },
+  {
+    id: 1,
+    machineId: 1,
+    name: '6mm Endmill (Rough/Finish)',
+    diameter: 6.0,
+    type: 'endmill',
+    roughing: { depthPerPass: 2.0, feedRate: 800, plungeRate: 200, rpm: 12000 },
+    finishing: { depthPerPass: 1.0, feedRate: 600, plungeRate: 150, rpm: 12000, stockToLeave: 0.1 }
+  },
+  {
+    id: 2,
+    machineId: 1,
+    name: '3mm Endmill (Rough/Finish)',
+    diameter: 3.0,
+    type: 'endmill',
+    roughing: { depthPerPass: 1.0, feedRate: 600, plungeRate: 150, rpm: 15000 },
+    finishing: { depthPerPass: 0.5, feedRate: 400, plungeRate: 100, rpm: 15000, stockToLeave: 0.05 }
+  }
 ];
 
 const EMPTY_MACHINE: EditableMachineSetting = {
@@ -128,9 +134,12 @@ const EMPTY_MATERIAL: EditableMaterialSetting = {
 
 const EMPTY_TOOL: EditableToolSetting = {
   id: null,
+  machineId: 1,
   name: '',
   diameter: 3,
   type: 'endmill',
+  roughing: { depthPerPass: 1.0, feedRate: 1000, plungeRate: 300, rpm: 15000 },
+  finishing: { depthPerPass: 0.5, feedRate: 800, plungeRate: 200, rpm: 15000, stockToLeave: 0.0 }
 };
 
 const App = () => {
@@ -150,6 +159,8 @@ const App = () => {
   const [selectedMaterialId, setSelectedMaterialId] = useState<number | ''>(DEFAULT_MATERIALS[0]?.id ?? '');
   const [toolSettings, setToolSettings] = useState<ToolSetting[]>(DEFAULT_TOOLS);
   const [selectedToolId, setSelectedToolId] = useState<number | ''>(DEFAULT_TOOLS[0]?.id ?? '');
+  const [processType, setProcessType] = useState<'roughing' | 'finishing'>('roughing');
+  const [stockToLeave, setStockToLeave] = useState<number>(0.0);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isMachineDialogOpen, setIsMachineDialogOpen] = useState(false);
   const [editingMachine, setEditingMachine] = useState<EditableMachineSetting>({ ...EMPTY_MACHINE });
@@ -268,13 +279,30 @@ const App = () => {
   }, []);
 
   useEffect(() => {
-    const selectedTool = toolSettings.find((tool) => tool.id === selectedToolId);
-    if (selectedTool) {
-      setToolDiameter(selectedTool.diameter);
-    } else if (toolSettings.length > 0 && selectedToolId !== toolSettings[0].id) {
-      setSelectedToolId(toolSettings[0].id);
+    const filteredTools = toolSettings.filter(t => t.machineId === selectedMachineId);
+    const selectedTool = filteredTools.find((tool) => tool.id === selectedToolId);
+    if (!selectedTool) {
+      if (filteredTools.length > 0) {
+        setSelectedToolId(filteredTools[0].id);
+      } else {
+        setSelectedToolId('');
+      }
+      return;
     }
-  }, [selectedToolId, toolSettings]);
+
+    setToolDiameter(selectedTool.diameter);
+
+    const cutSettings = processType === 'roughing' ? selectedTool.roughing : selectedTool.finishing;
+    if (cutSettings) {
+      setFeedRate(cutSettings.feedRate);
+      updateMachineSetting('stepDown', -Math.abs(cutSettings.depthPerPass));
+      if (processType === 'finishing') {
+        setStockToLeave(selectedTool.finishing.stockToLeave ?? 0.0);
+      } else {
+        setStockToLeave(0.0);
+      }
+    }
+  }, [selectedToolId, selectedMachineId, toolSettings, processType]);
 
   useEffect(() => {
     const selectedMaterial = materialSettings.find((material) => material.id === selectedMaterialId);
@@ -450,7 +478,7 @@ const App = () => {
     if (geometries.length === 0 || !geometry || !geometry.arcs) return alert('ツールパスを生成するための図形が読み込まれていません。');
     const vertices = geometries[0];
     try {
-      const linearResult = await api.generateContourPath(toolDiameter, vertices, contourSide);
+      const linearResult = await api.generateContourPath(toolDiameter, vertices, contourSide, processType === 'finishing' ? stockToLeave : 0.0);
       if (linearResult.status !== 'success') return alert(`初期パス生成エラー: ${linearResult.message}`);
       const fittedResult = await api.fitArcsToToolpath(linearResult.toolpath, geometry.arcs);
       if (fittedResult.status === 'success') {
@@ -469,7 +497,7 @@ const App = () => {
     if (geometries.length === 0) return alert('ツールパスを生成するための図形が読み込まれていません。');
     const vertices = geometries[0];
     try {
-      const params = { geometry: vertices, toolDiameter, stepover: toolDiameter * stepover };
+      const params = { geometry: vertices, toolDiameter, stepover: toolDiameter * stepover, stockToLeave: processType === 'finishing' ? stockToLeave : 0.0 };
       const result = await api.generatePocketPath(params);
       if (result.status === 'success') {
         const segments: ToolpathSegment[] = result.toolpaths.map((path: number[][]) => ({ type: 'line', points: path }));
@@ -630,6 +658,13 @@ const App = () => {
             setGrblSettings={setGrblSettings}
             handleRequestGrblSettings={handleRequestGrblSettings}
             handleSaveGrblSettings={handleSaveGrblSettings}
+            toolSettings={toolSettings}
+            selectedToolId={selectedToolId}
+            setSelectedToolId={setSelectedToolId}
+            processType={processType}
+            setProcessType={setProcessType}
+            stockToLeave={stockToLeave}
+            setStockToLeave={setStockToLeave}
           />
         </Grid>
       </Box>
@@ -725,9 +760,9 @@ const App = () => {
             </Table>
           </TableContainer>
 
-          <Typography variant="subtitle1" gutterBottom sx={{ mt: 2 }}>工具設定</Typography>
+          <Typography variant="subtitle1" gutterBottom sx={{ mt: 2 }}>工具設定 (選択中の加工機向け)</Typography>
           <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
-            <Button variant="contained" size="small" onClick={() => { setEditingTool({ ...EMPTY_TOOL }); setIsToolDialogOpen(true); }}>工具を追加</Button>
+            <Button variant="contained" size="small" onClick={() => { setEditingTool({ ...EMPTY_TOOL, machineId: typeof selectedMachineId === 'number' ? selectedMachineId : 1 }); setIsToolDialogOpen(true); }}>工具を追加</Button>
           </Box>
           <TableContainer component={Paper}>
             <Table size="small">
@@ -740,7 +775,7 @@ const App = () => {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {toolSettings.map((tool) => (
+                {toolSettings.filter(t => t.machineId === selectedMachineId).map((tool) => (
                   <TableRow key={tool.id} hover selected={tool.id === selectedToolId}>
                     <TableCell>{tool.name}</TableCell>
                     <TableCell align="right">{tool.diameter}</TableCell>
@@ -937,51 +972,183 @@ const App = () => {
         </DialogActions>
       </Dialog>
 
-      <Dialog open={isToolDialogOpen} onClose={() => setIsToolDialogOpen(false)}>
+      <Dialog open={isToolDialogOpen} onClose={() => setIsToolDialogOpen(false)} maxWidth="md" fullWidth>
         <DialogTitle>{editingTool.id ? '工具を編集' : '工具を追加'}</DialogTitle>
         <DialogContent dividers>
-          <TextField
-            label="名称"
-            value={editingTool.name}
-            onChange={(e) => setEditingTool((prev) => ({ ...prev, name: e.target.value }))}
-            fullWidth
-            margin="dense"
-          />
-          <TextField
-            label="径 (mm)"
-            type="number"
-            value={editingTool.diameter}
-            onChange={(e) => setEditingTool((prev) => ({ ...prev, diameter: Number(e.target.value) || 0 }))}
-            fullWidth
-            margin="dense"
-          />
-          <FormControl fullWidth margin="dense">
-            <InputLabel>種類</InputLabel>
-            <Select
-              value={editingTool.type}
-              label="種類"
-              onChange={(e) => setEditingTool((prev) => ({ ...prev, type: e.target.value }))}
-            >
-              <MenuItem value="endmill">エンドミル</MenuItem>
-              <MenuItem value="ballend">ボールエンドミル</MenuItem>
-              <MenuItem value="drill">ドリル</MenuItem>
-              <MenuItem value="vbit">Vビット</MenuItem>
-            </Select>
-          </FormControl>
+          <Grid container spacing={2}>
+            {/* 基本設定 */}
+            <Grid item xs={12}>
+              <Typography variant="subtitle2" color="primary" gutterBottom>基本情報</Typography>
+            </Grid>
+            <Grid item xs={6}>
+              <TextField
+                label="名称"
+                value={editingTool.name || ''}
+                onChange={(e) => setEditingTool((prev) => ({ ...prev, name: e.target.value }))}
+                fullWidth
+                margin="dense"
+                size="small"
+              />
+            </Grid>
+            <Grid item xs={3}>
+              <TextField
+                label="径 (mm)"
+                type="number"
+                value={editingTool.diameter || 0}
+                onChange={(e) => setEditingTool((prev) => ({ ...prev, diameter: Number(e.target.value) || 0 }))}
+                fullWidth
+                margin="dense"
+                size="small"
+              />
+            </Grid>
+            <Grid item xs={3}>
+              <FormControl fullWidth margin="dense" size="small">
+                <InputLabel>種類</InputLabel>
+                <Select
+                  value={editingTool.type || 'endmill'}
+                  label="種類"
+                  onChange={(e) => setEditingTool((prev) => ({ ...prev, type: e.target.value }))}
+                >
+                  <MenuItem value="endmill">エンドミル</MenuItem>
+                  <MenuItem value="ballend">ボールエンドミル</MenuItem>
+                  <MenuItem value="drill">ドリル</MenuItem>
+                  <MenuItem value="vbit">Vビット</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+
+            {/* 粗削り加工条件 */}
+            <Grid item xs={6}>
+              <Typography variant="subtitle2" color="primary" sx={{ mt: 2 }} gutterBottom>粗削り加工条件</Typography>
+              <TextField
+                label="切込み量 (mm)"
+                type="number"
+                value={editingTool.roughing?.depthPerPass ?? 1.0}
+                onChange={(e) => setEditingTool((prev) => ({
+                  ...prev,
+                  roughing: { ...prev.roughing!, depthPerPass: Number(e.target.value) || 0 }
+                }))}
+                fullWidth
+                margin="dense"
+                size="small"
+              />
+              <TextField
+                label="送り速度 (mm/min)"
+                type="number"
+                value={editingTool.roughing?.feedRate ?? 1000}
+                onChange={(e) => setEditingTool((prev) => ({
+                  ...prev,
+                  roughing: { ...prev.roughing!, feedRate: Number(e.target.value) || 0 }
+                }))}
+                fullWidth
+                margin="dense"
+                size="small"
+              />
+              <TextField
+                label="突っ込み速度 (mm/min)"
+                type="number"
+                value={editingTool.roughing?.plungeRate ?? 300}
+                onChange={(e) => setEditingTool((prev) => ({
+                  ...prev,
+                  roughing: { ...prev.roughing!, plungeRate: Number(e.target.value) || 0 }
+                }))}
+                fullWidth
+                margin="dense"
+                size="small"
+              />
+              <TextField
+                label="主軸回転数 (RPM)"
+                type="number"
+                value={editingTool.roughing?.rpm ?? 15000}
+                onChange={(e) => setEditingTool((prev) => ({
+                  ...prev,
+                  roughing: { ...prev.roughing!, rpm: Number(e.target.value) || 0 }
+                }))}
+                fullWidth
+                margin="dense"
+                size="small"
+              />
+            </Grid>
+
+            {/* 仕上げ加工条件 */}
+            <Grid item xs={6}>
+              <Typography variant="subtitle2" color="primary" sx={{ mt: 2 }} gutterBottom>仕上げ加工条件</Typography>
+              <TextField
+                label="切込み量 (mm)"
+                type="number"
+                value={editingTool.finishing?.depthPerPass ?? 0.5}
+                onChange={(e) => setEditingTool((prev) => ({
+                  ...prev,
+                  finishing: { ...prev.finishing!, depthPerPass: Number(e.target.value) || 0 }
+                }))}
+                fullWidth
+                margin="dense"
+                size="small"
+              />
+              <TextField
+                label="送り速度 (mm/min)"
+                type="number"
+                value={editingTool.finishing?.feedRate ?? 800}
+                onChange={(e) => setEditingTool((prev) => ({
+                  ...prev,
+                  finishing: { ...prev.finishing!, feedRate: Number(e.target.value) || 0 }
+                }))}
+                fullWidth
+                margin="dense"
+                size="small"
+              />
+              <TextField
+                label="突っ込み速度 (mm/min)"
+                type="number"
+                value={editingTool.finishing?.plungeRate ?? 200}
+                onChange={(e) => setEditingTool((prev) => ({
+                  ...prev,
+                  finishing: { ...prev.finishing!, plungeRate: Number(e.target.value) || 0 }
+                }))}
+                fullWidth
+                margin="dense"
+                size="small"
+              />
+              <TextField
+                label="主軸回転数 (RPM)"
+                type="number"
+                value={editingTool.finishing?.rpm ?? 15000}
+                onChange={(e) => setEditingTool((prev) => ({
+                  ...prev,
+                  finishing: { ...prev.finishing!, rpm: Number(e.target.value) || 0 }
+                }))}
+                fullWidth
+                margin="dense"
+                size="small"
+              />
+              <TextField
+                label="仕上げで残す量 (mm)"
+                type="number"
+                value={editingTool.finishing?.stockToLeave ?? 0.0}
+                onChange={(e) => setEditingTool((prev) => ({
+                  ...prev,
+                  finishing: { ...prev.finishing!, stockToLeave: Number(e.target.value) || 0 }
+                }))}
+                fullWidth
+                margin="dense"
+                size="small"
+              />
+            </Grid>
+          </Grid>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setIsToolDialogOpen(false)}>キャンセル</Button>
           <Button
             variant="contained"
             onClick={() => {
-              if (!editingTool.name.trim()) {
+              if (!editingTool.name || !editingTool.name.trim()) {
                 alert('工具名を入力してください。');
                 return;
               }
               if (editingTool.id !== null) {
-                setToolSettings((prev) => prev.map((tool) => (tool.id === editingTool.id ? { ...editingTool, id: editingTool.id } : tool)));
+                setToolSettings((prev) => prev.map((tool) => (tool.id === editingTool.id ? { ...editingTool, id: editingTool.id } as ToolSetting : tool)));
               } else {
-                const newTool: ToolSetting = { ...editingTool, id: Date.now() };
+                const newTool: ToolSetting = { ...editingTool, id: Date.now() } as ToolSetting;
                 setToolSettings((prev) => [...prev, newTool]);
                 setSelectedToolId(newTool.id);
               }
