@@ -85,6 +85,18 @@ interface ControlPanelProps {
     setProcessType: (val: 'roughing' | 'finishing') => void;
     stockToLeave: number;
     setStockToLeave: (val: number) => void;
+    simEnabled: boolean;
+    setSimEnabled: (val: boolean) => void;
+    simPlaying: boolean;
+    setSimPlaying: React.Dispatch<React.SetStateAction<boolean>>;
+    simProgress: number;
+    simSpeed: number;
+    setSimSpeed: (val: number) => void;
+    stockMargin: number;
+    setStockMargin: (val: number) => void;
+    stockThickness: number;
+    setStockThickness: (val: number) => void;
+    handleResetSimulation: () => void;
 }
 
 const SIDE_PANEL_WIDTH = 360;
@@ -117,6 +129,7 @@ const ControlPanel = (props: ControlPanelProps) => {
                 <Tabs value={activeTab} onChange={(e, newValue) => setActiveTab(newValue)} centered>
                     <Tab label="CAM" />
                     <Tab label="CNC" />
+                    <Tab label="シミュレーション" />
                 </Tabs>
             </Box>
             <Box sx={{ flexGrow: 1, overflowY: 'auto' }}>
@@ -382,6 +395,64 @@ const ControlPanel = (props: ControlPanelProps) => {
                             <Grid item xs={4}><Button fullWidth variant="outlined" onClick={() => props.handleJog('Y', -1)}>Y-</Button></Grid>
                             <Grid item xs={4}><Button fullWidth variant="outlined" onClick={() => props.handleJog('Z', -1)}>Z-</Button></Grid>
                         </Grid>
+                    </Paper>
+                </TabPanel>
+                <TabPanel value={activeTab} index={2}>
+                    <Paper sx={{ p: 2, mb: 2 }}>
+                        <Typography variant="h6" gutterBottom>加工シミュレーション</Typography>
+                        <FormControlLabel
+                            control={<Checkbox checked={props.simEnabled} onChange={(e) => props.setSimEnabled(e.target.checked)} />}
+                            label="シミュレーションを表示"
+                        />
+                        <TextField
+                            label="素材マージン (mm)"
+                            type="number"
+                            value={props.stockMargin}
+                            onChange={(e) => props.setStockMargin(parseFloat(e.target.value) || 0)}
+                            fullWidth
+                            margin="normal"
+                            size="small"
+                        />
+                        <TextField
+                            label="素材厚み (mm)"
+                            type="number"
+                            value={props.stockThickness}
+                            onChange={(e) => props.setStockThickness(parseFloat(e.target.value) || 0)}
+                            fullWidth
+                            margin="normal"
+                            size="small"
+                        />
+                        <FormControl fullWidth margin="normal" size="small">
+                            <InputLabel>再生速度</InputLabel>
+                            <Select
+                                value={props.simSpeed}
+                                label="再生速度"
+                                onChange={(e) => props.setSimSpeed(e.target.value as number)}
+                            >
+                                <MenuItem value={0.5}>0.5x</MenuItem>
+                                <MenuItem value={1}>1x</MenuItem>
+                                <MenuItem value={2}>2x</MenuItem>
+                                <MenuItem value={5}>5x</MenuItem>
+                            </Select>
+                        </FormControl>
+                        <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
+                            <Button
+                                variant="contained"
+                                startIcon={props.simPlaying ? <Pause /> : <PlayArrow />}
+                                disabled={!props.simEnabled}
+                                onClick={() => props.setSimPlaying((p) => !p)}
+                            >
+                                {props.simPlaying ? '一時停止' : '再生'}
+                            </Button>
+                            <Button variant="outlined" startIcon={<Stop />} disabled={!props.simEnabled} onClick={props.handleResetSimulation}>リセット</Button>
+                        </Box>
+                        <Box sx={{ width: '100%' }}>
+                            <LinearProgress variant="determinate" value={props.simProgress * 100} />
+                            <Typography variant="body2" align="right">{Math.round(props.simProgress * 100)}%</Typography>
+                        </Box>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+                            現在生成されているツールパスを、選択中の工具径・切込み深さで単一パス加工した場合の材料除去をシミュレートします（工具形状は区別せず円柱状の除去として近似、複数段の深さ加工には対応していません）。
+                        </Typography>
                     </Paper>
                 </TabPanel>
             </Box>

@@ -161,6 +161,16 @@ const App = () => {
   const [selectedToolId, setSelectedToolId] = useState<number | ''>(DEFAULT_TOOLS[0]?.id ?? '');
   const [processType, setProcessType] = useState<'roughing' | 'finishing'>('roughing');
   const [stockToLeave, setStockToLeave] = useState<number>(0.0);
+
+  // --- 加工シミュレーション state ---
+  const [simEnabled, setSimEnabled] = useState(false);
+  const [simPlaying, setSimPlaying] = useState(false);
+  const [simProgress, setSimProgress] = useState(0);
+  const [simSpeed, setSimSpeed] = useState(1);
+  const [stockMargin, setStockMargin] = useState(5);
+  const [stockThickness, setStockThickness] = useState(10);
+  const [simResetToken, setSimResetToken] = useState(0);
+
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isMachineDialogOpen, setIsMachineDialogOpen] = useState(false);
   const [editingMachine, setEditingMachine] = useState<EditableMachineSetting>({ ...EMPTY_MACHINE });
@@ -199,6 +209,12 @@ const App = () => {
     setMachineSettings((prev) =>
       prev.map((m) => (m.id === selectedMachineId ? { ...m, [key]: value } : m))
     );
+  };
+
+  const resetSimulation = () => {
+    setSimPlaying(false);
+    setSimProgress(0);
+    setSimResetToken((c) => c + 1);
   };
 
   // --- CNC Connection Logic ---
@@ -487,6 +503,7 @@ const App = () => {
         alert(`円弧フィットエラー: ${fittedResult.message}`);
         setToolpaths([{ type: 'line', points: linearResult.toolpath }]);
       }
+      resetSimulation();
     } catch (error) {
       alert(`パス生成に失敗しました: ${error}`);
     }
@@ -505,6 +522,7 @@ const App = () => {
       } else {
         alert(`パス生成エラー: ${result.message}`);
       }
+      resetSimulation();
     } catch (error) {
       alert(`パス生成に失敗しました: ${error}`);
     }
@@ -598,7 +616,24 @@ const App = () => {
         </AppBar>
         <Grid container sx={{ flexGrow: 1, overflow: 'hidden' }}>
           <Grid item sx={{ flex: 1, minWidth: 0, height: '100%', position: 'relative' }}>
-            <ThreeViewer toolpaths={toolpaths} geometry={geometry} stockStlFile={stockStlFile} targetStlFile={targetStlFile} />
+            <ThreeViewer
+              toolpaths={toolpaths}
+              geometry={geometry}
+              stockStlFile={stockStlFile}
+              targetStlFile={targetStlFile}
+              simulation={{
+                enabled: simEnabled,
+                toolRadius: toolDiameter / 2,
+                cutZ: currentMachine.stepDown,
+                stockMargin,
+                stockThickness,
+                playing: simPlaying,
+                speed: simSpeed,
+                resetToken: simResetToken,
+                onProgress: setSimProgress,
+                onFinished: () => setSimPlaying(false),
+              }}
+            />
           </Grid>
           <ControlPanel
             toolDiameter={toolDiameter}
@@ -665,6 +700,18 @@ const App = () => {
             setProcessType={setProcessType}
             stockToLeave={stockToLeave}
             setStockToLeave={setStockToLeave}
+            simEnabled={simEnabled}
+            setSimEnabled={setSimEnabled}
+            simPlaying={simPlaying}
+            setSimPlaying={setSimPlaying}
+            simProgress={simProgress}
+            simSpeed={simSpeed}
+            setSimSpeed={setSimSpeed}
+            stockMargin={stockMargin}
+            setStockMargin={setStockMargin}
+            stockThickness={stockThickness}
+            setStockThickness={setStockThickness}
+            handleResetSimulation={resetSimulation}
           />
         </Grid>
       </Box>

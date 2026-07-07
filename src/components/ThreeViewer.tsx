@@ -3,15 +3,33 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader';
 import { ToolpathSegment, Geometry } from '../types';
+import {
+    SimulationConfig,
+    Heightmap,
+    SamplePoint,
+    computeBounds,
+    createHeightmap,
+    stampCircle,
+    sampleToolpath,
+    buildGridPositions,
+    buildGridIndices,
+} from '../simulation/stockSimulation';
+
+// Playback pace (mm of toolpath traveled per real second at 1x speed). Not tied to the
+// tool's actual feed rate - this is purely a visualization pace.
+const SIM_BASE_SPEED_MM_PER_SEC = 40;
+const SIM_NORMAL_RECOMPUTE_INTERVAL = 4; // frames between vertex-normal recalculation
+const SIM_PROGRESS_REPORT_INTERVAL_MS = 100;
 
 interface ThreeViewerProps {
     toolpaths: ToolpathSegment[] | null;
     geometry: Geometry | null;
     stockStlFile: string | null;
     targetStlFile: string | null;
+    simulation?: SimulationConfig | null;
 }
 
-const ThreeViewer = ({ toolpaths, geometry, stockStlFile, targetStlFile }: ThreeViewerProps) => {
+const ThreeViewer = ({ toolpaths, geometry, stockStlFile, targetStlFile, simulation }: ThreeViewerProps) => {
     const mountRef = useRef<HTMLDivElement>(null);
     const sceneRef = useRef<THREE.Scene | null>(null);
     const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
@@ -22,6 +40,39 @@ const ThreeViewer = ({ toolpaths, geometry, stockStlFile, targetStlFile }: Three
     const dxfObjectRef = useRef<THREE.Group | null>(null);
     const dxfArcsRef = useRef<THREE.Group | null>(null);
     const drillPointsRef = useRef<THREE.Points | null>(null);
+
+    // --- 加工シミュレーション state (refs so the animate() loop always reads live values) ---
+    const simGroupRef = useRef<THREE.Group | null>(null);
+    const simTopMeshRef = useRef<THREE.Mesh | null>(null);
+    const heightmapRef = useRef<Heightmap | null>(null);
+    const samplesRef = useRef<SamplePoint[]>([]);
+    const sampleCursorRef = useRef(0);
+    const traveledRef = useRef(0);
+    const lastFrameTimeRef = useRef<number | null>(null);
+    const lastProgressReportRef = useRef(0);
+    const frameCounterRef = useRef(0);
+    const finishedRef = useRef(false);
+
+    const simEnabled = simulation?.enabled ?? false;
+    const simToolRadius = simulation?.toolRadius ?? 0;
+    const simCutZ = simulation?.cutZ ?? 0;
+    const simStockMargin = simulation?.stockMargin ?? 5;
+    const simStockThickness = simulation?.stockThickness ?? 10;
+    const simResetToken = simulation?.resetToken ?? 0;
+
+    const simPlayingRef = useRef(simulation?.playing ?? false);
+    const simSpeedRef = useRef(simulation?.speed ?? 1);
+    const simCutZRef = useRef(simCutZ);
+    const onSimProgressRef = useRef(simulation?.onProgress);
+    const onSimFinishedRef = useRef(simulation?.onFinished);
+
+    useEffect(() => {
+        simPlayingRef.current = simulation?.playing ?? false;
+        simSpeedRef.current = simulation?.speed ?? 1;
+        simCutZRef.current = simCutZ;
+        onSimProgressRef.current = simulation?.onProgress;
+        onSimFinishedRef.current = simulation?.onFinished;
+    }, [simulation?.playing, simulation?.speed, simCutZ, simulation?.onProgress, simulation?.onFinished]);
 
     // 初期セットアップ
     useEffect(() => {
@@ -60,9 +111,68 @@ const ThreeViewer = ({ toolpaths, geometry, stockStlFile, targetStlFile }: Three
         const axesHelper = new THREE.AxesHelper(5);
         scene.add(axesHelper);
 
-        const animate = () => {
+        const stepSimulation = (now: number) => {
+            const map = heightmapRef.current;
+            const topMesh = simTopMeshRef.current;
+            const samples = samplesRef.current;
+            if (!map || !topMesh || samples.length === 0) return;
+
+            if (lastFrameTimeRef.current === null) lastFrameTimeRef.current = now;
+            const elapsedSeconds = (now - lastFrameTimeRef.current) / 1000;
+            lastFrameTimeRef.current = now;
+
+            if (!simPlayingRef.current || finishedRef.current) return;
+
+            const totalDistance = samples[samples.length - 1].distance;
+            const targetDistance = Math.min(totalDistance, traveledRef.current + elapsedSeconds * SIM_BASE_SPEED_MM_PER_SEC * simSpeedRef.current);
+
+            let minCol = Infinity, maxCol = -Infinity, minRow = Infinity, maxRow = -Infinity;
+            let touched = false;
+            while (sampleCursorRef.current < samples.length && samples[sampleCursorRef.current].distance <= targetDistance) {
+                const p = samples[sampleCursorRef.current];
+                const dirty = stampCircle(map, p.x, p.y, simToolRadius, simCutZRef.current);
+                if (dirty) {
+                    touched = true;
+                    minCol = Math.min(minCol, dirty.minCol);
+                    maxCol = Math.max(maxCol, dirty.maxCol);
+                    minRow = Math.min(minRow, dirty.minRow);
+                    maxRow = Math.max(maxRow, dirty.maxRow);
+                }
+                sampleCursorRef.current++;
+            }
+            traveledRef.current = targetDistance;
+
+            if (touched) {
+                const posAttr = topMesh.geometry.getAttribute('position') as THREE.BufferAttribute;
+                for (let row = minRow; row <= maxRow; row++) {
+                    for (let col = minCol; col <= maxCol; col++) {
+                        const idx = row * map.cols + col;
+                        posAttr.setZ(idx, map.heights[idx]);
+                    }
+                }
+                posAttr.needsUpdate = true;
+                frameCounterRef.current++;
+                if (frameCounterRef.current % SIM_NORMAL_RECOMPUTE_INTERVAL === 0) {
+                    topMesh.geometry.computeVertexNormals();
+                }
+            }
+
+            const reachedEnd = targetDistance >= totalDistance;
+            if (reachedEnd && !finishedRef.current) {
+                finishedRef.current = true;
+                topMesh.geometry.computeVertexNormals();
+                onSimProgressRef.current?.(1);
+                onSimFinishedRef.current?.();
+            } else if (now - lastProgressReportRef.current > SIM_PROGRESS_REPORT_INTERVAL_MS) {
+                lastProgressReportRef.current = now;
+                onSimProgressRef.current?.(totalDistance > 0 ? traveledRef.current / totalDistance : 0);
+            }
+        };
+
+        const animate = (now?: number) => {
             requestAnimationFrame(animate);
             controls.update();
+            stepSimulation(now ?? performance.now());
             renderer.render(scene, camera);
         };
         animate();
@@ -82,6 +192,85 @@ const ThreeViewer = ({ toolpaths, geometry, stockStlFile, targetStlFile }: Three
             }
         };
     }, []);
+
+    // 加工シミュレーション用ストックの構築（トグル/リセット/工具・素材条件の変更時に再構築）
+    useEffect(() => {
+        const scene = sceneRef.current;
+        if (!scene) return;
+
+        if (simGroupRef.current) {
+            scene.remove(simGroupRef.current);
+            simGroupRef.current.traverse((obj) => {
+                if (obj instanceof THREE.Mesh) {
+                    obj.geometry.dispose();
+                    (Array.isArray(obj.material) ? obj.material : [obj.material]).forEach((m) => m.dispose());
+                }
+            });
+        }
+        simGroupRef.current = null;
+        simTopMeshRef.current = null;
+        heightmapRef.current = null;
+        samplesRef.current = [];
+        sampleCursorRef.current = 0;
+        traveledRef.current = 0;
+        lastFrameTimeRef.current = null;
+        lastProgressReportRef.current = 0;
+        frameCounterRef.current = 0;
+        finishedRef.current = false;
+        onSimProgressRef.current?.(0);
+
+        if (!simEnabled || !toolpaths || toolpaths.length === 0 || simToolRadius <= 0) {
+            return;
+        }
+
+        const bounds = computeBounds(geometry, toolpaths);
+        if (!bounds) return;
+
+        const map = createHeightmap(bounds, simStockMargin, simStockThickness, 0);
+        heightmapRef.current = map;
+        samplesRef.current = sampleToolpath(toolpaths, map.cellSize * 0.5);
+
+        const group = new THREE.Group();
+
+        const topGeometry = new THREE.BufferGeometry();
+        topGeometry.setAttribute('position', new THREE.BufferAttribute(buildGridPositions(map), 3));
+        topGeometry.setIndex(new THREE.BufferAttribute(buildGridIndices(map), 1));
+        topGeometry.computeVertexNormals();
+        const topMaterial = new THREE.MeshStandardMaterial({ color: 0xd9a066, metalness: 0.05, roughness: 0.8, side: THREE.DoubleSide });
+        const topMesh = new THREE.Mesh(topGeometry, topMaterial);
+        group.add(topMesh);
+        simTopMeshRef.current = topMesh;
+
+        // 側面・底面はストック外形（マージン込みの矩形）から静的に生成。ツールパスはマージン分
+        // 内側に収まる前提のため、輪郭が削られることはなく毎フレーム更新する必要はない。
+        const minX = map.originX, maxX = map.originX + map.cols * map.cellSize;
+        const minY = map.originY, maxY = map.originY + map.rows * map.cellSize;
+        const { topZ, bottomZ } = map;
+        const skirtPositions: number[] = [];
+        const pushWall = (x0: number, y0: number, x1: number, y1: number) => {
+            skirtPositions.push(
+                x0, y0, topZ, x1, y1, topZ, x0, y0, bottomZ,
+                x1, y1, topZ, x1, y1, bottomZ, x0, y0, bottomZ,
+            );
+        };
+        pushWall(minX, minY, maxX, minY);
+        pushWall(maxX, minY, maxX, maxY);
+        pushWall(maxX, maxY, minX, maxY);
+        pushWall(minX, maxY, minX, minY);
+        skirtPositions.push(
+            minX, minY, bottomZ, maxX, minY, bottomZ, minX, maxY, bottomZ,
+            maxX, minY, bottomZ, maxX, maxY, bottomZ, minX, maxY, bottomZ,
+        );
+        const skirtGeometry = new THREE.BufferGeometry();
+        skirtGeometry.setAttribute('position', new THREE.Float32BufferAttribute(skirtPositions, 3));
+        skirtGeometry.computeVertexNormals();
+        const skirtMaterial = new THREE.MeshStandardMaterial({ color: 0xb08968, metalness: 0.05, roughness: 0.9, side: THREE.DoubleSide });
+        const skirtMesh = new THREE.Mesh(skirtGeometry, skirtMaterial);
+        group.add(skirtMesh);
+
+        scene.add(group);
+        simGroupRef.current = group;
+    }, [toolpaths, geometry, simEnabled, simToolRadius, simStockMargin, simStockThickness, simResetToken]);
 
     // STL/OBJ 読み込み処理
     useEffect(() => {
