@@ -286,6 +286,9 @@ const App = () => {
         setSelectedToolId(filteredTools[0].id);
       } else {
         setSelectedToolId('');
+        setToolDiameter(0);
+        setFeedRate(0);
+        setStockToLeave(0.0);
       }
       return;
     }
@@ -296,7 +299,7 @@ const App = () => {
     if (cutSettings) {
       setFeedRate(cutSettings.feedRate);
       updateMachineSetting('stepDown', -Math.abs(cutSettings.depthPerPass));
-      if (processType === 'finishing') {
+      if (processType === 'roughing') {
         setStockToLeave(selectedTool.finishing.stockToLeave ?? 0.0);
       } else {
         setStockToLeave(0.0);
@@ -306,10 +309,7 @@ const App = () => {
 
   useEffect(() => {
     const selectedMaterial = materialSettings.find((material) => material.id === selectedMaterialId);
-    if (selectedMaterial) {
-      setFeedRate(selectedMaterial.feedRate);
-      updateMachineSetting('stepDown', -Math.abs(selectedMaterial.depthPerPass));
-    } else if (materialSettings.length > 0 && selectedMaterialId !== materialSettings[0].id) {
+    if (!selectedMaterial && materialSettings.length > 0 && selectedMaterialId !== materialSettings[0].id) {
       setSelectedMaterialId(materialSettings[0].id);
     }
   }, [selectedMaterialId, materialSettings]);
@@ -478,7 +478,7 @@ const App = () => {
     if (geometries.length === 0 || !geometry || !geometry.arcs) return alert('ツールパスを生成するための図形が読み込まれていません。');
     const vertices = geometries[0];
     try {
-      const linearResult = await api.generateContourPath(toolDiameter, vertices, contourSide, processType === 'finishing' ? stockToLeave : 0.0);
+      const linearResult = await api.generateContourPath(toolDiameter, vertices, contourSide, processType === 'roughing' ? stockToLeave : 0.0);
       if (linearResult.status !== 'success') return alert(`初期パス生成エラー: ${linearResult.message}`);
       const fittedResult = await api.fitArcsToToolpath(linearResult.toolpath, geometry.arcs);
       if (fittedResult.status === 'success') {
@@ -497,7 +497,7 @@ const App = () => {
     if (geometries.length === 0) return alert('ツールパスを生成するための図形が読み込まれていません。');
     const vertices = geometries[0];
     try {
-      const params = { geometry: vertices, toolDiameter, stepover: toolDiameter * stepover, stockToLeave: processType === 'finishing' ? stockToLeave : 0.0 };
+      const params = { geometry: vertices, toolDiameter, stepover: toolDiameter * stepover, stockToLeave: processType === 'roughing' ? stockToLeave : 0.0 };
       const result = await api.generatePocketPath(params);
       if (result.status === 'success') {
         const segments: ToolpathSegment[] = result.toolpaths.map((path: number[][]) => ({ type: 'line', points: path }));

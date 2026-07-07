@@ -149,10 +149,19 @@ namespace GeoCraft.Desktop
             }
         }
 
+        private string GetSettingsFilePath()
+        {
+            string dir = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "GeoCraft");
+            System.IO.Directory.CreateDirectory(dir);
+            return System.IO.Path.Combine(dir, "settings.json");
+        }
+
         public string GetSettings()
         {
             return ExecuteSafe(() => {
-                string filePath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "settings.json");
+                string filePath = GetSettingsFilePath();
                 if (System.IO.File.Exists(filePath))
                 {
                     string content = System.IO.File.ReadAllText(filePath);
@@ -165,7 +174,7 @@ namespace GeoCraft.Desktop
         public void SaveSettings(string settingsJson)
         {
             ExecuteSafeVoid(() => {
-                string filePath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "settings.json");
+                string filePath = GetSettingsFilePath();
                 System.IO.File.WriteAllText(filePath, settingsJson);
                 LogService.Log($"Saved settings to {filePath}");
             });
@@ -189,7 +198,7 @@ namespace GeoCraft.Desktop
         public string GeneratePocketPath(string paramsJson) { 
              return ExecuteSafe(() => {
                  dynamic p = JsonConvert.DeserializeObject(paramsJson);
-                 List<double[]> geometry = JsonConvert.DeserializeObject<List<double[]>>(Convert.ToString(p.geometry));
+                 List<double[]> geometry = p.geometry.ToObject<List<double[]>>();
                  double toolDiameter = p.toolDiameter;
                  double stepover = p.stepover;
                  double stockToLeave = p.stockToLeave ?? 0.0;

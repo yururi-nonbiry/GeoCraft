@@ -171,9 +171,9 @@ const ControlPanel = (props: ControlPanelProps) => {
                                 <MenuItem value="finishing">仕上げ</MenuItem>
                             </Select>
                         </FormControl>
-                        {props.processType === 'finishing' && (
+                        {props.processType === 'roughing' && (
                             <TextField
-                                label="仕上げで残す量 (mm)"
+                                label="仕上げのために残す量 (mm)"
                                 type="number"
                                 value={props.stockToLeave}
                                 onChange={(e) => props.setStockToLeave(parseFloat(e.target.value) || 0)}
