@@ -29,10 +29,57 @@ interface ThreeViewerProps {
     // 'stock'/'target' の間、3Dビュー上でクリックされた面をそのモデルの底面(-Z)にする。null なら通常操作。
     pickFaceMode: 'stock' | 'target' | null;
     onFacePicked: () => void;
+    // 選択中の加工機の加工可能範囲(mm)。原点(0,0,0)を作業エリアの手前角とし、
+    // X: 0〜x, Y: 0〜y, Z: 0〜-z (原点から下方向) の範囲として描画する。
+    machineWorkArea: { x: number; y: number; z: number };
     simulation?: SimulationConfig | null;
 }
 
-const ThreeViewer = ({ toolpaths, geometry, stockStlData, targetStlData, pickFaceMode, onFacePicked, simulation }: ThreeViewerProps) => {
+// 加工可能範囲を示すテーブル面の格子線と外周の矩形を生成する
+const createWorkAreaGrid = (width: number, depth: number): THREE.Group => {
+    const group = new THREE.Group();
+    const divisions = 10;
+
+    const linePositions: number[] = [];
+    for (let i = 0; i <= divisions; i++) {
+        const x = (width * i) / divisions;
+        linePositions.push(x, 0, 0, x, depth, 0);
+    }
+    for (let j = 0; j <= divisions; j++) {
+        const y = (depth * j) / divisions;
+        linePositions.push(0, y, 0, width, y, 0);
+    }
+    const gridGeometry = new THREE.BufferGeometry();
+    gridGeometry.setAttribute('position', new THREE.Float32BufferAttribute(linePositions, 3));
+    const gridMaterial = new THREE.LineBasicMaterial({ color: 0xaaaaaa });
+    group.add(new THREE.LineSegments(gridGeometry, gridMaterial));
+
+    const boundaryPositions = [
+        0, 0, 0, width, 0, 0,
+        width, 0, 0, width, depth, 0,
+        width, depth, 0, 0, depth, 0,
+        0, depth, 0, 0, 0, 0,
+    ];
+    const boundaryGeometry = new THREE.BufferGeometry();
+    boundaryGeometry.setAttribute('position', new THREE.Float32BufferAttribute(boundaryPositions, 3));
+    const boundaryMaterial = new THREE.LineBasicMaterial({ color: 0xff6600 });
+    group.add(new THREE.LineSegments(boundaryGeometry, boundaryMaterial));
+
+    return group;
+};
+
+// 加工可能な立体範囲(X×Y×Z)をワイヤーフレームの直方体として生成する
+const createWorkVolumeBox = (width: number, depth: number, height: number): THREE.LineSegments => {
+    const boxGeometry = new THREE.BoxGeometry(width, depth, height);
+    const edges = new THREE.EdgesGeometry(boxGeometry);
+    const material = new THREE.LineBasicMaterial({ color: 0xff6600, transparent: true, opacity: 0.4 });
+    const box = new THREE.LineSegments(edges, material);
+    // BoxGeometry は原点中心のため、X:0〜width, Y:0〜depth, Z:0〜-height になるよう平行移動する
+    box.position.set(width / 2, depth / 2, -height / 2);
+    return box;
+};
+
+const ThreeViewer = ({ toolpaths, geometry, stockStlData, targetStlData, pickFaceMode, onFacePicked, machineWorkArea, simulation }: ThreeViewerProps) => {
     const mountRef = useRef<HTMLDivElement>(null);
     const sceneRef = useRef<THREE.Scene | null>(null);
     const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
@@ -45,6 +92,7 @@ const ThreeViewer = ({ toolpaths, geometry, stockStlData, targetStlData, pickFac
     const dxfObjectRef = useRef<THREE.Group | null>(null);
     const dxfArcsRef = useRef<THREE.Group | null>(null);
     const drillPointsRef = useRef<THREE.Points | null>(null);
+    const workAreaGroupRef = useRef<THREE.Group | null>(null);
 
     // --- 加工シミュレーション state (refs so the animate() loop always reads live values) ---
     const simGroupRef = useRef<THREE.Group | null>(null);
@@ -144,9 +192,6 @@ const ThreeViewer = ({ toolpaths, geometry, stockStlData, targetStlData, pickFac
         controls.enableDamping = true;
         controlsRef.current = controls;
 
-        const gridHelper = new THREE.GridHelper(20, 20);
-        gridHelper.rotation.x = Math.PI / 2;
-        scene.add(gridHelper);
         const axesHelper = new THREE.AxesHelper(5);
         scene.add(axesHelper);
 
@@ -414,6 +459,25 @@ const ThreeViewer = ({ toolpaths, geometry, stockStlData, targetStlData, pickFac
         }
 
     }, [stockStlData, targetStlData]);
+
+    // 加工可能範囲(選択中の加工機の可動範囲)のグリッド・ワイヤーフレーム表示
+    useEffect(() => {
+        const scene = sceneRef.current;
+        if (!scene) return;
+        if (workAreaGroupRef.current) {
+            scene.remove(workAreaGroupRef.current);
+            workAreaGroupRef.current = null;
+        }
+        if (machineWorkArea.x <= 0 || machineWorkArea.y <= 0) return;
+
+        const group = new THREE.Group();
+        group.add(createWorkAreaGrid(machineWorkArea.x, machineWorkArea.y));
+        if (machineWorkArea.z > 0) {
+            group.add(createWorkVolumeBox(machineWorkArea.x, machineWorkArea.y, machineWorkArea.z));
+        }
+        scene.add(group);
+        workAreaGroupRef.current = group;
+    }, [machineWorkArea.x, machineWorkArea.y, machineWorkArea.z]);
 
     // DXF/SVG描画処理
     useEffect(() => {

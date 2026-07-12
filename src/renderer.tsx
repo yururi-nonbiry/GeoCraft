@@ -83,6 +83,9 @@ const DEFAULT_MACHINES: MachineSetting[] = [
     peckQ: 1.0,
     gcodeHeader: 'G90 G21 G17',
     gcodeFooter: 'M30',
+    workAreaX: 300,
+    workAreaY: 300,
+    workAreaZ: 100,
   }
 ];
 
@@ -121,6 +124,9 @@ const EMPTY_MACHINE: EditableMachineSetting = {
   peckQ: 1.0,
   gcodeHeader: 'G90 G21 G17',
   gcodeFooter: 'M30',
+  workAreaX: 300,
+  workAreaY: 300,
+  workAreaZ: 100,
 };
 
 const EMPTY_MATERIAL: EditableMaterialSetting = {
@@ -645,6 +651,7 @@ const App = () => {
               targetStlData={targetStlData}
               pickFaceMode={pickFaceMode}
               onFacePicked={() => setPickFaceMode(null)}
+              machineWorkArea={{ x: currentMachine.workAreaX, y: currentMachine.workAreaY, z: currentMachine.workAreaZ }}
               simulation={{
                 enabled: simEnabled,
                 toolRadius: toolDiameter / 2,
@@ -758,6 +765,7 @@ const App = () => {
                   <TableCell align="right">切込み深さ (Z)</TableCell>
                   <TableCell align="right">R点 (退避Z)</TableCell>
                   <TableCell align="right">ペック量 (Q)</TableCell>
+                  <TableCell align="right">加工範囲 X×Y×Z (mm)</TableCell>
                   <TableCell align="center">操作</TableCell>
                 </TableRow>
               </TableHead>
@@ -769,6 +777,7 @@ const App = () => {
                     <TableCell align="right">{machine.stepDown}</TableCell>
                     <TableCell align="right">{machine.retractZ}</TableCell>
                     <TableCell align="right">{machine.peckQ}</TableCell>
+                    <TableCell align="right">{machine.workAreaX}×{machine.workAreaY}×{machine.workAreaZ}</TableCell>
                     <TableCell align="center">
                       <Button size="small" onClick={() => { setEditingMachine({ ...machine }); setIsMachineDialogOpen(true); }} sx={{ mr: 1 }}>編集</Button>
                       <Button size="small" color="secondary" onClick={() => {
@@ -938,6 +947,33 @@ const App = () => {
             onChange={(e) => setEditingMachine((prev) => ({ ...prev, peckQ: Number(e.target.value) || 0 }))}
             fullWidth
             margin="dense"
+          />
+          <TextField
+            label="加工範囲 X (幅, mm)"
+            type="number"
+            value={editingMachine.workAreaX}
+            onChange={(e) => setEditingMachine((prev) => ({ ...prev, workAreaX: Number(e.target.value) || 0 }))}
+            fullWidth
+            margin="dense"
+            helperText="原点(0)からテーブル奥までのX方向可動範囲"
+          />
+          <TextField
+            label="加工範囲 Y (奥行き, mm)"
+            type="number"
+            value={editingMachine.workAreaY}
+            onChange={(e) => setEditingMachine((prev) => ({ ...prev, workAreaY: Number(e.target.value) || 0 }))}
+            fullWidth
+            margin="dense"
+            helperText="原点(0)からテーブル奥までのY方向可動範囲"
+          />
+          <TextField
+            label="加工範囲 Z (高さ, mm)"
+            type="number"
+            value={editingMachine.workAreaZ}
+            onChange={(e) => setEditingMachine((prev) => ({ ...prev, workAreaZ: Number(e.target.value) || 0 }))}
+            fullWidth
+            margin="dense"
+            helperText="原点(Z=0)から下方向への可動範囲"
           />
           <TextField
             label="G-code ヘッダー"

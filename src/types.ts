@@ -20,6 +20,10 @@ export type MachineSetting = {
   peckQ: number;
   gcodeHeader: string;
   gcodeFooter: string;
+  // 加工可能範囲（原点(0,0,0)を作業エリアの手前角とした可動範囲, mm）
+  workAreaX: number;
+  workAreaY: number;
+  workAreaZ: number;
 };
 
 export type EditableMachineSetting = Omit<MachineSetting, 'id'> & { id: number | null };
