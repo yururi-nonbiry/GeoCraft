@@ -2,7 +2,7 @@ import React, { useRef, useEffect } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader';
-import { ToolpathSegment, Geometry, BottomFace } from '../types';
+import { ToolpathSegment, Geometry } from '../types';
 import {
     SimulationConfig,
     Heightmap,
@@ -26,34 +26,21 @@ interface ThreeViewerProps {
     geometry: Geometry | null;
     stockStlData: ArrayBuffer | null;
     targetStlData: ArrayBuffer | null;
-    stockBottomFace: BottomFace;
-    targetBottomFace: BottomFace;
+    // 'stock'/'target' の間、3Dビュー上でクリックされた面をそのモデルの底面(-Z)にする。null なら通常操作。
+    pickFaceMode: 'stock' | 'target' | null;
+    onFacePicked: () => void;
     simulation?: SimulationConfig | null;
 }
 
-// STLファイルのローカル座標系のうち、どの面を「底面」（テーブルに接する面 = ワールドの -Z 方向）
-// として扱うかを表すベクトル群。ユーザーが選択した面の法線がワールドの -Z に向くよう回転させる。
-const BOTTOM_FACE_NORMALS: Record<BottomFace, THREE.Vector3> = {
-    '+X': new THREE.Vector3(1, 0, 0),
-    '-X': new THREE.Vector3(-1, 0, 0),
-    '+Y': new THREE.Vector3(0, 1, 0),
-    '-Y': new THREE.Vector3(0, -1, 0),
-    '+Z': new THREE.Vector3(0, 0, 1),
-    '-Z': new THREE.Vector3(0, 0, -1),
-};
-
-const getBottomFaceQuaternion = (face: BottomFace): THREE.Quaternion => {
-    const down = new THREE.Vector3(0, 0, -1);
-    return new THREE.Quaternion().setFromUnitVectors(BOTTOM_FACE_NORMALS[face], down);
-};
-
-const ThreeViewer = ({ toolpaths, geometry, stockStlData, targetStlData, stockBottomFace, targetBottomFace, simulation }: ThreeViewerProps) => {
+const ThreeViewer = ({ toolpaths, geometry, stockStlData, targetStlData, pickFaceMode, onFacePicked, simulation }: ThreeViewerProps) => {
     const mountRef = useRef<HTMLDivElement>(null);
     const sceneRef = useRef<THREE.Scene | null>(null);
     const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
     const controlsRef = useRef<OrbitControls | null>(null);
     const stockModelRef = useRef<THREE.Object3D | null>(null);
     const targetModelRef = useRef<THREE.Object3D | null>(null);
+    const pickFaceModeRef = useRef(pickFaceMode);
+    const onFacePickedRef = useRef(onFacePicked);
     const toolpathGroupRef = useRef<THREE.Group | null>(null);
     const dxfObjectRef = useRef<THREE.Group | null>(null);
     const dxfArcsRef = useRef<THREE.Group | null>(null);
@@ -91,6 +78,40 @@ const ThreeViewer = ({ toolpaths, geometry, stockStlData, targetStlData, stockBo
         onSimProgressRef.current = simulation?.onProgress;
         onSimFinishedRef.current = simulation?.onFinished;
     }, [simulation?.playing, simulation?.speed, simCutZ, simulation?.onProgress, simulation?.onFinished]);
+
+    useEffect(() => {
+        pickFaceModeRef.current = pickFaceMode;
+        if (mountRef.current) {
+            mountRef.current.style.cursor = pickFaceMode ? 'crosshair' : 'default';
+        }
+    }, [pickFaceMode]);
+
+    useEffect(() => {
+        onFacePickedRef.current = onFacePicked;
+    }, [onFacePicked]);
+
+    // カメラをオブジェクト全体が収まるように調整する（初回読み込み時・底面選択後の両方で使用）
+    const fitCameraToObject = (object: THREE.Object3D) => {
+        if (!cameraRef.current || !controlsRef.current) return;
+        const box = new THREE.Box3().setFromObject(object);
+        const center = box.getCenter(new THREE.Vector3());
+        const size = box.getSize(new THREE.Vector3());
+        const maxDim = Math.max(size.x, size.y, size.z);
+        const fov = cameraRef.current.fov * (Math.PI / 180);
+        let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
+        cameraZ *= 1.5;
+
+        const camPos = new THREE.Vector3();
+        camPos.copy(center);
+        camPos.x -= cameraZ * 0.7;
+        camPos.y -= cameraZ * 0.7;
+        camPos.z += cameraZ * 0.7;
+        cameraRef.current.position.copy(camPos);
+        cameraRef.current.up.set(0, 0, 1);
+
+        controlsRef.current.target.copy(center);
+        controlsRef.current.update();
+    };
 
     // 初期セットアップ
     useEffect(() => {
@@ -203,8 +224,60 @@ const ThreeViewer = ({ toolpaths, geometry, stockStlData, targetStlData, stockBo
         };
         window.addEventListener('resize', handleResize);
 
+        // 底面選択モード中に3Dビュー上でクリックされた面を、そのモデルの底面(ワールドの-Z方向)にする。
+        // クリックされた面をそのまま「加工の最下面」とするため、回転後にモデルをZ方向へ平行移動し、
+        // その面がZ=0(テーブル面)に接するようにする。
+        let pointerDownPos: { x: number; y: number } | null = null;
+        const raycaster = new THREE.Raycaster();
+
+        const onPointerDown = (e: PointerEvent) => {
+            pointerDownPos = { x: e.clientX, y: e.clientY };
+        };
+
+        const onPointerUp = (e: PointerEvent) => {
+            const downPos = pointerDownPos;
+            pointerDownPos = null;
+            const mode = pickFaceModeRef.current;
+            if (!mode || !downPos) return;
+            // ドラッグ操作(カメラ回転)はクリックとして扱わない
+            if (Math.hypot(e.clientX - downPos.x, e.clientY - downPos.y) > 5) return;
+
+            const targetMesh = mode === 'stock' ? stockModelRef.current : targetModelRef.current;
+            if (!targetMesh || !cameraRef.current) return;
+
+            const rect = renderer.domElement.getBoundingClientRect();
+            const mouse = new THREE.Vector2(
+                ((e.clientX - rect.left) / rect.width) * 2 - 1,
+                -((e.clientY - rect.top) / rect.height) * 2 + 1,
+            );
+            raycaster.setFromCamera(mouse, cameraRef.current);
+            const intersects = raycaster.intersectObject(targetMesh, false);
+            const hit = intersects[0];
+            if (!hit || !hit.face) return;
+
+            const normalMatrix = new THREE.Matrix3().getNormalMatrix(targetMesh.matrixWorld);
+            const worldNormal = hit.face.normal.clone().applyMatrix3(normalMatrix).normalize();
+            const down = new THREE.Vector3(0, 0, -1);
+            const deltaQuat = new THREE.Quaternion().setFromUnitVectors(worldNormal, down);
+            targetMesh.quaternion.premultiply(deltaQuat);
+            targetMesh.updateMatrixWorld(true);
+
+            // 選択した面を加工の最下面(Z=0)に一致させる
+            const box = new THREE.Box3().setFromObject(targetMesh);
+            targetMesh.position.z -= box.min.z;
+            targetMesh.updateMatrixWorld(true);
+
+            fitCameraToObject(targetMesh);
+            onFacePickedRef.current?.();
+        };
+
+        renderer.domElement.addEventListener('pointerdown', onPointerDown);
+        renderer.domElement.addEventListener('pointerup', onPointerUp);
+
         return () => {
             window.removeEventListener('resize', handleResize);
+            renderer.domElement.removeEventListener('pointerdown', onPointerDown);
+            renderer.domElement.removeEventListener('pointerup', onPointerUp);
             if (currentMount.contains(renderer.domElement)) {
                 currentMount.removeChild(renderer.domElement);
             }
@@ -299,38 +372,12 @@ const ThreeViewer = ({ toolpaths, geometry, stockStlData, targetStlData, stockBo
         if (stockModelRef.current) scene.remove(stockModelRef.current);
         if (targetModelRef.current) scene.remove(targetModelRef.current);
 
-        const fitCameraToObject = (object: THREE.Object3D) => {
-            if (!cameraRef.current || !controlsRef.current) return;
-            const box = new THREE.Box3().setFromObject(object);
-            const center = box.getCenter(new THREE.Vector3());
-            const size = box.getSize(new THREE.Vector3());
-            const maxDim = Math.max(size.x, size.y, size.z);
-            const fov = cameraRef.current.fov * (Math.PI / 180);
-            let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
-            cameraZ *= 1.5;
-
-            // オブジェクトを原点中心に移動させるのではなく、全体のバウンディングボックスの中心にカメラを向ける
-            // object.position.sub(center); 
-
-            const camPos = new THREE.Vector3();
-            camPos.copy(center);
-            camPos.x -= cameraZ * 0.7;
-            camPos.y -= cameraZ * 0.7;
-            camPos.z += cameraZ * 0.7;
-            cameraRef.current.position.copy(camPos);
-            cameraRef.current.up.set(0, 0, 1);
-
-            controlsRef.current.target.copy(center);
-            controlsRef.current.update();
-        };
-
-        const loadStl = (data: ArrayBuffer, material: THREE.Material, modelRef: React.MutableRefObject<THREE.Object3D | null>, bottomFace: BottomFace) => {
+        const loadStl = (data: ArrayBuffer, material: THREE.Material, modelRef: React.MutableRefObject<THREE.Object3D | null>) => {
             try {
                 const loader = new STLLoader();
                 const geometry = loader.parse(data);
                 geometry.computeVertexNormals();
                 const mesh = new THREE.Mesh(geometry, material);
-                mesh.quaternion.copy(getBottomFaceQuaternion(bottomFace));
                 scene.add(mesh);
                 modelRef.current = mesh;
 
@@ -355,7 +402,7 @@ const ThreeViewer = ({ toolpaths, geometry, stockStlData, targetStlData, stockBo
                 opacity: 0.3,
                 wireframe: true,
             });
-            loadStl(stockStlData, stockMaterial, stockModelRef, stockBottomFace);
+            loadStl(stockStlData, stockMaterial, stockModelRef);
         }
 
         // 加工後形状STLの読み込み
@@ -363,10 +410,10 @@ const ThreeViewer = ({ toolpaths, geometry, stockStlData, targetStlData, stockBo
             const targetMaterial = new THREE.MeshStandardMaterial({
                 color: 0x999999, metalness: 0.1, roughness: 0.5, side: THREE.DoubleSide,
             });
-            loadStl(targetStlData, targetMaterial, targetModelRef, targetBottomFace);
+            loadStl(targetStlData, targetMaterial, targetModelRef);
         }
 
-    }, [stockStlData, targetStlData, stockBottomFace, targetBottomFace]);
+    }, [stockStlData, targetStlData]);
 
     // DXF/SVG描画処理
     useEffect(() => {

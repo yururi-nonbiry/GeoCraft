@@ -11,8 +11,6 @@ export interface SerialPortInfo {
   path: string;
 }
 
-export type BottomFace = '+X' | '-X' | '+Y' | '-Y' | '+Z' | '-Z';
-
 export type MachineSetting = {
   id: number;
   name: string;
