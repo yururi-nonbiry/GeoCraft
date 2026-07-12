@@ -2,7 +2,7 @@ import React, { useRef, useEffect } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader';
-import { ToolpathSegment, Geometry } from '../types';
+import { ToolpathSegment, Geometry, BottomFace } from '../types';
 import {
     SimulationConfig,
     Heightmap,
@@ -26,10 +26,28 @@ interface ThreeViewerProps {
     geometry: Geometry | null;
     stockStlData: ArrayBuffer | null;
     targetStlData: ArrayBuffer | null;
+    stockBottomFace: BottomFace;
+    targetBottomFace: BottomFace;
     simulation?: SimulationConfig | null;
 }
 
-const ThreeViewer = ({ toolpaths, geometry, stockStlData, targetStlData, simulation }: ThreeViewerProps) => {
+// STLファイルのローカル座標系のうち、どの面を「底面」（テーブルに接する面 = ワールドの -Z 方向）
+// として扱うかを表すベクトル群。ユーザーが選択した面の法線がワールドの -Z に向くよう回転させる。
+const BOTTOM_FACE_NORMALS: Record<BottomFace, THREE.Vector3> = {
+    '+X': new THREE.Vector3(1, 0, 0),
+    '-X': new THREE.Vector3(-1, 0, 0),
+    '+Y': new THREE.Vector3(0, 1, 0),
+    '-Y': new THREE.Vector3(0, -1, 0),
+    '+Z': new THREE.Vector3(0, 0, 1),
+    '-Z': new THREE.Vector3(0, 0, -1),
+};
+
+const getBottomFaceQuaternion = (face: BottomFace): THREE.Quaternion => {
+    const down = new THREE.Vector3(0, 0, -1);
+    return new THREE.Quaternion().setFromUnitVectors(BOTTOM_FACE_NORMALS[face], down);
+};
+
+const ThreeViewer = ({ toolpaths, geometry, stockStlData, targetStlData, stockBottomFace, targetBottomFace, simulation }: ThreeViewerProps) => {
     const mountRef = useRef<HTMLDivElement>(null);
     const sceneRef = useRef<THREE.Scene | null>(null);
     const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
@@ -306,13 +324,13 @@ const ThreeViewer = ({ toolpaths, geometry, stockStlData, targetStlData, simulat
             controlsRef.current.update();
         };
 
-        const loadStl = (data: ArrayBuffer, material: THREE.Material, modelRef: React.MutableRefObject<THREE.Object3D | null>) => {
+        const loadStl = (data: ArrayBuffer, material: THREE.Material, modelRef: React.MutableRefObject<THREE.Object3D | null>, bottomFace: BottomFace) => {
             try {
                 const loader = new STLLoader();
                 const geometry = loader.parse(data);
                 geometry.computeVertexNormals();
                 const mesh = new THREE.Mesh(geometry, material);
-                mesh.rotation.x = -Math.PI / 2;
+                mesh.quaternion.copy(getBottomFaceQuaternion(bottomFace));
                 scene.add(mesh);
                 modelRef.current = mesh;
 
@@ -337,7 +355,7 @@ const ThreeViewer = ({ toolpaths, geometry, stockStlData, targetStlData, simulat
                 opacity: 0.3,
                 wireframe: true,
             });
-            loadStl(stockStlData, stockMaterial, stockModelRef);
+            loadStl(stockStlData, stockMaterial, stockModelRef, stockBottomFace);
         }
 
         // 加工後形状STLの読み込み
@@ -345,10 +363,10 @@ const ThreeViewer = ({ toolpaths, geometry, stockStlData, targetStlData, simulat
             const targetMaterial = new THREE.MeshStandardMaterial({
                 color: 0x999999, metalness: 0.1, roughness: 0.5, side: THREE.DoubleSide,
             });
-            loadStl(targetStlData, targetMaterial, targetModelRef);
+            loadStl(targetStlData, targetMaterial, targetModelRef, targetBottomFace);
         }
 
-    }, [stockStlData, targetStlData]);
+    }, [stockStlData, targetStlData, stockBottomFace, targetBottomFace]);
 
     // DXF/SVG描画処理
     useEffect(() => {

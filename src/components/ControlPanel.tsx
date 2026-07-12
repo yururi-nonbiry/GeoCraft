@@ -18,7 +18,7 @@ import {
     FormControlLabel,
 } from '@mui/material';
 import { Refresh, Link, LinkOff, PlayArrow, Pause, Stop, Settings } from '@mui/icons-material';
-import { MachineSetting, ToolSetting } from '../types';
+import { MachineSetting, ToolSetting, BottomFace } from '../types';
 
 interface ControlPanelProps {
     toolDiameter: number;
@@ -33,6 +33,10 @@ interface ControlPanelProps {
     targetStlFile: string | null;
     handleSelectStockStl: () => void;
     handleSelectTargetStl: () => void;
+    stockBottomFace: BottomFace;
+    setStockBottomFace: (val: BottomFace) => void;
+    targetBottomFace: BottomFace;
+    setTargetBottomFace: (val: BottomFace) => void;
     sliceHeight: number;
     setSliceHeight: (val: number) => void;
     handleGenerate3dPath: () => void;
@@ -100,6 +104,15 @@ interface ControlPanelProps {
 }
 
 const SIDE_PANEL_WIDTH = 360;
+
+const BOTTOM_FACE_OPTIONS: { value: BottomFace; label: string }[] = [
+    { value: '-Z', label: '-Z' },
+    { value: '+Z', label: '+Z' },
+    { value: '-X', label: '-X' },
+    { value: '+X', label: '+X' },
+    { value: '-Y', label: '-Y' },
+    { value: '+Y', label: '+Y' },
+];
 
 const TabPanel = (props: { children?: React.ReactNode; index: number; value: number; }) => {
     const { children, value, index, ...other } = props;
@@ -214,10 +227,38 @@ const ControlPanel = (props: ControlPanelProps) => {
                         <Box sx={{ mb: 2 }}>
                             <Button variant="outlined" onClick={props.handleSelectStockStl} fullWidth>材料STLを選択</Button>
                             {props.stockStlFile && <Typography variant="caption" display="block" sx={{ mt: 1, textAlign: 'center' }}>{props.stockStlFile.split('\\').pop()}</Typography>}
+                            {props.stockStlFile && (
+                                <FormControl fullWidth margin="dense" size="small">
+                                    <InputLabel>材料STLの底面</InputLabel>
+                                    <Select
+                                        value={props.stockBottomFace}
+                                        label="材料STLの底面"
+                                        onChange={(e) => props.setStockBottomFace(e.target.value as BottomFace)}
+                                    >
+                                        {BOTTOM_FACE_OPTIONS.map((opt) => (
+                                            <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
+                                        ))}
+                                    </Select>
+                                </FormControl>
+                            )}
                         </Box>
                         <Box sx={{ mb: 2 }}>
                             <Button variant="outlined" onClick={props.handleSelectTargetStl} fullWidth>加工後形状STLを選択</Button>
                             {props.targetStlFile && <Typography variant="caption" display="block" sx={{ mt: 1, textAlign: 'center' }}>{props.targetStlFile.split('\\').pop()}</Typography>}
+                            {props.targetStlFile && (
+                                <FormControl fullWidth margin="dense" size="small">
+                                    <InputLabel>加工後形状STLの底面</InputLabel>
+                                    <Select
+                                        value={props.targetBottomFace}
+                                        label="加工後形状STLの底面"
+                                        onChange={(e) => props.setTargetBottomFace(e.target.value as BottomFace)}
+                                    >
+                                        {BOTTOM_FACE_OPTIONS.map((opt) => (
+                                            <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
+                                        ))}
+                                    </Select>
+                                </FormControl>
+                            )}
                         </Box>
                         <TextField label="スライス厚 (mm)" type="number" value={props.sliceHeight} onChange={(e) => props.setSliceHeight(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
                         <Button variant="contained" onClick={props.handleGenerate3dPath} fullWidth>3D荒加工パス生成</Button>

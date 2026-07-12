@@ -38,7 +38,7 @@ import { api } from './api';
 
 import ThreeViewer from './components/ThreeViewer';
 import ControlPanel from './components/ControlPanel';
-import { Geometry, ToolpathSegment, Toolpath, SerialPortInfo, MachineSetting, EditableMachineSetting, ToolSetting, EditableToolSetting } from './types';
+import { Geometry, ToolpathSegment, Toolpath, SerialPortInfo, MachineSetting, EditableMachineSetting, ToolSetting, EditableToolSetting, BottomFace } from './types';
 
 const theme = createTheme({
   palette: {
@@ -155,6 +155,8 @@ const App = () => {
   const [targetStlFile, setTargetStlFile] = useState<string | null>(null);
   const [stockStlData, setStockStlData] = useState<ArrayBuffer | null>(null);
   const [targetStlData, setTargetStlData] = useState<ArrayBuffer | null>(null);
+  const [stockBottomFace, setStockBottomFace] = useState<BottomFace>('-Z');
+  const [targetBottomFace, setTargetBottomFace] = useState<BottomFace>('-Z');
   const [feedRate, setFeedRate] = useState<number>(DEFAULT_MATERIALS[0]?.feedRate ?? 100);
   const [contourSide, setContourSide] = useState('outer');
   const [materialSettings, setMaterialSettings] = useState<MaterialSetting[]>(DEFAULT_MATERIALS);
@@ -259,6 +261,8 @@ const App = () => {
       setTargetStlFile(null);
       setStockStlData(null);
       setTargetStlData(null);
+      setStockBottomFace('-Z');
+      setTargetBottomFace('-Z');
       const extension = filePath.split('.').pop()?.toLowerCase();
       if (extension === 'dxf') {
         api.parseDxfFile(filePath).then(result => {
@@ -549,6 +553,7 @@ const App = () => {
     if (result.status === 'success') {
       setStockStlFile(result.filePath);
       setStockStlData(await loadStlData(result.filePath));
+      setStockBottomFace('-Z');
       setToolpaths(null);
     }
   };
@@ -558,6 +563,7 @@ const App = () => {
     if (result.status === 'success') {
       setTargetStlFile(result.filePath);
       setTargetStlData(await loadStlData(result.filePath));
+      setTargetBottomFace('-Z');
       setToolpaths(null);
     }
   };
@@ -639,6 +645,8 @@ const App = () => {
               geometry={geometry}
               stockStlData={stockStlData}
               targetStlData={targetStlData}
+              stockBottomFace={stockBottomFace}
+              targetBottomFace={targetBottomFace}
               simulation={{
                 enabled: simEnabled,
                 toolRadius: toolDiameter / 2,
@@ -666,6 +674,10 @@ const App = () => {
             targetStlFile={targetStlFile}
             handleSelectStockStl={handleSelectStockStl}
             handleSelectTargetStl={handleSelectTargetStl}
+            stockBottomFace={stockBottomFace}
+            setStockBottomFace={setStockBottomFace}
+            targetBottomFace={targetBottomFace}
+            setTargetBottomFace={setTargetBottomFace}
             sliceHeight={sliceHeight}
             setSliceHeight={setSliceHeight}
             handleGenerate3dPath={handleGenerate3dPath}
