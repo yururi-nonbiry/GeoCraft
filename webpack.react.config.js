@@ -37,6 +37,11 @@ module.exports = {
         static: {
             directory: path.join(__dirname, 'dist'),
         },
+        devMiddleware: {
+            // output.publicPath is './' for production file:// loading, but
+            // webpack-dev-server needs an absolute path to serve in-memory assets.
+            publicPath: '/',
+        },
         compress: true,
         port: 5173,
         hot: true,
