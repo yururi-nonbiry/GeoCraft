@@ -162,6 +162,8 @@ const App = () => {
   const [stockStlData, setStockStlData] = useState<ArrayBuffer | null>(null);
   const [targetStlData, setTargetStlData] = useState<ArrayBuffer | null>(null);
   const [pickFaceMode, setPickFaceMode] = useState<'stock' | 'target' | null>(null);
+  const [stockOffset, setStockOffset] = useState({ x: 0, y: 0, z: 0 });
+  const [targetOffset, setTargetOffset] = useState({ x: 0, y: 0, z: 0 });
   const [feedRate, setFeedRate] = useState<number>(DEFAULT_MATERIALS[0]?.feedRate ?? 100);
   const [contourSide, setContourSide] = useState('outer');
   const [materialSettings, setMaterialSettings] = useState<MaterialSetting[]>(DEFAULT_MATERIALS);
@@ -267,6 +269,8 @@ const App = () => {
       setStockStlData(null);
       setTargetStlData(null);
       setPickFaceMode(null);
+      setStockOffset({ x: 0, y: 0, z: 0 });
+      setTargetOffset({ x: 0, y: 0, z: 0 });
       const extension = filePath.split('.').pop()?.toLowerCase();
       if (extension === 'dxf') {
         api.parseDxfFile(filePath).then(result => {
@@ -558,6 +562,7 @@ const App = () => {
       setStockStlFile(result.filePath);
       setStockStlData(await loadStlData(result.filePath));
       setPickFaceMode(null);
+      setStockOffset({ x: 0, y: 0, z: 0 });
       setToolpaths(null);
     }
   };
@@ -568,6 +573,7 @@ const App = () => {
       setTargetStlFile(result.filePath);
       setTargetStlData(await loadStlData(result.filePath));
       setPickFaceMode(null);
+      setTargetOffset({ x: 0, y: 0, z: 0 });
       setToolpaths(null);
     }
   };
@@ -650,8 +656,14 @@ const App = () => {
               stockStlData={stockStlData}
               targetStlData={targetStlData}
               pickFaceMode={pickFaceMode}
-              onFacePicked={() => setPickFaceMode(null)}
+              onFacePicked={(mode) => {
+                setPickFaceMode(null);
+                if (mode === 'stock') setStockOffset({ x: 0, y: 0, z: 0 });
+                else setTargetOffset({ x: 0, y: 0, z: 0 });
+              }}
               machineWorkArea={{ x: currentMachine.workAreaX, y: currentMachine.workAreaY, z: currentMachine.workAreaZ }}
+              stockOffset={stockOffset}
+              targetOffset={targetOffset}
               simulation={{
                 enabled: simEnabled,
                 toolRadius: toolDiameter / 2,
@@ -681,6 +693,10 @@ const App = () => {
             handleSelectTargetStl={handleSelectTargetStl}
             pickFaceMode={pickFaceMode}
             setPickFaceMode={setPickFaceMode}
+            stockOffset={stockOffset}
+            setStockOffset={setStockOffset}
+            targetOffset={targetOffset}
+            setTargetOffset={setTargetOffset}
             sliceHeight={sliceHeight}
             setSliceHeight={setSliceHeight}
             handleGenerate3dPath={handleGenerate3dPath}

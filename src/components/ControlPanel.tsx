@@ -35,6 +35,10 @@ interface ControlPanelProps {
     handleSelectTargetStl: () => void;
     pickFaceMode: 'stock' | 'target' | null;
     setPickFaceMode: (val: 'stock' | 'target' | null) => void;
+    stockOffset: { x: number; y: number; z: number };
+    setStockOffset: (val: { x: number; y: number; z: number }) => void;
+    targetOffset: { x: number; y: number; z: number };
+    setTargetOffset: (val: { x: number; y: number; z: number }) => void;
     sliceHeight: number;
     setSliceHeight: (val: number) => void;
     handleGenerate3dPath: () => void;
@@ -228,6 +232,20 @@ const ControlPanel = (props: ControlPanelProps) => {
                                     {props.pickFaceMode === 'stock' ? '3Dビューで底面をクリック(キャンセル)' : '底面となる面を選択'}
                                 </Button>
                             )}
+                            {props.stockStlFile && (
+                                <Box sx={{ mt: 1 }}>
+                                    <Typography variant="caption" display="block">位置調整 (mm)</Typography>
+                                    <Box sx={{ display: 'flex', gap: 1 }}>
+                                        <TextField label="X" type="number" size="small" value={props.stockOffset.x}
+                                            onChange={(e) => props.setStockOffset({ ...props.stockOffset, x: parseFloat(e.target.value) || 0 })} />
+                                        <TextField label="Y" type="number" size="small" value={props.stockOffset.y}
+                                            onChange={(e) => props.setStockOffset({ ...props.stockOffset, y: parseFloat(e.target.value) || 0 })} />
+                                        <TextField label="Z" type="number" size="small" value={props.stockOffset.z}
+                                            onChange={(e) => props.setStockOffset({ ...props.stockOffset, z: parseFloat(e.target.value) || 0 })} />
+                                        <Button size="small" onClick={() => props.setStockOffset({ x: 0, y: 0, z: 0 })}>リセット</Button>
+                                    </Box>
+                                </Box>
+                            )}
                         </Box>
                         <Box sx={{ mb: 2 }}>
                             <Button variant="outlined" onClick={props.handleSelectTargetStl} fullWidth>加工後形状STLを選択</Button>
@@ -243,6 +261,20 @@ const ControlPanel = (props: ControlPanelProps) => {
                                 >
                                     {props.pickFaceMode === 'target' ? '3Dビューで底面をクリック(キャンセル)' : '底面となる面を選択'}
                                 </Button>
+                            )}
+                            {props.targetStlFile && (
+                                <Box sx={{ mt: 1 }}>
+                                    <Typography variant="caption" display="block">位置調整 (mm)</Typography>
+                                    <Box sx={{ display: 'flex', gap: 1 }}>
+                                        <TextField label="X" type="number" size="small" value={props.targetOffset.x}
+                                            onChange={(e) => props.setTargetOffset({ ...props.targetOffset, x: parseFloat(e.target.value) || 0 })} />
+                                        <TextField label="Y" type="number" size="small" value={props.targetOffset.y}
+                                            onChange={(e) => props.setTargetOffset({ ...props.targetOffset, y: parseFloat(e.target.value) || 0 })} />
+                                        <TextField label="Z" type="number" size="small" value={props.targetOffset.z}
+                                            onChange={(e) => props.setTargetOffset({ ...props.targetOffset, z: parseFloat(e.target.value) || 0 })} />
+                                        <Button size="small" onClick={() => props.setTargetOffset({ x: 0, y: 0, z: 0 })}>リセット</Button>
+                                    </Box>
+                                </Box>
                             )}
                         </Box>
                         <TextField label="スライス厚 (mm)" type="number" value={props.sliceHeight} onChange={(e) => props.setSliceHeight(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />

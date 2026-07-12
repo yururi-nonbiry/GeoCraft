@@ -28,10 +28,13 @@ interface ThreeViewerProps {
     targetStlData: ArrayBuffer | null;
     // 'stock'/'target' の間、3Dビュー上でクリックされた面をそのモデルの底面(-Z)にする。null なら通常操作。
     pickFaceMode: 'stock' | 'target' | null;
-    onFacePicked: () => void;
+    onFacePicked: (mode: 'stock' | 'target') => void;
     // 選択中の加工機の加工可能範囲(mm)。原点(0,0,0)を作業エリアの手前角とし、
     // X: 0〜x, Y: 0〜y, Z: 0〜-z (原点から下方向) の範囲として描画する。
     machineWorkArea: { x: number; y: number; z: number };
+    // 読み込んだ3Dモデルの位置調整量(mm)。面選択などで決まる基準位置に加算して適用する。
+    stockOffset: { x: number; y: number; z: number };
+    targetOffset: { x: number; y: number; z: number };
     simulation?: SimulationConfig | null;
 }
 
@@ -79,13 +82,16 @@ const createWorkVolumeBox = (width: number, depth: number, height: number): THRE
     return box;
 };
 
-const ThreeViewer = ({ toolpaths, geometry, stockStlData, targetStlData, pickFaceMode, onFacePicked, machineWorkArea, simulation }: ThreeViewerProps) => {
+const ThreeViewer = ({ toolpaths, geometry, stockStlData, targetStlData, pickFaceMode, onFacePicked, machineWorkArea, stockOffset, targetOffset, simulation }: ThreeViewerProps) => {
     const mountRef = useRef<HTMLDivElement>(null);
     const sceneRef = useRef<THREE.Scene | null>(null);
     const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
     const controlsRef = useRef<OrbitControls | null>(null);
     const stockModelRef = useRef<THREE.Object3D | null>(null);
     const targetModelRef = useRef<THREE.Object3D | null>(null);
+    // 位置調整オフセットの基準位置(面選択などで決まる位置)。実際の position = base + offset
+    const stockBasePositionRef = useRef(new THREE.Vector3());
+    const targetBasePositionRef = useRef(new THREE.Vector3());
     const pickFaceModeRef = useRef(pickFaceMode);
     const onFacePickedRef = useRef(onFacePicked);
     const toolpathGroupRef = useRef<THREE.Group | null>(null);
@@ -312,8 +318,12 @@ const ThreeViewer = ({ toolpaths, geometry, stockStlData, targetStlData, pickFac
             targetMesh.position.z -= box.min.z;
             targetMesh.updateMatrixWorld(true);
 
+            // この位置を新たな基準位置とする(位置調整オフセットは呼び出し側でリセットされる)
+            const baseRef = mode === 'stock' ? stockBasePositionRef : targetBasePositionRef;
+            baseRef.current.copy(targetMesh.position);
+
             fitCameraToObject(targetMesh);
-            onFacePickedRef.current?.();
+            onFacePickedRef.current?.(mode);
         };
 
         renderer.domElement.addEventListener('pointerdown', onPointerDown);
@@ -416,6 +426,8 @@ const ThreeViewer = ({ toolpaths, geometry, stockStlData, targetStlData, pickFac
         // 前のモデルを削除
         if (stockModelRef.current) scene.remove(stockModelRef.current);
         if (targetModelRef.current) scene.remove(targetModelRef.current);
+        stockBasePositionRef.current.set(0, 0, 0);
+        targetBasePositionRef.current.set(0, 0, 0);
 
         const loadStl = (data: ArrayBuffer, material: THREE.Material, modelRef: React.MutableRefObject<THREE.Object3D | null>) => {
             try {
@@ -459,6 +471,22 @@ const ThreeViewer = ({ toolpaths, geometry, stockStlData, targetStlData, pickFac
         }
 
     }, [stockStlData, targetStlData]);
+
+    // 読み込んだモデルの位置調整(オフセット)を反映する。position = 基準位置(面選択などで決まる) + オフセット
+    useEffect(() => {
+        const stockMesh = stockModelRef.current;
+        if (stockMesh) {
+            const base = stockBasePositionRef.current;
+            stockMesh.position.set(base.x + stockOffset.x, base.y + stockOffset.y, base.z + stockOffset.z);
+            stockMesh.updateMatrixWorld(true);
+        }
+        const targetMesh = targetModelRef.current;
+        if (targetMesh) {
+            const base = targetBasePositionRef.current;
+            targetMesh.position.set(base.x + targetOffset.x, base.y + targetOffset.y, base.z + targetOffset.z);
+            targetMesh.updateMatrixWorld(true);
+        }
+    }, [stockOffset.x, stockOffset.y, stockOffset.z, targetOffset.x, targetOffset.y, targetOffset.z, stockStlData, targetStlData]);
 
     // 加工可能範囲(選択中の加工機の可動範囲)のグリッド・ワイヤーフレーム表示
     useEffect(() => {
