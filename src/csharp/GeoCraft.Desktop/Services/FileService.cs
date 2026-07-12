@@ -30,5 +30,11 @@ namespace GeoCraft.Desktop.Services
             }
             return new { status = "canceled" };
         }
+
+        public object ReadFileAsBase64(string filePath)
+        {
+            byte[] bytes = System.IO.File.ReadAllBytes(filePath);
+            return new { status = "success", data = Convert.ToBase64String(bytes) };
+        }
     }
 }

@@ -81,6 +81,7 @@ class WebView2API implements ElectronAPI {
         return this.callBridge('GeneratePocketPath', JSON.stringify(params));
     }
     openFile(fileType: string) { return this.callBridge('OpenFile', fileType); }
+    readFileAsBase64(filePath: string) { return this.callBridge('ReadFileAsBase64', filePath); }
     generate3dRoughingPath(params: RoughingPathParams) {
         return this.callBridge('Generate3dRoughingPath', JSON.stringify(params));
     }

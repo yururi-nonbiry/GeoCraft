@@ -52,6 +52,7 @@ export interface ElectronAPI {
     generateContourPath: (toolDiameter: number, geometry: any, side: string, stockToLeave?: number) => Promise<any>;
     generatePocketPath: (params: PocketPathParams) => Promise<any>;
     openFile: (fileType: string) => Promise<any>;
+    readFileAsBase64: (filePath: string) => Promise<any>;
     generate3dRoughingPath: (params: RoughingPathParams) => Promise<any>;
     fitArcsToToolpath: (toolpath: number[][], arcs: any[]) => Promise<any>;
     generateGcode: (params: GcodeGenerationParams) => Promise<any>;

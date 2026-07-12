@@ -206,8 +206,12 @@ namespace GeoCraft.Desktop
              });
         }
         
-        public string OpenFile(string fileType) { 
+        public string OpenFile(string fileType) {
             return ExecuteSafe(() => _mainWindow.Dispatcher.Invoke<object>(() => _fileService.OpenFile(fileType)));
+        }
+
+        public string ReadFileAsBase64(string filePath) {
+            return ExecuteSafe(() => _fileService.ReadFileAsBase64(filePath));
         }
         
         public string Generate3dRoughingPath(string paramsJson) { 

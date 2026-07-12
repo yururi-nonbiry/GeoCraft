@@ -153,6 +153,8 @@ const App = () => {
   const [geometry, setGeometry] = useState<Geometry | null>(null);
   const [stockStlFile, setStockStlFile] = useState<string | null>(null);
   const [targetStlFile, setTargetStlFile] = useState<string | null>(null);
+  const [stockStlData, setStockStlData] = useState<ArrayBuffer | null>(null);
+  const [targetStlData, setTargetStlData] = useState<ArrayBuffer | null>(null);
   const [feedRate, setFeedRate] = useState<number>(DEFAULT_MATERIALS[0]?.feedRate ?? 100);
   const [contourSide, setContourSide] = useState('outer');
   const [materialSettings, setMaterialSettings] = useState<MaterialSetting[]>(DEFAULT_MATERIALS);
@@ -255,6 +257,8 @@ const App = () => {
       setGeometry(null);
       setStockStlFile(null);
       setTargetStlFile(null);
+      setStockStlData(null);
+      setTargetStlData(null);
       const extension = filePath.split('.').pop()?.toLowerCase();
       if (extension === 'dxf') {
         api.parseDxfFile(filePath).then(result => {
@@ -528,10 +532,23 @@ const App = () => {
     }
   };
 
+  const loadStlData = async (filePath: string): Promise<ArrayBuffer | null> => {
+    const result = await api.readFileAsBase64(filePath);
+    if (result.status !== 'success') {
+      alert(`STLファイルの読み込みに失敗しました: ${result.message}`);
+      return null;
+    }
+    const binary = atob(result.data);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes.buffer;
+  };
+
   const handleSelectStockStl = async () => {
     const result = await api.openFile('stl');
     if (result.status === 'success') {
       setStockStlFile(result.filePath);
+      setStockStlData(await loadStlData(result.filePath));
       setToolpaths(null);
     }
   };
@@ -540,6 +557,7 @@ const App = () => {
     const result = await api.openFile('stl');
     if (result.status === 'success') {
       setTargetStlFile(result.filePath);
+      setTargetStlData(await loadStlData(result.filePath));
       setToolpaths(null);
     }
   };
@@ -619,8 +637,8 @@ const App = () => {
             <ThreeViewer
               toolpaths={toolpaths}
               geometry={geometry}
-              stockStlFile={stockStlFile}
-              targetStlFile={targetStlFile}
+              stockStlData={stockStlData}
+              targetStlData={targetStlData}
               simulation={{
                 enabled: simEnabled,
                 toolRadius: toolDiameter / 2,

@@ -24,12 +24,12 @@ const SIM_PROGRESS_REPORT_INTERVAL_MS = 100;
 interface ThreeViewerProps {
     toolpaths: ToolpathSegment[] | null;
     geometry: Geometry | null;
-    stockStlFile: string | null;
-    targetStlFile: string | null;
+    stockStlData: ArrayBuffer | null;
+    targetStlData: ArrayBuffer | null;
     simulation?: SimulationConfig | null;
 }
 
-const ThreeViewer = ({ toolpaths, geometry, stockStlFile, targetStlFile, simulation }: ThreeViewerProps) => {
+const ThreeViewer = ({ toolpaths, geometry, stockStlData, targetStlData, simulation }: ThreeViewerProps) => {
     const mountRef = useRef<HTMLDivElement>(null);
     const sceneRef = useRef<THREE.Scene | null>(null);
     const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
@@ -306,9 +306,10 @@ const ThreeViewer = ({ toolpaths, geometry, stockStlFile, targetStlFile, simulat
             controlsRef.current.update();
         };
 
-        const loadStl = (filePath: string, material: THREE.Material, modelRef: React.MutableRefObject<THREE.Object3D | null>) => {
-            const loader = new STLLoader();
-            loader.load(filePath, (geometry) => {
+        const loadStl = (data: ArrayBuffer, material: THREE.Material, modelRef: React.MutableRefObject<THREE.Object3D | null>) => {
+            try {
+                const loader = new STLLoader();
+                const geometry = loader.parse(data);
                 geometry.computeVertexNormals();
                 const mesh = new THREE.Mesh(geometry, material);
                 mesh.rotation.x = -Math.PI / 2;
@@ -322,29 +323,32 @@ const ThreeViewer = ({ toolpaths, geometry, stockStlFile, targetStlFile, simulat
                 if (!combinedBox.isEmpty()) {
                     fitCameraToObject(stockModelRef.current ?? targetModelRef.current!);
                 }
-            });
+            } catch (err) {
+                console.error('STLファイルの解析に失敗しました:', err);
+                alert(`STLファイルの解析に失敗しました: ${err}`);
+            }
         };
 
         // 材料STLの読み込み
-        if (stockStlFile) {
+        if (stockStlData) {
             const stockMaterial = new THREE.MeshStandardMaterial({
                 color: 0x1565c0, // Blue
                 transparent: true,
                 opacity: 0.3,
                 wireframe: true,
             });
-            loadStl(stockStlFile, stockMaterial, stockModelRef);
+            loadStl(stockStlData, stockMaterial, stockModelRef);
         }
 
         // 加工後形状STLの読み込み
-        if (targetStlFile) {
+        if (targetStlData) {
             const targetMaterial = new THREE.MeshStandardMaterial({
                 color: 0x999999, metalness: 0.1, roughness: 0.5, side: THREE.DoubleSide,
             });
-            loadStl(targetStlFile, targetMaterial, targetModelRef);
+            loadStl(targetStlData, targetMaterial, targetModelRef);
         }
 
-    }, [stockStlFile, targetStlFile]);
+    }, [stockStlData, targetStlData]);
 
     // DXF/SVG描画処理
     useEffect(() => {
