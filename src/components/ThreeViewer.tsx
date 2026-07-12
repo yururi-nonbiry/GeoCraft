@@ -29,8 +29,8 @@ interface ThreeViewerProps {
     // 'stock'/'target' の間、3Dビュー上でクリックされた面をそのモデルの底面(-Z)にする。null なら通常操作。
     pickFaceMode: 'stock' | 'target' | null;
     onFacePicked: (mode: 'stock' | 'target') => void;
-    // 選択中の加工機の加工可能範囲(mm)。原点(0,0,0)を作業エリアの手前角とし、
-    // X: 0〜x, Y: 0〜y, Z: 0〜-z (原点から下方向) の範囲として描画する。
+    // 選択中の加工機の加工可能範囲(mm)。原点(0,0,0)を作業エリアの手前角(テーブル面)とし、
+    // X: 0〜x, Y: 0〜y, Z: 0〜z (原点から上方向、ストックが載る向き) の範囲として描画する。
     machineWorkArea: { x: number; y: number; z: number };
     // 読み込んだ3Dモデルの位置調整量(mm)。面選択などで決まる基準位置に加算して適用する。
     stockOffset: { x: number; y: number; z: number };
@@ -77,8 +77,8 @@ const createWorkVolumeBox = (width: number, depth: number, height: number): THRE
     const edges = new THREE.EdgesGeometry(boxGeometry);
     const material = new THREE.LineBasicMaterial({ color: 0xff6600, transparent: true, opacity: 0.4 });
     const box = new THREE.LineSegments(edges, material);
-    // BoxGeometry は原点中心のため、X:0〜width, Y:0〜depth, Z:0〜-height になるよう平行移動する
-    box.position.set(width / 2, depth / 2, -height / 2);
+    // BoxGeometry は原点中心のため、X:0〜width, Y:0〜depth, Z:0〜height になるよう平行移動する
+    box.position.set(width / 2, depth / 2, height / 2);
     return box;
 };
 
