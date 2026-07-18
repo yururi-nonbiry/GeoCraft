@@ -39,7 +39,7 @@ import { api } from './api';
 import ThreeViewer from './components/ThreeViewer';
 import ControlPanel from './components/ControlPanel';
 import { Geometry, ToolpathSegment, Toolpath, SerialPortInfo, MachineSetting, EditableMachineSetting, ToolSetting, EditableToolSetting } from './types';
-import { createBoxStlData } from './stlUtils';
+import { createBoxStlData, translateStlData } from './stlUtils';
 
 const theme = createTheme({
   palette: {
@@ -604,12 +604,29 @@ const App = () => {
     }
   };
 
+  // ビューア上のオフセット(stockOffset/targetOffset)は表示位置の調整用だが、
+  // パス生成はSTLファイルの実座標を元に行われるため、オフセットが設定されている場合は
+  // 頂点座標にオフセットを焼き込んだ一時STLを生成してからパスを生成する。
+  const resolveOffsetStlPath = async (
+    originalPath: string,
+    data: ArrayBuffer | null,
+    offset: { x: number; y: number; z: number }
+  ): Promise<string> => {
+    if (!data || (offset.x === 0 && offset.y === 0 && offset.z === 0)) return originalPath;
+    const translated = translateStlData(data, offset);
+    const result = await api.writeTempStlFile(arrayBufferToBase64(translated));
+    if (result.status !== 'success') throw new Error(result.message ?? '一時STLファイルの書き込みに失敗しました。');
+    return result.filePath;
+  };
+
   const handleGenerate3dPath = async () => {
     if (!stockStlPath || !targetStlFile) return alert('3D加工パスを生成するには、材料と加工後形状の両方のSTLファイルを開いてください。');
     try {
+      const stockPath = await resolveOffsetStlPath(stockStlPath, stockStlData, stockOffset);
+      const targetPath = await resolveOffsetStlPath(targetStlFile, targetStlData, targetOffset);
       const params = {
-        stockPath: stockStlPath,
-        targetPath: targetStlFile,
+        stockPath,
+        targetPath,
         sliceHeight,
         toolDiameter,
         stepoverRatio: stepover
