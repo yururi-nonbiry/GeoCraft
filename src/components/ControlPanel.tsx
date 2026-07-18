@@ -33,6 +33,9 @@ interface ControlPanelProps {
     targetStlFile: string | null;
     handleSelectStockStl: () => void;
     handleSelectTargetStl: () => void;
+    stockBoxSize: { x: number; y: number; z: number };
+    setStockBoxSize: (val: { x: number; y: number; z: number }) => void;
+    handleCreateBoxStock: () => void;
     pickFaceMode: 'stock' | 'target' | null;
     setPickFaceMode: (val: 'stock' | 'target' | null) => void;
     stockOffset: { x: number; y: number; z: number };
@@ -219,6 +222,18 @@ const ControlPanel = (props: ControlPanelProps) => {
                         <Typography variant="h6" gutterBottom>3D 加工 (STL)</Typography>
                         <Box sx={{ mb: 2 }}>
                             <Button variant="outlined" onClick={props.handleSelectStockStl} fullWidth>材料STLを選択</Button>
+                            <Box sx={{ mt: 1 }}>
+                                <Typography variant="caption" display="block">四角い材料を寸法入力で投入 (mm)</Typography>
+                                <Box sx={{ display: 'flex', gap: 1 }}>
+                                    <TextField label="幅 X" type="number" size="small" value={props.stockBoxSize.x}
+                                        onChange={(e) => props.setStockBoxSize({ ...props.stockBoxSize, x: parseFloat(e.target.value) || 0 })} />
+                                    <TextField label="奥行き Y" type="number" size="small" value={props.stockBoxSize.y}
+                                        onChange={(e) => props.setStockBoxSize({ ...props.stockBoxSize, y: parseFloat(e.target.value) || 0 })} />
+                                    <TextField label="高さ Z" type="number" size="small" value={props.stockBoxSize.z}
+                                        onChange={(e) => props.setStockBoxSize({ ...props.stockBoxSize, z: parseFloat(e.target.value) || 0 })} />
+                                </Box>
+                                <Button variant="outlined" onClick={props.handleCreateBoxStock} fullWidth size="small" sx={{ mt: 1 }}>四角い材料を投入</Button>
+                            </Box>
                             {props.stockStlFile && <Typography variant="caption" display="block" sx={{ mt: 1, textAlign: 'center' }}>{props.stockStlFile.split('\\').pop()}</Typography>}
                             {props.stockStlFile && (
                                 <Button
@@ -278,7 +293,7 @@ const ControlPanel = (props: ControlPanelProps) => {
                             )}
                         </Box>
                         <TextField label="スライス厚 (mm)" type="number" value={props.sliceHeight} onChange={(e) => props.setSliceHeight(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
-                        <Button variant="contained" onClick={props.handleGenerate3dPath} fullWidth>3D荒加工パス生成</Button>
+                        <Button variant="contained" onClick={props.handleGenerate3dPath} fullWidth>3D加工パス生成</Button>
                     </Paper>
                     <Paper sx={{ p: 2, mb: 2 }}>
                         <Typography variant="h6" gutterBottom>ドリル加工</Typography>

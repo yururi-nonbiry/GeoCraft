@@ -39,6 +39,7 @@ import { api } from './api';
 import ThreeViewer from './components/ThreeViewer';
 import ControlPanel from './components/ControlPanel';
 import { Geometry, ToolpathSegment, Toolpath, SerialPortInfo, MachineSetting, EditableMachineSetting, ToolSetting, EditableToolSetting } from './types';
+import { createBoxStlData } from './stlUtils';
 
 const theme = createTheme({
   palette: {
@@ -164,6 +165,7 @@ const App = () => {
   const [pickFaceMode, setPickFaceMode] = useState<'stock' | 'target' | null>(null);
   const [stockOffset, setStockOffset] = useState({ x: 0, y: 0, z: 0 });
   const [targetOffset, setTargetOffset] = useState({ x: 0, y: 0, z: 0 });
+  const [stockBoxSize, setStockBoxSize] = useState({ x: 100, y: 100, z: 20 });
   const [feedRate, setFeedRate] = useState<number>(DEFAULT_MATERIALS[0]?.feedRate ?? 100);
   const [contourSide, setContourSide] = useState('outer');
   const [materialSettings, setMaterialSettings] = useState<MaterialSetting[]>(DEFAULT_MATERIALS);
@@ -567,6 +569,16 @@ const App = () => {
     }
   };
 
+  const handleCreateBoxStock = () => {
+    const { x, y, z } = stockBoxSize;
+    if (x <= 0 || y <= 0 || z <= 0) return alert('材料の幅・奥行き・高さには0より大きい値を入力してください。');
+    setStockStlFile(`矩形材料 ${x}×${y}×${z}mm`);
+    setStockStlData(createBoxStlData(x, y, z));
+    setPickFaceMode(null);
+    setStockOffset({ x: 0, y: 0, z: 0 });
+    setToolpaths(null);
+  };
+
   const handleSelectTargetStl = async () => {
     const result = await api.openFile('stl');
     if (result.status === 'success') {
@@ -664,6 +676,8 @@ const App = () => {
               machineWorkArea={{ x: currentMachine.workAreaX, y: currentMachine.workAreaY, z: currentMachine.workAreaZ }}
               stockOffset={stockOffset}
               targetOffset={targetOffset}
+              onStockOffsetChange={setStockOffset}
+              onTargetOffsetChange={setTargetOffset}
               simulation={{
                 enabled: simEnabled,
                 toolRadius: toolDiameter / 2,
@@ -688,6 +702,9 @@ const App = () => {
             handleGenerateContour={handleGenerateContour}
             handleGeneratePocket={handleGeneratePocket}
             stockStlFile={stockStlFile}
+            stockBoxSize={stockBoxSize}
+            setStockBoxSize={setStockBoxSize}
+            handleCreateBoxStock={handleCreateBoxStock}
             targetStlFile={targetStlFile}
             handleSelectStockStl={handleSelectStockStl}
             handleSelectTargetStl={handleSelectTargetStl}

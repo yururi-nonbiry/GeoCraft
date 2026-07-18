@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(dotnet run *)",
+      "Bash(powershell -NoProfile -Command 'Get-Process | Where-Object { $_.ProcessName -like '\\\\''*GeoCraft*'\\\\'' -or $_.ProcessName -eq '\\\\''dotnet'\\\\'' } | Select-Object ProcessName, Id, MainWindowTitle')"
+    ]
+  }
+}

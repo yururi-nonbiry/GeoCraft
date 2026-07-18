@@ -35,6 +35,9 @@ interface ThreeViewerProps {
     // 読み込んだ3Dモデルの位置調整量(mm)。面選択などで決まる基準位置に加算して適用する。
     stockOffset: { x: number; y: number; z: number };
     targetOffset: { x: number; y: number; z: number };
+    // 3Dビュー上でのマウスドラッグによる位置調整(X/Y平面上の移動)を親に反映するコールバック。
+    onStockOffsetChange?: (offset: { x: number; y: number; z: number }) => void;
+    onTargetOffsetChange?: (offset: { x: number; y: number; z: number }) => void;
     simulation?: SimulationConfig | null;
 }
 
@@ -82,7 +85,7 @@ const createWorkVolumeBox = (width: number, depth: number, height: number): THRE
     return box;
 };
 
-const ThreeViewer = ({ toolpaths, geometry, stockStlData, targetStlData, pickFaceMode, onFacePicked, machineWorkArea, stockOffset, targetOffset, simulation }: ThreeViewerProps) => {
+const ThreeViewer = ({ toolpaths, geometry, stockStlData, targetStlData, pickFaceMode, onFacePicked, machineWorkArea, stockOffset, targetOffset, onStockOffsetChange, onTargetOffsetChange, simulation }: ThreeViewerProps) => {
     const mountRef = useRef<HTMLDivElement>(null);
     const sceneRef = useRef<THREE.Scene | null>(null);
     const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
@@ -94,6 +97,13 @@ const ThreeViewer = ({ toolpaths, geometry, stockStlData, targetStlData, pickFac
     const targetBasePositionRef = useRef(new THREE.Vector3());
     const pickFaceModeRef = useRef(pickFaceMode);
     const onFacePickedRef = useRef(onFacePicked);
+    // ドラッグ操作の間、常に最新のオフセット値/コールバックを参照するための ref
+    const stockOffsetRef = useRef(stockOffset);
+    const targetOffsetRef = useRef(targetOffset);
+    const onStockOffsetChangeRef = useRef(onStockOffsetChange);
+    const onTargetOffsetChangeRef = useRef(onTargetOffsetChange);
+    // 3Dモデルをマウスドラッグで移動中の状態(X/Y平面上のみ移動)
+    const dragStateRef = useRef<{ which: 'stock' | 'target'; plane: THREE.Plane; lastPoint: THREE.Vector3 } | null>(null);
     const toolpathGroupRef = useRef<THREE.Group | null>(null);
     const dxfObjectRef = useRef<THREE.Group | null>(null);
     const dxfArcsRef = useRef<THREE.Group | null>(null);
@@ -143,6 +153,22 @@ const ThreeViewer = ({ toolpaths, geometry, stockStlData, targetStlData, pickFac
     useEffect(() => {
         onFacePickedRef.current = onFacePicked;
     }, [onFacePicked]);
+
+    useEffect(() => {
+        stockOffsetRef.current = stockOffset;
+    }, [stockOffset]);
+
+    useEffect(() => {
+        targetOffsetRef.current = targetOffset;
+    }, [targetOffset]);
+
+    useEffect(() => {
+        onStockOffsetChangeRef.current = onStockOffsetChange;
+    }, [onStockOffsetChange]);
+
+    useEffect(() => {
+        onTargetOffsetChangeRef.current = onTargetOffsetChange;
+    }, [onTargetOffsetChange]);
 
     // カメラをオブジェクト全体が収まるように調整する（初回読み込み時・底面選択後の両方で使用）
     const fitCameraToObject = (object: THREE.Object3D) => {
@@ -281,13 +307,85 @@ const ThreeViewer = ({ toolpaths, geometry, stockStlData, targetStlData, pickFac
         let pointerDownPos: { x: number; y: number } | null = null;
         const raycaster = new THREE.Raycaster();
 
+        const getMouseNDC = (e: PointerEvent): THREE.Vector2 => {
+            const rect = renderer.domElement.getBoundingClientRect();
+            return new THREE.Vector2(
+                ((e.clientX - rect.left) / rect.width) * 2 - 1,
+                -((e.clientY - rect.top) / rect.height) * 2 + 1,
+            );
+        };
+
+        // 通常操作中(底面選択モードでない)にストック/ターゲットをクリックしたら、
+        // X/Y平面上のドラッグでモデルを移動できるようにする(Zは維持)。
         const onPointerDown = (e: PointerEvent) => {
             pointerDownPos = { x: e.clientX, y: e.clientY };
+            if (pickFaceModeRef.current || !cameraRef.current) return;
+
+            const candidates: { mesh: THREE.Object3D; which: 'stock' | 'target' }[] = [];
+            if (stockModelRef.current) candidates.push({ mesh: stockModelRef.current, which: 'stock' });
+            if (targetModelRef.current) candidates.push({ mesh: targetModelRef.current, which: 'target' });
+            if (candidates.length === 0) return;
+
+            raycaster.setFromCamera(getMouseNDC(e), cameraRef.current);
+            const intersects = raycaster.intersectObjects(candidates.map((c) => c.mesh), false);
+            const hit = intersects[0];
+            if (!hit) return;
+            const which = candidates.find((c) => c.mesh === hit.object)?.which;
+            if (!which) return;
+
+            const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(new THREE.Vector3(0, 0, 1), hit.point);
+            const startPoint = new THREE.Vector3();
+            if (!raycaster.ray.intersectPlane(plane, startPoint)) return;
+
+            dragStateRef.current = { which, plane, lastPoint: startPoint };
+            controls.enabled = false;
+            renderer.domElement.setPointerCapture(e.pointerId);
+            renderer.domElement.style.cursor = 'grabbing';
+        };
+
+        const onPointerMove = (e: PointerEvent) => {
+            const drag = dragStateRef.current;
+            if (!drag || !cameraRef.current) return;
+
+            raycaster.setFromCamera(getMouseNDC(e), cameraRef.current);
+            const point = new THREE.Vector3();
+            if (!raycaster.ray.intersectPlane(drag.plane, point)) return;
+            const dx = point.x - drag.lastPoint.x;
+            const dy = point.y - drag.lastPoint.y;
+            drag.lastPoint.copy(point);
+            if (dx === 0 && dy === 0) return;
+
+            const modelRef = drag.which === 'stock' ? stockModelRef : targetModelRef;
+            const baseRef = drag.which === 'stock' ? stockBasePositionRef : targetBasePositionRef;
+            const offsetRef = drag.which === 'stock' ? stockOffsetRef : targetOffsetRef;
+            const onChangeRef = drag.which === 'stock' ? onStockOffsetChangeRef : onTargetOffsetChangeRef;
+
+            const next = { x: offsetRef.current.x + dx, y: offsetRef.current.y + dy, z: offsetRef.current.z };
+            offsetRef.current = next;
+
+            // 親の状態更新を待たず、即座にモデルの見た目の位置を反映する
+            const mesh = modelRef.current;
+            if (mesh) {
+                const base = baseRef.current;
+                mesh.position.set(base.x + next.x, base.y + next.y, base.z + next.z);
+                mesh.updateMatrixWorld(true);
+            }
+            onChangeRef.current?.(next);
         };
 
         const onPointerUp = (e: PointerEvent) => {
+            const wasDragging = dragStateRef.current !== null;
+            dragStateRef.current = null;
+            controls.enabled = true;
+            renderer.domElement.style.cursor = pickFaceModeRef.current ? 'crosshair' : 'default';
+            if (renderer.domElement.hasPointerCapture(e.pointerId)) {
+                renderer.domElement.releasePointerCapture(e.pointerId);
+            }
+
             const downPos = pointerDownPos;
             pointerDownPos = null;
+            if (wasDragging) return;
+
             const mode = pickFaceModeRef.current;
             if (!mode || !downPos) return;
             // ドラッグ操作(カメラ回転)はクリックとして扱わない
@@ -327,11 +425,13 @@ const ThreeViewer = ({ toolpaths, geometry, stockStlData, targetStlData, pickFac
         };
 
         renderer.domElement.addEventListener('pointerdown', onPointerDown);
+        renderer.domElement.addEventListener('pointermove', onPointerMove);
         renderer.domElement.addEventListener('pointerup', onPointerUp);
 
         return () => {
             window.removeEventListener('resize', handleResize);
             renderer.domElement.removeEventListener('pointerdown', onPointerDown);
+            renderer.domElement.removeEventListener('pointermove', onPointerMove);
             renderer.domElement.removeEventListener('pointerup', onPointerUp);
             if (currentMount.contains(renderer.domElement)) {
                 currentMount.removeChild(renderer.domElement);

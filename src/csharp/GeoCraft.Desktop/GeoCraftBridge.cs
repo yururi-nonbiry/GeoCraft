@@ -21,6 +21,7 @@ namespace GeoCraft.Desktop
         private FileService _fileService;
         private SerialService _serialService;
         private GcodeService _gcodeService;
+        private ThreeDPathService _threeDPathService;
 
         // G-Code Queue Control Fields
         private Queue<string> _gcodeQueue = new Queue<string>();
@@ -40,6 +41,7 @@ namespace GeoCraft.Desktop
             _fileService = new FileService();
             _serialService = new SerialService();
             _gcodeService = new GcodeService();
+            _threeDPathService = new ThreeDPathService();
 
             _serialService.OnDataReceived += (data) => {
                  // Broadcast serial data to frontend
@@ -214,8 +216,16 @@ namespace GeoCraft.Desktop
             return ExecuteSafe(() => _fileService.ReadFileAsBase64(filePath));
         }
         
-        public string Generate3dRoughingPath(string paramsJson) { 
-            return ExecuteSafe(() => new { status = "error", message = "Not implemented" }); 
+        public string Generate3dRoughingPath(string paramsJson) {
+            return ExecuteSafe(() => {
+                dynamic p = JsonConvert.DeserializeObject(paramsJson);
+                string stockPath = p.stockPath;
+                string targetPath = p.targetPath;
+                double sliceHeight = p.sliceHeight;
+                double toolDiameter = p.toolDiameter;
+                double stepoverRatio = p.stepoverRatio;
+                return _threeDPathService.GenerateToolpath(stockPath, targetPath, sliceHeight, toolDiameter, stepoverRatio);
+            });
         }
 
         public string FitArcsToToolpath(string toolpathJson, string arcsJson) { 
