@@ -220,6 +220,14 @@ namespace GeoCraft.Desktop
             return ExecuteSafe(() => _fileService.WriteTempStlFile(base64Data));
         }
 
+        public string SaveProject(string projectJson) {
+            return ExecuteSafe(() => _mainWindow.Dispatcher.Invoke<object>(() => _fileService.SaveProject(projectJson)));
+        }
+
+        public string OpenProject() {
+            return ExecuteSafe(() => _mainWindow.Dispatcher.Invoke<object>(() => _fileService.OpenProject()));
+        }
+
         public string Generate3dRoughingPath(string paramsJson) {
             return ExecuteSafe(() => {
                 dynamic p = JsonConvert.DeserializeObject(paramsJson);

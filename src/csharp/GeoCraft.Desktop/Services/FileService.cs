@@ -44,5 +44,30 @@ namespace GeoCraft.Desktop.Services
             System.IO.File.WriteAllBytes(tempPath, bytes);
             return new { status = "success", filePath = tempPath };
         }
+
+        public object SaveProject(string projectJson)
+        {
+            var dialog = new SaveFileDialog();
+            dialog.Filter = "GeoCraft Project|*.gcproj|All Files|*.*";
+            dialog.DefaultExt = "gcproj";
+            if (dialog.ShowDialog() == true)
+            {
+                System.IO.File.WriteAllText(dialog.FileName, projectJson);
+                return new { status = "success", filePath = dialog.FileName };
+            }
+            return new { status = "canceled" };
+        }
+
+        public object OpenProject()
+        {
+            var dialog = new OpenFileDialog();
+            dialog.Filter = "GeoCraft Project|*.gcproj|All Files|*.*";
+            if (dialog.ShowDialog() == true)
+            {
+                string content = System.IO.File.ReadAllText(dialog.FileName);
+                return new { status = "success", data = content, filePath = dialog.FileName };
+            }
+            return new { status = "canceled" };
+        }
     }
 }

@@ -32,7 +32,7 @@ import {
   TableHead,
   TableRow,
 } from '@mui/material';
-import { Refresh, Link, LinkOff, PlayArrow, Pause, Stop, Settings, Memory } from '@mui/icons-material';
+import { Refresh, Link, LinkOff, PlayArrow, Pause, Stop, Settings, Memory, Save, FolderOpen } from '@mui/icons-material';
 
 import { api } from './api';
 
@@ -69,6 +69,36 @@ type PersistedSettings = {
   materialSettings?: MaterialSetting[];
   toolSettings?: ToolSetting[];
   selectedMaterialId?: number;
+  selectedToolId?: number;
+};
+
+type StlPlacement = {
+  fileName: string | null;
+  stlDataBase64: string | null;
+  offset: { x: number; y: number; z: number };
+  boxSize?: { x: number; y: number; z: number };
+};
+
+const PROJECT_FILE_VERSION = 1;
+
+type ProjectData = {
+  version: number;
+  stock: StlPlacement;
+  target: StlPlacement;
+  geometry: Geometry | null;
+  toolpaths: ToolpathSegment[] | null;
+  toolDiameter: number;
+  stepover: number;
+  sliceHeight: number;
+  contourSide: string;
+  feedRate: number;
+  processType: 'roughing' | 'finishing';
+  stockToLeave: number;
+  machineSettings: MachineSetting[];
+  selectedMachineId?: number;
+  materialSettings: MaterialSetting[];
+  selectedMaterialId?: number;
+  toolSettings: ToolSetting[];
   selectedToolId?: number;
 };
 
@@ -548,13 +578,8 @@ const App = () => {
     }
   };
 
-  const loadStlData = async (filePath: string): Promise<ArrayBuffer | null> => {
-    const result = await api.readFileAsBase64(filePath);
-    if (result.status !== 'success') {
-      alert(`STLファイルの読み込みに失敗しました: ${result.message}`);
-      return null;
-    }
-    const binary = atob(result.data);
+  const base64ToArrayBuffer = (base64: string): ArrayBuffer => {
+    const binary = atob(base64);
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
     return bytes.buffer;
@@ -565,6 +590,15 @@ const App = () => {
     let binary = '';
     for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
     return btoa(binary);
+  };
+
+  const loadStlData = async (filePath: string): Promise<ArrayBuffer | null> => {
+    const result = await api.readFileAsBase64(filePath);
+    if (result.status !== 'success') {
+      alert(`STLファイルの読み込みに失敗しました: ${result.message}`);
+      return null;
+    }
+    return base64ToArrayBuffer(result.data);
   };
 
   const handleSelectStockStl = async () => {
@@ -676,6 +710,127 @@ const App = () => {
     }
   };
 
+  const handleSaveProject = async () => {
+    try {
+      const project: ProjectData = {
+        version: PROJECT_FILE_VERSION,
+        stock: {
+          fileName: stockStlFile,
+          stlDataBase64: stockStlData ? arrayBufferToBase64(stockStlData) : null,
+          offset: stockOffset,
+          boxSize: stockBoxSize,
+        },
+        target: {
+          fileName: targetStlFile,
+          stlDataBase64: targetStlData ? arrayBufferToBase64(targetStlData) : null,
+          offset: targetOffset,
+        },
+        geometry,
+        toolpaths,
+        toolDiameter,
+        stepover,
+        sliceHeight,
+        contourSide,
+        feedRate,
+        processType,
+        stockToLeave,
+        machineSettings,
+        selectedMachineId: typeof selectedMachineId === 'number' ? selectedMachineId : undefined,
+        materialSettings,
+        selectedMaterialId: typeof selectedMaterialId === 'number' ? selectedMaterialId : undefined,
+        toolSettings,
+        selectedToolId: typeof selectedToolId === 'number' ? selectedToolId : undefined,
+      };
+      const result = await api.saveProject(JSON.stringify(project));
+      if (result.status === 'success') alert(`プロジェクトを保存しました: ${result.filePath}`);
+      else if (result.status !== 'canceled') alert(`プロジェクトの保存に失敗しました: ${result.message}`);
+    } catch (error) {
+      alert(`プロジェクトの保存に失敗しました: ${error}`);
+    }
+  };
+
+  const restorePlacement = async (
+    placement: StlPlacement | undefined,
+    setFile: (v: string | null) => void,
+    setData: (v: ArrayBuffer | null) => void,
+    setOffset: (v: { x: number; y: number; z: number }) => void,
+    setPath?: (v: string | null) => void
+  ) => {
+    if (!placement || !placement.stlDataBase64) {
+      setFile(null);
+      setData(null);
+      setOffset({ x: 0, y: 0, z: 0 });
+      if (setPath) setPath(null);
+      return;
+    }
+    const data = base64ToArrayBuffer(placement.stlDataBase64);
+    setFile(placement.fileName ?? null);
+    setData(data);
+    setOffset(placement.offset ?? { x: 0, y: 0, z: 0 });
+    if (setPath) {
+      // 復元されたSTLは元のファイルパスが存在しない可能性があるため、
+      // ツールパス生成に使える一時ファイルとして書き出し直す。
+      const written = await api.writeTempStlFile(placement.stlDataBase64);
+      setPath(written.status === 'success' ? written.filePath : null);
+    }
+  };
+
+  const handleOpenProject = async () => {
+    const result = await api.openProject();
+    if (result.status === 'canceled') return;
+    if (result.status !== 'success') return alert(`プロジェクトの読み込みに失敗しました: ${result.message}`);
+
+    let project: ProjectData;
+    try {
+      project = JSON.parse(result.data);
+    } catch (error) {
+      return alert(`プロジェクトファイルの解析に失敗しました: ${error}`);
+    }
+
+    setPickFaceMode(null);
+    await restorePlacement(project.stock, setStockStlFile, setStockStlData, setStockOffset, setStockStlPath);
+    await restorePlacement(project.target, setTargetStlFile, setTargetStlData, setTargetOffset);
+    if (project.stock?.boxSize) setStockBoxSize(project.stock.boxSize);
+
+    setGeometry(project.geometry ?? null);
+    setToolpaths(project.toolpaths ?? null);
+    if (typeof project.toolDiameter === 'number') setToolDiameter(project.toolDiameter);
+    if (typeof project.stepover === 'number') setStepover(project.stepover);
+    if (typeof project.sliceHeight === 'number') setSliceHeight(project.sliceHeight);
+    if (project.contourSide) setContourSide(project.contourSide);
+    if (typeof project.feedRate === 'number') setFeedRate(project.feedRate);
+    if (project.processType) setProcessType(project.processType);
+    if (typeof project.stockToLeave === 'number') setStockToLeave(project.stockToLeave);
+
+    if (project.machineSettings && project.machineSettings.length > 0) {
+      setMachineSettings(project.machineSettings);
+      setSelectedMachineId(
+        project.selectedMachineId && project.machineSettings.some((m) => m.id === project.selectedMachineId)
+          ? project.selectedMachineId
+          : project.machineSettings[0].id
+      );
+    }
+    if (project.materialSettings && project.materialSettings.length > 0) {
+      setMaterialSettings(project.materialSettings);
+      setSelectedMaterialId(
+        project.selectedMaterialId && project.materialSettings.some((m) => m.id === project.selectedMaterialId)
+          ? project.selectedMaterialId
+          : project.materialSettings[0].id
+      );
+    }
+    if (project.toolSettings && project.toolSettings.length > 0) {
+      setToolSettings(project.toolSettings);
+      setSelectedToolId(
+        project.selectedToolId && project.toolSettings.some((t) => t.id === project.selectedToolId)
+          ? project.selectedToolId
+          : project.toolSettings[0].id
+      );
+    }
+
+    resetSimulation();
+    alert(`プロジェクトを読み込みました: ${result.filePath}`);
+  };
+
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
@@ -686,6 +841,12 @@ const App = () => {
             <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
               GeoCraft
             </Typography>
+            <IconButton color="inherit" onClick={handleOpenProject} aria-label="open project" title="プロジェクトを開く">
+              <FolderOpen />
+            </IconButton>
+            <IconButton color="inherit" onClick={handleSaveProject} aria-label="save project" title="プロジェクトを保存">
+              <Save />
+            </IconButton>
             <IconButton color="inherit" onClick={() => setIsSettingsOpen(true)} aria-label="open settings">
               <Settings />
             </IconButton>

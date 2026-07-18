@@ -54,6 +54,8 @@ export interface ElectronAPI {
     openFile: (fileType: string) => Promise<any>;
     readFileAsBase64: (filePath: string) => Promise<any>;
     writeTempStlFile: (base64Data: string) => Promise<any>;
+    saveProject: (projectJson: string) => Promise<any>;
+    openProject: () => Promise<any>;
     generate3dRoughingPath: (params: RoughingPathParams) => Promise<any>;
     fitArcsToToolpath: (toolpath: number[][], arcs: any[]) => Promise<any>;
     generateGcode: (params: GcodeGenerationParams) => Promise<any>;
