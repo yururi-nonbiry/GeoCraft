@@ -159,6 +159,7 @@ const App = () => {
   const [toolpaths, setToolpaths] = useState<ToolpathSegment[] | null>(null);
   const [geometry, setGeometry] = useState<Geometry | null>(null);
   const [stockStlFile, setStockStlFile] = useState<string | null>(null);
+  const [stockStlPath, setStockStlPath] = useState<string | null>(null);
   const [targetStlFile, setTargetStlFile] = useState<string | null>(null);
   const [stockStlData, setStockStlData] = useState<ArrayBuffer | null>(null);
   const [targetStlData, setTargetStlData] = useState<ArrayBuffer | null>(null);
@@ -267,6 +268,7 @@ const App = () => {
       setToolpaths(null);
       setGeometry(null);
       setStockStlFile(null);
+      setStockStlPath(null);
       setTargetStlFile(null);
       setStockStlData(null);
       setTargetStlData(null);
@@ -558,10 +560,18 @@ const App = () => {
     return bytes.buffer;
   };
 
+  const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+    return btoa(binary);
+  };
+
   const handleSelectStockStl = async () => {
     const result = await api.openFile('stl');
     if (result.status === 'success') {
       setStockStlFile(result.filePath);
+      setStockStlPath(result.filePath);
       setStockStlData(await loadStlData(result.filePath));
       setPickFaceMode(null);
       setStockOffset({ x: 0, y: 0, z: 0 });
@@ -569,11 +579,15 @@ const App = () => {
     }
   };
 
-  const handleCreateBoxStock = () => {
+  const handleCreateBoxStock = async () => {
     const { x, y, z } = stockBoxSize;
     if (x <= 0 || y <= 0 || z <= 0) return alert('材料の幅・奥行き・高さには0より大きい値を入力してください。');
+    const stlData = createBoxStlData(x, y, z);
+    const result = await api.writeTempStlFile(arrayBufferToBase64(stlData));
+    if (result.status !== 'success') return alert(`材料STLの生成に失敗しました: ${result.message}`);
     setStockStlFile(`矩形材料 ${x}×${y}×${z}mm`);
-    setStockStlData(createBoxStlData(x, y, z));
+    setStockStlPath(result.filePath);
+    setStockStlData(stlData);
     setPickFaceMode(null);
     setStockOffset({ x: 0, y: 0, z: 0 });
     setToolpaths(null);
@@ -591,10 +605,10 @@ const App = () => {
   };
 
   const handleGenerate3dPath = async () => {
-    if (!stockStlFile || !targetStlFile) return alert('3D加工パスを生成するには、材料と加工後形状の両方のSTLファイルを開いてください。');
+    if (!stockStlPath || !targetStlFile) return alert('3D加工パスを生成するには、材料と加工後形状の両方のSTLファイルを開いてください。');
     try {
       const params = {
-        stockPath: stockStlFile,
+        stockPath: stockStlPath,
         targetPath: targetStlFile,
         sliceHeight,
         toolDiameter,

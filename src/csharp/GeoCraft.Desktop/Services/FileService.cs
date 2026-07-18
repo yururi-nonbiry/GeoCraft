@@ -36,5 +36,13 @@ namespace GeoCraft.Desktop.Services
             byte[] bytes = System.IO.File.ReadAllBytes(filePath);
             return new { status = "success", data = Convert.ToBase64String(bytes) };
         }
+
+        public object WriteTempStlFile(string base64Data)
+        {
+            byte[] bytes = Convert.FromBase64String(base64Data);
+            string tempPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"geocraft_{Guid.NewGuid():N}.stl");
+            System.IO.File.WriteAllBytes(tempPath, bytes);
+            return new { status = "success", filePath = tempPath };
+        }
     }
 }

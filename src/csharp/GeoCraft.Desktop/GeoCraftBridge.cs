@@ -215,7 +215,11 @@ namespace GeoCraft.Desktop
         public string ReadFileAsBase64(string filePath) {
             return ExecuteSafe(() => _fileService.ReadFileAsBase64(filePath));
         }
-        
+
+        public string WriteTempStlFile(string base64Data) {
+            return ExecuteSafe(() => _fileService.WriteTempStlFile(base64Data));
+        }
+
         public string Generate3dRoughingPath(string paramsJson) {
             return ExecuteSafe(() => {
                 dynamic p = JsonConvert.DeserializeObject(paramsJson);
