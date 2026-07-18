@@ -39,6 +39,9 @@ namespace GeoCraft.Desktop.Services
                     if (points.Count == 0) continue;
 
                     var start = points[0];
+                    // 3Dラフィングパスの点は[x, y, z]でスライスごとの実際の深さを持つ。
+                    // 2D輪郭/ポケットパスは[x, y]のみのため、その場合はマシン設定のstepDownを深さとして使う。
+                    double startZ = start.Length > 2 ? start[2] : stepDown;
                     if (currentXy == null || !IsClose(currentXy, start))
                     {
                         if (isCutting)
@@ -47,12 +50,12 @@ namespace GeoCraft.Desktop.Services
                             isCutting = false;
                         }
                         writer.RapidMove(x: start[0], y: start[1]);
-                        writer.LinearMove(z: stepDown, feed: feedRate / 2);
+                        writer.LinearMove(z: startZ, feed: feedRate / 2);
                         isCutting = true;
-                    } 
+                    }
                     else if (!isCutting)
                     {
-                        writer.LinearMove(z: stepDown, feed: feedRate / 2);
+                        writer.LinearMove(z: startZ, feed: feedRate / 2);
                         isCutting = true;
                     }
 
@@ -61,11 +64,11 @@ namespace GeoCraft.Desktop.Services
                          var end = segment.end.ToObject<double[]>();
                          var center = segment.center.ToObject<double[]>();
                          string direction = segment.direction;
-                         
+
                          double i = center[0] - start[0];
                          double j = center[1] - start[1];
                          string code = direction == "cw" ? "G02" : "G03";
-                         
+
                          writer.ArcMove(code, end[0], end[1], i, j, feedRate);
                          currentXy = end;
                     }
@@ -74,7 +77,8 @@ namespace GeoCraft.Desktop.Services
                         for (int k = 1; k < points.Count; k++)
                         {
                             var pt = points[k];
-                            writer.LinearMove(x: pt[0], y: pt[1], feed: feedRate);
+                            double? z = pt.Length > 2 ? pt[2] : (double?)null;
+                            writer.LinearMove(x: pt[0], y: pt[1], z: z, feed: feedRate);
                             currentXy = pt;
                         }
                     }
