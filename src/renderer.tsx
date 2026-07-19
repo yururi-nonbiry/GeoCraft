@@ -675,11 +675,17 @@ const App = () => {
     try {
       const allSegments: ToolpathSegment[] = [];
       let fitArcError: string | null = null;
+      let linearErrorCount = 0;
+      let lastLinearError: string | null = null;
       for (let i = 0; i < geometries.length; i++) {
         const vertices = geometries[i];
         const side = i === outerIndex ? contourSide : oppositeSide(contourSide);
         const linearResult = await api.generateContourPath(toolDiameter, vertices, side, processType === 'roughing' ? stockToLeave : 0.0);
-        if (linearResult.status !== 'success') return alert(`初期パス生成エラー: ${linearResult.message}`);
+        if (linearResult.status !== 'success') {
+          linearErrorCount++;
+          lastLinearError = linearResult.message;
+          continue;
+        }
         const fittedResult = await api.fitArcsToToolpath(linearResult.toolpath, geometry.arcs);
         if (fittedResult.status === 'success') {
           allSegments.push(...fittedResult.toolpath_segments);
@@ -688,8 +694,11 @@ const App = () => {
           allSegments.push({ type: 'line', points: linearResult.toolpath });
         }
       }
+      if (linearErrorCount > 0) {
+        alert(linearErrorCount === 1 ? `初期パス生成エラー: ${lastLinearError}` : `初期パス生成エラー: ${linearErrorCount}件の形状でパスを生成できませんでした（${lastLinearError}）`);
+      }
       if (fitArcError) alert(`円弧フィットエラー: ${fitArcError}`);
-      setToolpaths(allSegments);
+      if (allSegments.length > 0) setToolpaths(allSegments);
       resetSimulation();
     } catch (error) {
       alert(`パス生成に失敗しました: ${error}`);
@@ -701,14 +710,20 @@ const App = () => {
     if (geometries.length === 0) return alert('ツールパスを生成するための図形が読み込まれていません。');
     try {
       const allSegments: ToolpathSegment[] = [];
+      let errorCount = 0;
+      let lastError: string | null = null;
       for (const vertices of geometries) {
         const params = { geometry: vertices, toolDiameter, stepover: toolDiameter * stepover, stockToLeave: processType === 'roughing' ? stockToLeave : 0.0 };
         const result = await api.generatePocketPath(params);
         if (result.status === 'success') {
           allSegments.push(...result.toolpaths.map((path: number[][]) => ({ type: 'line' as const, points: path })));
         } else {
-          alert(`パス生成エラー: ${result.message}`);
+          errorCount++;
+          lastError = result.message;
         }
+      }
+      if (errorCount > 0) {
+        alert(errorCount === 1 ? `パス生成エラー: ${lastError}` : `パス生成エラー: ${errorCount}件の形状でパスを生成できませんでした（${lastError}）`);
       }
       if (allSegments.length > 0) setToolpaths(allSegments);
       resetSimulation();

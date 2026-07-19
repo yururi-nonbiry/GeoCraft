@@ -58,6 +58,11 @@ namespace GeoCraft.Desktop.Services
                     resultPath = ls.Coordinates.Select(c => new[] { c.X, c.Y }).ToList();
                 }
 
+                if (resultPath.Count == 0)
+                {
+                    return new { status = "error", message = "ジオメトリが工具径に対して小さすぎるため、輪郭パスを生成できません。" };
+                }
+
                 return new { status = "success", toolpath = resultPath };
             }
             catch (Exception ex)

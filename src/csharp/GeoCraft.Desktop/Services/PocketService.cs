@@ -80,6 +80,11 @@ namespace GeoCraft.Desktop.Services
                     currentOffset -= stepover;
                 }
 
+                if (allPaths.Count == 0)
+                {
+                    return new { status = "error", message = "ジオメトリが工具径に対して小さすぎるため、ポケットパスを生成できません。" };
+                }
+
                 return new { status = "success", toolpaths = allPaths };
             }
             catch (Exception ex)
