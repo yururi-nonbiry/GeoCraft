@@ -7,7 +7,8 @@
       "Bash(npx tsc *)",
       "Bash(git -C c:/git/GeoCraft status)",
       "Bash(dotnet --version)",
-      "Bash(dotnet build *)"
+      "Bash(dotnet build *)",
+      "Bash(wait bqseh9y1e *)"
     ]
   }
 }

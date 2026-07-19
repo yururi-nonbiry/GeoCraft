@@ -42,6 +42,9 @@ interface ControlPanelProps {
     setStockOffset: (val: { x: number; y: number; z: number }) => void;
     targetOffset: { x: number; y: number; z: number };
     setTargetOffset: (val: { x: number; y: number; z: number }) => void;
+    // 3Dパス生成後のプレビューモード。true の間は材料/加工後形状の位置調整・底面選択を禁止する
+    previewMode: boolean;
+    onTogglePreviewMode: () => void;
     sliceHeight: number;
     setSliceHeight: (val: number) => void;
     handleGenerate3dPath: () => void;
@@ -221,7 +224,24 @@ const ControlPanel = (props: ControlPanelProps) => {
                         <Button variant="contained" onClick={props.handleGeneratePocket}>ポケットパス生成</Button>
                     </Paper>
                     <Paper sx={{ p: 2, mb: 2 }}>
-                        <Typography variant="h6" gutterBottom>3D 加工 (STL)</Typography>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                            <Typography variant="h6">3D 加工 (STL)</Typography>
+                            {(props.previewMode || (props.stockStlFile && props.targetStlFile)) && (
+                                <Button
+                                    variant={props.previewMode ? 'contained' : 'outlined'}
+                                    color={props.previewMode ? 'secondary' : 'primary'}
+                                    size="small"
+                                    onClick={props.onTogglePreviewMode}
+                                >
+                                    {props.previewMode ? 'プレビュー解除' : 'プレビューモード'}
+                                </Button>
+                            )}
+                        </Box>
+                        {props.previewMode && (
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                                プレビューモード中は材料・加工後形状の位置を変更できません。パラメータ変更とパスの再生成は可能です。
+                            </Typography>
+                        )}
                         <Box sx={{ mb: 2 }}>
                             <Button variant="outlined" onClick={props.handleSelectStockStl} fullWidth>材料STLを選択</Button>
                             <Box sx={{ mt: 1 }}>
@@ -242,6 +262,7 @@ const ControlPanel = (props: ControlPanelProps) => {
                                     variant={props.pickFaceMode === 'stock' ? 'contained' : 'outlined'}
                                     color={props.pickFaceMode === 'stock' ? 'secondary' : 'primary'}
                                     onClick={() => props.setPickFaceMode(props.pickFaceMode === 'stock' ? null : 'stock')}
+                                    disabled={props.previewMode}
                                     fullWidth
                                     size="small"
                                     sx={{ mt: 1 }}
@@ -253,13 +274,13 @@ const ControlPanel = (props: ControlPanelProps) => {
                                 <Box sx={{ mt: 1 }}>
                                     <Typography variant="caption" display="block">位置調整 (mm)</Typography>
                                     <Box sx={{ display: 'flex', gap: 1 }}>
-                                        <TextField label="X" type="number" size="small" value={props.stockOffset.x}
+                                        <TextField label="X" type="number" size="small" value={props.stockOffset.x} disabled={props.previewMode}
                                             onChange={(e) => props.setStockOffset({ ...props.stockOffset, x: parseFloat(e.target.value) || 0 })} />
-                                        <TextField label="Y" type="number" size="small" value={props.stockOffset.y}
+                                        <TextField label="Y" type="number" size="small" value={props.stockOffset.y} disabled={props.previewMode}
                                             onChange={(e) => props.setStockOffset({ ...props.stockOffset, y: parseFloat(e.target.value) || 0 })} />
-                                        <TextField label="Z" type="number" size="small" value={props.stockOffset.z}
+                                        <TextField label="Z" type="number" size="small" value={props.stockOffset.z} disabled={props.previewMode}
                                             onChange={(e) => props.setStockOffset({ ...props.stockOffset, z: parseFloat(e.target.value) || 0 })} />
-                                        <Button size="small" onClick={() => props.setStockOffset({ x: 0, y: 0, z: 0 })}>リセット</Button>
+                                        <Button size="small" disabled={props.previewMode} onClick={() => props.setStockOffset({ x: 0, y: 0, z: 0 })}>リセット</Button>
                                     </Box>
                                 </Box>
                             )}
@@ -272,6 +293,7 @@ const ControlPanel = (props: ControlPanelProps) => {
                                     variant={props.pickFaceMode === 'target' ? 'contained' : 'outlined'}
                                     color={props.pickFaceMode === 'target' ? 'secondary' : 'primary'}
                                     onClick={() => props.setPickFaceMode(props.pickFaceMode === 'target' ? null : 'target')}
+                                    disabled={props.previewMode}
                                     fullWidth
                                     size="small"
                                     sx={{ mt: 1 }}
@@ -283,13 +305,13 @@ const ControlPanel = (props: ControlPanelProps) => {
                                 <Box sx={{ mt: 1 }}>
                                     <Typography variant="caption" display="block">位置調整 (mm)</Typography>
                                     <Box sx={{ display: 'flex', gap: 1 }}>
-                                        <TextField label="X" type="number" size="small" value={props.targetOffset.x}
+                                        <TextField label="X" type="number" size="small" value={props.targetOffset.x} disabled={props.previewMode}
                                             onChange={(e) => props.setTargetOffset({ ...props.targetOffset, x: parseFloat(e.target.value) || 0 })} />
-                                        <TextField label="Y" type="number" size="small" value={props.targetOffset.y}
+                                        <TextField label="Y" type="number" size="small" value={props.targetOffset.y} disabled={props.previewMode}
                                             onChange={(e) => props.setTargetOffset({ ...props.targetOffset, y: parseFloat(e.target.value) || 0 })} />
-                                        <TextField label="Z" type="number" size="small" value={props.targetOffset.z}
+                                        <TextField label="Z" type="number" size="small" value={props.targetOffset.z} disabled={props.previewMode}
                                             onChange={(e) => props.setTargetOffset({ ...props.targetOffset, z: parseFloat(e.target.value) || 0 })} />
-                                        <Button size="small" onClick={() => props.setTargetOffset({ x: 0, y: 0, z: 0 })}>リセット</Button>
+                                        <Button size="small" disabled={props.previewMode} onClick={() => props.setTargetOffset({ x: 0, y: 0, z: 0 })}>リセット</Button>
                                     </Box>
                                 </Box>
                             )}

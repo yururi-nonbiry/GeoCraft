@@ -201,6 +201,8 @@ const App = () => {
   const [stockStlData, setStockStlData] = useState<ArrayBuffer | null>(null);
   const [targetStlData, setTargetStlData] = useState<ArrayBuffer | null>(null);
   const [pickFaceMode, setPickFaceMode] = useState<'stock' | 'target' | null>(null);
+  // 3Dパス生成後のプレビューモード。true の間は材料/加工後形状の位置調整を禁止する
+  const [previewMode, setPreviewMode] = useState(false);
   const [stockOffset, setStockOffset] = useState({ x: 0, y: 0, z: 0 });
   const [targetOffset, setTargetOffset] = useState({ x: 0, y: 0, z: 0 });
   const [stockBoxSize, setStockBoxSize] = useState({ x: 100, y: 100, z: 20 });
@@ -332,6 +334,11 @@ const App = () => {
     setSimResetToken((c) => c + 1);
   };
 
+  const handleTogglePreviewMode = () => {
+    setPickFaceMode(null);
+    setPreviewMode((prev) => !prev);
+  };
+
   // --- CNC Connection Logic ---
   const handleRefreshPorts = () => {
     api.listSerialPorts().then(result => {
@@ -374,6 +381,7 @@ const App = () => {
       setStockStlData(null);
       setTargetStlData(null);
       setPickFaceMode(null);
+      setPreviewMode(false);
       setStockOffset({ x: 0, y: 0, z: 0 });
       setTargetOffset({ x: 0, y: 0, z: 0 });
       const extension = filePath.split('.').pop()?.toLowerCase();
@@ -683,6 +691,7 @@ const App = () => {
       setStockStlPath(result.filePath);
       setStockStlData(await loadStlData(result.filePath));
       setPickFaceMode(null);
+      setPreviewMode(false);
       setStockOffset({ x: 0, y: 0, z: 0 });
       setToolpaths(null);
     }
@@ -698,6 +707,7 @@ const App = () => {
     setStockStlPath(result.filePath);
     setStockStlData(stlData);
     setPickFaceMode(null);
+    setPreviewMode(false);
     setStockOffset({ x: 0, y: 0, z: 0 });
     setToolpaths(null);
   };
@@ -708,6 +718,7 @@ const App = () => {
       setTargetStlFile(result.filePath);
       setTargetStlData(await loadStlData(result.filePath));
       setPickFaceMode(null);
+      setPreviewMode(false);
       setTargetOffset({ x: 0, y: 0, z: 0 });
       setToolpaths(null);
     }
@@ -743,8 +754,13 @@ const App = () => {
         stepoverRatio: stepover
       };
       const result = await api.generate3dRoughingPath(params);
-      if (result.status === 'success') setToolpaths(result.toolpaths);
-      else alert(`3Dパス生成エラー: ${result.message}`);
+      if (result.status === 'success') {
+        setToolpaths(result.toolpaths);
+        // 3Dパス生成後は誤って材料/加工後形状を動かさないようプレビューモードに入る
+        setPreviewMode(true);
+      } else {
+        alert(`3Dパス生成エラー: ${result.message}`);
+      }
     } catch (error) {
       alert(`3Dパス生成に失敗しました: ${error}`);
     } finally {
@@ -867,6 +883,7 @@ const App = () => {
     }
 
     setPickFaceMode(null);
+    setPreviewMode(false);
     await restorePlacement(project.stock, setStockStlFile, setStockStlData, setStockOffset, setStockStlPath);
     await restorePlacement(project.target, setTargetStlFile, setTargetStlData, setTargetOffset);
     if (project.stock?.boxSize) setStockBoxSize(project.stock.boxSize);
@@ -950,6 +967,7 @@ const App = () => {
               targetOffset={targetOffset}
               onStockOffsetChange={setStockOffset}
               onTargetOffsetChange={setTargetOffset}
+              previewMode={previewMode}
               simulation={{
                 enabled: simEnabled,
                 toolRadius: toolDiameter / 2,
@@ -1072,6 +1090,8 @@ const App = () => {
             setStockOffset={setStockOffset}
             targetOffset={targetOffset}
             setTargetOffset={setTargetOffset}
+            previewMode={previewMode}
+            onTogglePreviewMode={handleTogglePreviewMode}
             sliceHeight={sliceHeight}
             setSliceHeight={setSliceHeight}
             handleGenerate3dPath={handleGenerate3dPath}

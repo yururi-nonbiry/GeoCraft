@@ -41,6 +41,8 @@ interface ThreeViewerProps {
     // 3Dビュー上でのマウスドラッグによる位置調整(X/Y平面上の移動)を親に反映するコールバック。
     onStockOffsetChange?: (offset: { x: number; y: number; z: number }) => void;
     onTargetOffsetChange?: (offset: { x: number; y: number; z: number }) => void;
+    // true の間は材料/加工後形状のドラッグ移動・底面選択を禁止する(3Dパス生成後のプレビュー用)
+    previewMode?: boolean;
     simulation?: SimulationConfig | null;
 }
 
@@ -88,7 +90,7 @@ const createWorkVolumeBox = (width: number, depth: number, height: number): THRE
     return box;
 };
 
-const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targetStlData, pickFaceMode, onFacePicked, machineWorkArea, stockOffset, targetOffset, onStockOffsetChange, onTargetOffsetChange, simulation }: ThreeViewerProps) => {
+const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targetStlData, pickFaceMode, onFacePicked, machineWorkArea, stockOffset, targetOffset, onStockOffsetChange, onTargetOffsetChange, previewMode, simulation }: ThreeViewerProps) => {
     const mountRef = useRef<HTMLDivElement>(null);
     const sceneRef = useRef<THREE.Scene | null>(null);
     const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
@@ -100,6 +102,8 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
     const targetBasePositionRef = useRef(new THREE.Vector3());
     const pickFaceModeRef = useRef(pickFaceMode);
     const onFacePickedRef = useRef(onFacePicked);
+    // プレビューモード中は材料/加工後形状のドラッグ移動・底面選択を禁止する
+    const previewModeRef = useRef(previewMode);
     // ドラッグ操作の間、常に最新のオフセット値/コールバックを参照するための ref
     const stockOffsetRef = useRef(stockOffset);
     const targetOffsetRef = useRef(targetOffset);
@@ -156,6 +160,10 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
     useEffect(() => {
         onFacePickedRef.current = onFacePicked;
     }, [onFacePicked]);
+
+    useEffect(() => {
+        previewModeRef.current = previewMode;
+    }, [previewMode]);
 
     useEffect(() => {
         stockOffsetRef.current = stockOffset;
@@ -322,7 +330,7 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
         // X/Y平面上のドラッグでモデルを移動できるようにする(Zは維持)。
         const onPointerDown = (e: PointerEvent) => {
             pointerDownPos = { x: e.clientX, y: e.clientY };
-            if (pickFaceModeRef.current || !cameraRef.current) return;
+            if (pickFaceModeRef.current || previewModeRef.current || !cameraRef.current) return;
 
             const candidates: { mesh: THREE.Object3D; which: 'stock' | 'target' }[] = [];
             if (stockModelRef.current) candidates.push({ mesh: stockModelRef.current, which: 'stock' });
@@ -390,7 +398,7 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
             if (wasDragging) return;
 
             const mode = pickFaceModeRef.current;
-            if (!mode || !downPos) return;
+            if (!mode || !downPos || previewModeRef.current) return;
             // ドラッグ操作(カメラ回転)はクリックとして扱わない
             if (Math.hypot(e.clientX - downPos.x, e.clientY - downPos.y) > 5) return;
 
