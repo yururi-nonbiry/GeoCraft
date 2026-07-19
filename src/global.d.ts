@@ -57,6 +57,7 @@ export interface ElectronAPI {
     saveProject: (projectJson: string) => Promise<any>;
     openProject: () => Promise<any>;
     generate3dRoughingPath: (params: RoughingPathParams) => Promise<any>;
+    onPathProgress: (callback: (progress: { current: number, total: number }) => void) => () => void;
     fitArcsToToolpath: (toolpath: number[][], arcs: any[]) => Promise<any>;
     generateGcode: (params: GcodeGenerationParams) => Promise<any>;
     generateDrillGcode: (params: GcodeGenerationParams) => Promise<any>;

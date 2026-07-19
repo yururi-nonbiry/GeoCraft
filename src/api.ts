@@ -88,6 +88,7 @@ class WebView2API implements ElectronAPI {
     generate3dRoughingPath(params: RoughingPathParams) {
         return this.callBridge('Generate3dRoughingPath', JSON.stringify(params));
     }
+    onPathProgress(callback: (progress: { current: number, total: number }) => void) { return this.on('path-progress', callback); }
     fitArcsToToolpath(toolpath: number[][], arcs: any[]) {
         return this.callBridge('FitArcsToToolpath', JSON.stringify(toolpath), JSON.stringify(arcs));
     }

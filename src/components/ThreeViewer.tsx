@@ -23,6 +23,9 @@ const SIM_PROGRESS_REPORT_INTERVAL_MS = 100;
 
 interface ThreeViewerProps {
     toolpaths: ToolpathSegment[] | null;
+    // 実際に描画するツールパス(層/送り位置による絞り込み後)。省略時は toolpaths をそのまま描画する。
+    // シミュレーション用のストック計算は常に toolpaths(全体)を使うため、描画専用にこのプロパティを分けている。
+    displayToolpaths?: ToolpathSegment[] | null;
     geometry: Geometry | null;
     stockStlData: ArrayBuffer | null;
     targetStlData: ArrayBuffer | null;
@@ -85,7 +88,7 @@ const createWorkVolumeBox = (width: number, depth: number, height: number): THRE
     return box;
 };
 
-const ThreeViewer = ({ toolpaths, geometry, stockStlData, targetStlData, pickFaceMode, onFacePicked, machineWorkArea, stockOffset, targetOffset, onStockOffsetChange, onTargetOffsetChange, simulation }: ThreeViewerProps) => {
+const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targetStlData, pickFaceMode, onFacePicked, machineWorkArea, stockOffset, targetOffset, onStockOffsetChange, onTargetOffsetChange, simulation }: ThreeViewerProps) => {
     const mountRef = useRef<HTMLDivElement>(null);
     const sceneRef = useRef<THREE.Scene | null>(null);
     const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
@@ -665,15 +668,16 @@ const ThreeViewer = ({ toolpaths, geometry, stockStlData, targetStlData, pickFac
         }
     }, [geometry]);
 
-    // ツールパス描画処理
+    // ツールパス描画処理(層/送り位置による絞り込み後の displayToolpaths を描画。未指定時は toolpaths 全体)
     useEffect(() => {
+        const pathsToDraw = displayToolpaths !== undefined ? displayToolpaths : toolpaths;
         if (toolpathGroupRef.current && sceneRef.current) sceneRef.current.remove(toolpathGroupRef.current);
-        if (toolpaths && sceneRef.current) {
+        if (pathsToDraw && sceneRef.current) {
             const group = new THREE.Group();
             const lineMaterial = new THREE.LineBasicMaterial({ color: 0xff0000 });
             const arcMaterial = new THREE.LineBasicMaterial({ color: 0x0000ff }); // Use a different color for arcs to distinguish
 
-            for (const segment of toolpaths) {
+            for (const segment of pathsToDraw) {
                 if (segment.type === 'line') {
                     const points = segment.points.map(p => new THREE.Vector3(p[0], p[1], p[2] || 0));
                     const geometry = new THREE.BufferGeometry().setFromPoints(points);
@@ -702,7 +706,7 @@ const ThreeViewer = ({ toolpaths, geometry, stockStlData, targetStlData, pickFac
             sceneRef.current.add(group);
             toolpathGroupRef.current = group;
         }
-    }, [toolpaths]);
+    }, [toolpaths, displayToolpaths]);
 
     return <div ref={mountRef} style={{ width: '100%', height: '100%', position: 'relative' }} />;
 };

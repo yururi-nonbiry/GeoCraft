@@ -12,7 +12,7 @@ namespace GeoCraft.Desktop.Services
     {
         private GeometryFactory _factory = new GeometryFactory();
 
-        public object GenerateToolpath(string stockPath, string targetPath, double sliceHeight, double toolDiameter, double stepoverRatio)
+        public object GenerateToolpath(string stockPath, string targetPath, double sliceHeight, double toolDiameter, double stepoverRatio, Action<int, int> onProgress = null)
         {
             if (string.IsNullOrEmpty(stockPath) || string.IsNullOrEmpty(targetPath))
             {
@@ -57,9 +57,15 @@ namespace GeoCraft.Desktop.Services
             double stepover = toolDiameter * stepoverRatio;
             var toolpaths = new List<object>();
 
+            int totalSlices = Math.Max(1, (int)Math.Ceiling((zTop - zBottom) / sliceHeight));
+            int sliceIndex = 0;
+
             double z = zTop - sliceHeight;
             while (z > zBottom + 1e-6)
             {
+                sliceIndex++;
+                onProgress?.Invoke(sliceIndex, totalSlices);
+
                 var stockArea = SliceToUnion(stockMesh, stockBounds, z);
                 if (stockArea == null || stockArea.IsEmpty)
                 {

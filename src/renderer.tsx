@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   CssBaseline,
@@ -31,6 +31,9 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  Slider,
+  ToggleButton,
+  ToggleButtonGroup,
 } from '@mui/material';
 import { Refresh, Link, LinkOff, PlayArrow, Pause, Stop, Settings, Memory, Save, FolderOpen } from '@mui/icons-material';
 
@@ -187,6 +190,10 @@ const App = () => {
   const [stepover, setStepover] = useState(0.5);
   const [sliceHeight, setSliceHeight] = useState(1.0);
   const [toolpaths, setToolpaths] = useState<ToolpathSegment[] | null>(null);
+  // --- ツールパス表示(層送り)state ---
+  const [showAllLayers, setShowAllLayers] = useState(true);
+  const [currentLayerIndex, setCurrentLayerIndex] = useState(0);
+  const [layerPointCursor, setLayerPointCursor] = useState(0);
   const [geometry, setGeometry] = useState<Geometry | null>(null);
   const [stockStlFile, setStockStlFile] = useState<string | null>(null);
   const [stockStlPath, setStockStlPath] = useState<string | null>(null);
@@ -235,6 +242,10 @@ const App = () => {
   const [gcodeStatus, setGcodeStatus] = useState<'idle' | 'sending' | 'paused' | 'finished' | 'error'>('idle');
   const [gcodeProgress, setGcodeProgress] = useState({ sent: 0, total: 0 });
 
+  // 3D Path Generation State
+  const [isGenerating3dPath, setIsGenerating3dPath] = useState(false);
+  const [path3dProgress, setPath3dProgress] = useState({ current: 0, total: 0 });
+
   // Jog & Status State
   const [jogStep, setJogStep] = useState(10);
   const [machinePosition, setMachinePosition] = useState({ wpos: { x: 0, y: 0, z: 0 }, mpos: { x: 0, y: 0, z: 0 }, status: 'Unknown' });
@@ -248,6 +259,66 @@ const App = () => {
   });
 
   const currentMachine = machineSettings.find((m) => m.id === selectedMachineId) || machineSettings[0] || DEFAULT_MACHINES[0];
+
+  // --- ツールパスをZ高さ(層)ごとにグループ化する ---
+  // 3D荒加工パスは各点にZ座標を持つ(1スライス=1層)。2D輪郭/ポケットパスはZ座標を持たないため、
+  // 全体で1つの層として扱う。
+  const segmentZ = (segment: ToolpathSegment): number =>
+    segment.type === 'line' ? (segment.points[0]?.[2] ?? 0) : (segment.start[2] ?? 0);
+  const segmentPointCount = (segment: ToolpathSegment): number =>
+    segment.type === 'line' ? segment.points.length : 1;
+
+  const layers = useMemo(() => {
+    if (!toolpaths || toolpaths.length === 0) return [];
+    const groups = new Map<number, ToolpathSegment[]>();
+    for (const segment of toolpaths) {
+      const z = Math.round(segmentZ(segment) * 1000) / 1000;
+      const group = groups.get(z);
+      if (group) group.push(segment);
+      else groups.set(z, [segment]);
+    }
+    return Array.from(groups.entries())
+      .sort((a, b) => b[0] - a[0]) // Z降順(上の層から)
+      .map(([z, segments]) => ({
+        z,
+        segments,
+        pointCount: segments.reduce((sum, s) => sum + segmentPointCount(s), 0),
+      }));
+  }, [toolpaths]);
+
+  // 新しいツールパスが生成されたら層送り状態をリセットする
+  useEffect(() => {
+    setCurrentLayerIndex(0);
+    setShowAllLayers(true);
+  }, [toolpaths]);
+
+  // 選択中の層が変わったら、その層内送り位置を末尾(層全体を表示)にリセットする
+  useEffect(() => {
+    setLayerPointCursor(layers[currentLayerIndex]?.pointCount ?? 0);
+  }, [layers, currentLayerIndex]);
+
+  // 表示用ツールパス: 「全体表示」時はそのまま、「対象の層のみ表示」時は選択中の層を層内送り位置まで描画する
+  const displayToolpaths = useMemo<ToolpathSegment[] | null>(() => {
+    if (!toolpaths) return null;
+    if (showAllLayers || layers.length === 0) return toolpaths;
+    const layer = layers[currentLayerIndex];
+    if (!layer) return toolpaths;
+
+    let remaining = layerPointCursor;
+    const clipped: ToolpathSegment[] = [];
+    for (const segment of layer.segments) {
+      if (remaining <= 0) break;
+      const count = segmentPointCount(segment);
+      if (segment.type === 'arc' || count <= remaining) {
+        clipped.push(segment);
+        remaining -= count;
+      } else {
+        clipped.push({ type: 'line', points: segment.points.slice(0, Math.max(2, remaining)) });
+        remaining = 0;
+      }
+    }
+    return clipped;
+  }, [toolpaths, layers, showAllLayers, currentLayerIndex, layerPointCursor]);
 
   const updateMachineSetting = <K extends keyof Omit<MachineSetting, 'id'>>(key: K, value: MachineSetting[K]) => {
     setMachineSettings((prev) =>
@@ -318,6 +389,9 @@ const App = () => {
         }).catch(error => alert(`SVG解析に失敗しました: ${error}`));
       }
     });
+    const removePathProgressListener = api.onPathProgress((progress) => {
+      setPath3dProgress({ current: progress.current, total: progress.total });
+    });
     const removeGrblSettingListener = api.onGrblSetting((setting) => {
       setGrblSettings(prev => {
         const next = { ...prev };
@@ -340,6 +414,7 @@ const App = () => {
       removeGcodeProgressListener();
       removeStatusListener();
       removeFileOpenListener();
+      removePathProgressListener();
       removeGrblSettingListener();
     };
   }, []);
@@ -655,6 +730,8 @@ const App = () => {
 
   const handleGenerate3dPath = async () => {
     if (!stockStlPath || !targetStlFile) return alert('3D加工パスを生成するには、材料と加工後形状の両方のSTLファイルを開いてください。');
+    setPath3dProgress({ current: 0, total: 0 });
+    setIsGenerating3dPath(true);
     try {
       const stockPath = await resolveOffsetStlPath(stockStlPath, stockStlData, stockOffset);
       const targetPath = await resolveOffsetStlPath(targetStlFile, targetStlData, targetOffset);
@@ -670,6 +747,8 @@ const App = () => {
       else alert(`3Dパス生成エラー: ${result.message}`);
     } catch (error) {
       alert(`3Dパス生成に失敗しました: ${error}`);
+    } finally {
+      setIsGenerating3dPath(false);
     }
   };
 
@@ -856,6 +935,7 @@ const App = () => {
           <Grid item sx={{ flex: 1, minWidth: 0, height: '100%', position: 'relative' }}>
             <ThreeViewer
               toolpaths={toolpaths}
+              displayToolpaths={displayToolpaths}
               geometry={geometry}
               stockStlData={stockStlData}
               targetStlData={targetStlData}
@@ -883,6 +963,92 @@ const App = () => {
                 onFinished: () => setSimPlaying(false),
               }}
             />
+            {layers.length > 0 && (
+              <>
+                {/* 全体表示 / 対象の層のみ表示 切り替え */}
+                <ToggleButtonGroup
+                  size="small"
+                  exclusive
+                  value={showAllLayers ? 'all' : 'layer'}
+                  onChange={(_, value) => {
+                    if (value) setShowAllLayers(value === 'all');
+                  }}
+                  sx={{ position: 'absolute', top: 12, right: 76, bgcolor: 'background.paper', boxShadow: 1 }}
+                >
+                  <ToggleButton value="all">全体表示</ToggleButton>
+                  <ToggleButton value="layer">対象の層のみ</ToggleButton>
+                </ToggleButtonGroup>
+
+                {/* 層ごとの送りバー(右側・縦) */}
+                <Box
+                  sx={{
+                    position: 'absolute',
+                    top: 64,
+                    right: 20,
+                    bottom: 96,
+                    width: 56,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    bgcolor: 'background.paper',
+                    borderRadius: 1,
+                    boxShadow: 1,
+                    py: 2,
+                  }}
+                >
+                  <Typography variant="caption">
+                    {currentLayerIndex + 1}/{layers.length}
+                  </Typography>
+                  <Slider
+                    orientation="vertical"
+                    min={0}
+                    max={Math.max(layers.length - 1, 0)}
+                    step={1}
+                    value={currentLayerIndex}
+                    onChange={(_, value) => setCurrentLayerIndex(value as number)}
+                    disabled={layers.length <= 1}
+                    sx={{ flexGrow: 1, my: 1 }}
+                  />
+                  <Typography variant="caption" sx={{ whiteSpace: 'nowrap' }}>
+                    Z{layers[currentLayerIndex]?.z.toFixed(2)}
+                  </Typography>
+                </Box>
+
+                {/* 層内の送りバー(下側・横) */}
+                <Box
+                  sx={{
+                    position: 'absolute',
+                    left: 16,
+                    right: 92,
+                    bottom: 12,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 2,
+                    px: 2,
+                    py: 1,
+                    bgcolor: 'background.paper',
+                    borderRadius: 1,
+                    boxShadow: 1,
+                  }}
+                >
+                  <Typography variant="caption" sx={{ whiteSpace: 'nowrap' }}>
+                    層内送り
+                  </Typography>
+                  <Slider
+                    min={0}
+                    max={Math.max(layers[currentLayerIndex]?.pointCount ?? 0, 0)}
+                    step={1}
+                    value={layerPointCursor}
+                    onChange={(_, value) => setLayerPointCursor(value as number)}
+                    disabled={showAllLayers || (layers[currentLayerIndex]?.pointCount ?? 0) <= 1}
+                    sx={{ flexGrow: 1 }}
+                  />
+                  <Typography variant="caption" sx={{ whiteSpace: 'nowrap' }}>
+                    {layerPointCursor}/{layers[currentLayerIndex]?.pointCount ?? 0}
+                  </Typography>
+                </Box>
+              </>
+            )}
           </Grid>
           <ControlPanel
             toolDiameter={toolDiameter}
@@ -909,6 +1075,8 @@ const App = () => {
             sliceHeight={sliceHeight}
             setSliceHeight={setSliceHeight}
             handleGenerate3dPath={handleGenerate3dPath}
+            isGenerating3dPath={isGenerating3dPath}
+            path3dProgress={path3dProgress}
             retractZ={currentMachine.retractZ}
             setRetractZ={(val) => updateMachineSetting('retractZ', val)}
             peckQ={currentMachine.peckQ}

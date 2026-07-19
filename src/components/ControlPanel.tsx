@@ -45,6 +45,8 @@ interface ControlPanelProps {
     sliceHeight: number;
     setSliceHeight: (val: number) => void;
     handleGenerate3dPath: () => void;
+    isGenerating3dPath: boolean;
+    path3dProgress: { current: number; total: number };
     retractZ: number;
     setRetractZ: (val: number) => void;
     peckQ: number;
@@ -293,7 +295,20 @@ const ControlPanel = (props: ControlPanelProps) => {
                             )}
                         </Box>
                         <TextField label="スライス厚 (mm)" type="number" value={props.sliceHeight} onChange={(e) => props.setSliceHeight(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
-                        <Button variant="contained" onClick={props.handleGenerate3dPath} fullWidth>3D加工パス生成</Button>
+                        <Button variant="contained" onClick={props.handleGenerate3dPath} disabled={props.isGenerating3dPath} fullWidth>
+                            {props.isGenerating3dPath ? '3Dパス生成中...' : '3D加工パス生成'}
+                        </Button>
+                        {props.isGenerating3dPath && (
+                            <Box sx={{ mt: 1 }}>
+                                <LinearProgress
+                                    variant={props.path3dProgress.total > 0 ? 'determinate' : 'indeterminate'}
+                                    value={props.path3dProgress.total > 0 ? (props.path3dProgress.current / props.path3dProgress.total) * 100 : 0}
+                                />
+                                {props.path3dProgress.total > 0 && (
+                                    <Typography variant="body2" align="right">{props.path3dProgress.current}/{props.path3dProgress.total}</Typography>
+                                )}
+                            </Box>
+                        )}
                     </Paper>
                     <Paper sx={{ p: 2, mb: 2 }}>
                         <Typography variant="h6" gutterBottom>ドリル加工</Typography>

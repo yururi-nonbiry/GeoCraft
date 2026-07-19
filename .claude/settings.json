@@ -5,7 +5,9 @@
       "Bash(dotnet run *)",
       "Bash(powershell -NoProfile -Command 'Get-Process | Where-Object { $_.ProcessName -like '\\\\''*GeoCraft*'\\\\'' -or $_.ProcessName -eq '\\\\''dotnet'\\\\'' } | Select-Object ProcessName, Id, MainWindowTitle')",
       "Bash(npx tsc *)",
-      "Bash(git -C c:/git/GeoCraft status)"
+      "Bash(git -C c:/git/GeoCraft status)",
+      "Bash(dotnet --version)",
+      "Bash(dotnet build *)"
     ]
   }
 }
