@@ -336,7 +336,15 @@ const App = () => {
 
   const handleTogglePreviewMode = () => {
     setPickFaceMode(null);
-    setPreviewMode((prev) => !prev);
+    setPreviewMode((prev) => {
+      const next = !prev;
+      if (!next) {
+        // プレビュー解除時は、そのプレビュー対象だった3Dパスを破棄する
+        setToolpaths(null);
+        resetSimulation();
+      }
+      return next;
+    });
   };
 
   // --- CNC Connection Logic ---

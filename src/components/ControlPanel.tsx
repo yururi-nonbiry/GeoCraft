@@ -239,7 +239,7 @@ const ControlPanel = (props: ControlPanelProps) => {
                         </Box>
                         {props.previewMode && (
                             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-                                プレビューモード中は材料・加工後形状の位置を変更できません。パラメータ変更とパスの再生成は可能です。
+                                プレビューモード中は材料・加工後形状の位置を変更できません。パラメータ変更とパスの再生成は可能です。プレビューを解除すると生成済みのパスは削除されます。
                             </Typography>
                         )}
                         <Box sx={{ mb: 2 }}>
