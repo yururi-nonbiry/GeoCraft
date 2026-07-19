@@ -686,12 +686,16 @@ const App = () => {
           lastLinearError = linearResult.message;
           continue;
         }
-        const fittedResult = await api.fitArcsToToolpath(linearResult.toolpath, geometry.arcs);
-        if (fittedResult.status === 'success') {
-          allSegments.push(...fittedResult.toolpath_segments);
-        } else {
-          fitArcError = fitArcError ?? fittedResult.message;
-          allSegments.push({ type: 'line', points: linearResult.toolpath });
+        // オフセットでくびれが切れて形状が分裂した場合、切削可能な断片が複数返ってくることがあるため全て処理する
+        const toolpathPieces: number[][][] = linearResult.toolpaths ?? [linearResult.toolpath];
+        for (const piece of toolpathPieces) {
+          const fittedResult = await api.fitArcsToToolpath(piece, geometry.arcs);
+          if (fittedResult.status === 'success') {
+            allSegments.push(...fittedResult.toolpath_segments);
+          } else {
+            fitArcError = fitArcError ?? fittedResult.message;
+            allSegments.push({ type: 'line', points: piece });
+          }
         }
       }
       if (linearErrorCount > 0) {

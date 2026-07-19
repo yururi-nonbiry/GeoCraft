@@ -42,28 +42,33 @@ namespace GeoCraft.Desktop.Services
 
                 var offsetGeometry = polygon.Buffer(offsetDistance, bufferParams);
 
-                List<double[]> resultPath = new List<double[]>();
+                // オフセットにより形状が分裂すること（くびれ部分がツール径より狭い等）があるため、
+                // 分裂した全ての断片を切削可能な範囲として返す（最初の1つだけに絞らない）。
+                List<List<double[]>> resultPaths = new List<List<double[]>>();
 
                 if (offsetGeometry is Polygon p)
                 {
-                    resultPath = p.ExteriorRing.Coordinates.Select(c => new[] { c.X, c.Y }).ToList();
+                    resultPaths.Add(p.ExteriorRing.Coordinates.Select(c => new[] { c.X, c.Y }).ToList());
                 }
                 else if (offsetGeometry is MultiPolygon mp)
                 {
-                    // Take largest? or first? Python took first.
-                    resultPath = mp.Geometries[0].Coordinates.Select(c => new[] { c.X, c.Y }).ToList();
+                    for (int i = 0; i < mp.NumGeometries; i++)
+                    {
+                        var poly = (Polygon)mp.GetGeometryN(i);
+                        resultPaths.Add(poly.ExteriorRing.Coordinates.Select(c => new[] { c.X, c.Y }).ToList());
+                    }
                 }
                 else if (offsetGeometry is LineString ls)
                 {
-                    resultPath = ls.Coordinates.Select(c => new[] { c.X, c.Y }).ToList();
+                    resultPaths.Add(ls.Coordinates.Select(c => new[] { c.X, c.Y }).ToList());
                 }
 
-                if (resultPath.Count == 0)
+                if (resultPaths.Count == 0)
                 {
                     return new { status = "error", message = "ジオメトリが工具径に対して小さすぎるため、輪郭パスを生成できません。" };
                 }
 
-                return new { status = "success", toolpath = resultPath };
+                return new { status = "success", toolpaths = resultPaths };
             }
             catch (Exception ex)
             {

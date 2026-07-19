@@ -12,7 +12,8 @@
       "Bash(grep -iE \"\\\\.\\(ts|js|tsx|jsx|cs|py|cpp|c|h\\)$\")",
       "Bash(mkdir -p \"C:/Users/sw20m/AppData/Local/Temp/claude/c--git-GeoCraft/b0f1fb36-5a74-47f9-abfc-7a34f209f58b/scratchpad/pockettest\")",
       "Bash(dotnet new *)",
-      "Bash(dotnet add *)"
+      "Bash(dotnet add *)",
+      "Bash(tasklist //FI \"IMAGENAME eq GeoCraft.Desktop.exe\")"
     ]
   }
 }
