@@ -576,11 +576,34 @@ const App = () => {
   const handleResumeGcode = () => api.resumeGcode();
   const handleStopGcode = () => api.stopGcode();
 
+  // 完全な円（DXFのCIRCLEエンティティ等）はセグメントを持たずarcsのみに格納されるため、
+  // 他の形状と線分共有していない（＝隣接していない）円は別途ループとして追加する
+  const arcToPolygon = (arc: { center: number[]; radius: number }, segmentCount = 64): Array<[number, number, number]> => {
+    const [cx, cy, cz] = arc.center;
+    const points: Array<[number, number, number]> = [];
+    for (let i = 0; i < segmentCount; i++) {
+      const angle = (i / segmentCount) * 2 * Math.PI;
+      points.push([cx + arc.radius * Math.cos(angle), cy + arc.radius * Math.sin(angle), cz]);
+    }
+    return points;
+  };
+
   const getConnectedGeometries = () => {
-    if (!geometry || !geometry.segments || geometry.segments.length === 0) return [];
-    const pointToKey = (p: [number, number, number]) => p.map(v => v.toFixed(4)).join(',');
-    const remaining = new Set(geometry.segments);
+    const hasSegments = !!geometry && !!geometry.segments && geometry.segments.length > 0;
+    const hasArcs = !!geometry && !!geometry.arcs && geometry.arcs.length > 0;
+    if (!hasSegments && !hasArcs) return [];
     const geometries: Array<Array<[number, number, number]>> = [];
+    if (geometry?.arcs) {
+      for (const arc of geometry.arcs) {
+        const span = Math.abs(arc.end_angle - arc.start_angle);
+        if (Math.abs(span - 360) < 1e-6) {
+          geometries.push(arcToPolygon(arc));
+        }
+      }
+    }
+    if (!hasSegments) return geometries;
+    const pointToKey = (p: [number, number, number]) => p.map(v => v.toFixed(4)).join(',');
+    const remaining = new Set(geometry!.segments);
     while (remaining.size > 0) {
       const path: Array<[number, number, number]> = [];
       const startSeg = remaining.values().next().value;
@@ -630,20 +653,43 @@ const App = () => {
     return geometries;
   };
 
+  // 面積の絶対値が最大のループを外側輪郭とみなし、それ以外（内側の穴）は逆側にオフセットする
+  const polygonSignedArea = (vertices: Array<[number, number, number]>): number => {
+    let area = 0;
+    for (let i = 0; i < vertices.length; i++) {
+      const [x1, y1] = vertices[i];
+      const [x2, y2] = vertices[(i + 1) % vertices.length];
+      area += x1 * y2 - x2 * y1;
+    }
+    return area / 2;
+  };
+  const oppositeSide = (side: string) => (side === 'outer' ? 'inner' : 'outer');
+
   const handleGenerateContour = async () => {
     const geometries = getConnectedGeometries();
     if (geometries.length === 0 || !geometry || !geometry.arcs) return alert('ツールパスを生成するための図形が読み込まれていません。');
-    const vertices = geometries[0];
+    const outerIndex = geometries.reduce(
+      (maxIdx, verts, idx, arr) => (Math.abs(polygonSignedArea(verts)) > Math.abs(polygonSignedArea(arr[maxIdx])) ? idx : maxIdx),
+      0
+    );
     try {
-      const linearResult = await api.generateContourPath(toolDiameter, vertices, contourSide, processType === 'roughing' ? stockToLeave : 0.0);
-      if (linearResult.status !== 'success') return alert(`初期パス生成エラー: ${linearResult.message}`);
-      const fittedResult = await api.fitArcsToToolpath(linearResult.toolpath, geometry.arcs);
-      if (fittedResult.status === 'success') {
-        setToolpaths(fittedResult.toolpath_segments);
-      } else {
-        alert(`円弧フィットエラー: ${fittedResult.message}`);
-        setToolpaths([{ type: 'line', points: linearResult.toolpath }]);
+      const allSegments: ToolpathSegment[] = [];
+      let fitArcError: string | null = null;
+      for (let i = 0; i < geometries.length; i++) {
+        const vertices = geometries[i];
+        const side = i === outerIndex ? contourSide : oppositeSide(contourSide);
+        const linearResult = await api.generateContourPath(toolDiameter, vertices, side, processType === 'roughing' ? stockToLeave : 0.0);
+        if (linearResult.status !== 'success') return alert(`初期パス生成エラー: ${linearResult.message}`);
+        const fittedResult = await api.fitArcsToToolpath(linearResult.toolpath, geometry.arcs);
+        if (fittedResult.status === 'success') {
+          allSegments.push(...fittedResult.toolpath_segments);
+        } else {
+          fitArcError = fitArcError ?? fittedResult.message;
+          allSegments.push({ type: 'line', points: linearResult.toolpath });
+        }
       }
+      if (fitArcError) alert(`円弧フィットエラー: ${fitArcError}`);
+      setToolpaths(allSegments);
       resetSimulation();
     } catch (error) {
       alert(`パス生成に失敗しました: ${error}`);
@@ -653,16 +699,18 @@ const App = () => {
   const handleGeneratePocket = async () => {
     const geometries = getConnectedGeometries();
     if (geometries.length === 0) return alert('ツールパスを生成するための図形が読み込まれていません。');
-    const vertices = geometries[0];
     try {
-      const params = { geometry: vertices, toolDiameter, stepover: toolDiameter * stepover, stockToLeave: processType === 'roughing' ? stockToLeave : 0.0 };
-      const result = await api.generatePocketPath(params);
-      if (result.status === 'success') {
-        const segments: ToolpathSegment[] = result.toolpaths.map((path: number[][]) => ({ type: 'line', points: path }));
-        setToolpaths(segments);
-      } else {
-        alert(`パス生成エラー: ${result.message}`);
+      const allSegments: ToolpathSegment[] = [];
+      for (const vertices of geometries) {
+        const params = { geometry: vertices, toolDiameter, stepover: toolDiameter * stepover, stockToLeave: processType === 'roughing' ? stockToLeave : 0.0 };
+        const result = await api.generatePocketPath(params);
+        if (result.status === 'success') {
+          allSegments.push(...result.toolpaths.map((path: number[][]) => ({ type: 'line' as const, points: path })));
+        } else {
+          alert(`パス生成エラー: ${result.message}`);
+        }
       }
+      if (allSegments.length > 0) setToolpaths(allSegments);
       resetSimulation();
     } catch (error) {
       alert(`パス生成に失敗しました: ${error}`);

@@ -8,7 +8,8 @@
       "Bash(git -C c:/git/GeoCraft status)",
       "Bash(dotnet --version)",
       "Bash(dotnet build *)",
-      "Bash(wait bqseh9y1e *)"
+      "Bash(wait bqseh9y1e *)",
+      "Bash(grep -iE \"\\\\.\\(ts|js|tsx|jsx|cs|py|cpp|c|h\\)$\")"
     ]
   }
 }
