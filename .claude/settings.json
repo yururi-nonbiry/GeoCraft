@@ -25,7 +25,14 @@
       "Bash(curl -s http://localhost:5173/bundle.js)",
       "Bash(cmd.exe /c start \"\" \"GeoCraft.Desktop.exe\")",
       "Bash(./GeoCraft.Desktop.exe)",
-      "Bash(echo \"EXIT:$?\")"
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(git -C c:/git/GeoCraft show --stat eeec744)",
+      "Bash(git -C c:/git/GeoCraft show --stat 1c2088c)",
+      "Bash(git -C c:/git/GeoCraft show --stat 7d9e23c)",
+      "Bash(git -C c:/git/GeoCraft show --stat fa353bb)",
+      "Bash(git -C c:/git/GeoCraft show eeec744 -- src/simulation/stockSimulation.ts)",
+      "Bash(git -C c:/git/GeoCraft show eeec744 -- src/components/ThreeViewer.tsx)",
+      "Bash(git -C c:/git/GeoCraft show eeec744 -- src/renderer.tsx src/stlUtils.ts src/types.ts)"
     ]
   }
 }

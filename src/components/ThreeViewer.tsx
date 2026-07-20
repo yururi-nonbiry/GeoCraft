@@ -14,6 +14,8 @@ import {
     sampleToolpath,
     buildGridPositions,
     buildGridIndices,
+    buildSkirtPositions,
+    updateSkirtPositions,
 } from '../simulation/stockSimulation';
 
 // Playback pace (mm of toolpath traveled per real second at 1x speed). Not tied to the
@@ -129,6 +131,8 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
     // --- 加工シミュレーション state (refs so the animate() loop always reads live values) ---
     const simGroupRef = useRef<THREE.Group | null>(null);
     const simTopMeshRef = useRef<THREE.Mesh | null>(null);
+    const simSkirtMeshRef = useRef<THREE.Mesh | null>(null);
+    const simSkirtVertexMapRef = useRef<Map<number, number[]> | null>(null);
     const heightmapRef = useRef<Heightmap | null>(null);
     const samplesRef = useRef<SamplePoint[]>([]);
     const sampleCursorRef = useRef(0);
@@ -291,12 +295,26 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
                 if (frameCounterRef.current % SIM_NORMAL_RECOMPUTE_INTERVAL === 0) {
                     topMesh.geometry.computeVertexNormals();
                 }
+
+                const skirtMesh = simSkirtMeshRef.current;
+                const skirtVertexMap = simSkirtVertexMapRef.current;
+                if (skirtMesh && skirtVertexMap) {
+                    const skirtPosAttr = skirtMesh.geometry.getAttribute('position') as THREE.BufferAttribute;
+                    const touchedBoundary = updateSkirtPositions(map, skirtPosAttr, skirtVertexMap, { minCol, maxCol, minRow, maxRow });
+                    if (touchedBoundary) {
+                        skirtPosAttr.needsUpdate = true;
+                        if (frameCounterRef.current % SIM_NORMAL_RECOMPUTE_INTERVAL === 0) {
+                            skirtMesh.geometry.computeVertexNormals();
+                        }
+                    }
+                }
             }
 
             const reachedEnd = targetDistance >= totalDistance;
             if (reachedEnd && !finishedRef.current) {
                 finishedRef.current = true;
                 topMesh.geometry.computeVertexNormals();
+                simSkirtMeshRef.current?.geometry.computeVertexNormals();
                 onSimProgressRef.current?.(1);
                 onSimFinishedRef.current?.();
             } else if (now - lastProgressReportRef.current > SIM_PROGRESS_REPORT_INTERVAL_MS) {
@@ -565,6 +583,8 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
         }
         simGroupRef.current = null;
         simTopMeshRef.current = null;
+        simSkirtMeshRef.current = null;
+        simSkirtVertexMapRef.current = null;
         heightmapRef.current = null;
         samplesRef.current = [];
         sampleCursorRef.current = 0;
@@ -600,32 +620,19 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
         group.add(topMesh);
         simTopMeshRef.current = topMesh;
 
-        // 側面・底面はストック外形（マージン込みの矩形）から静的に生成。ツールパスはマージン分
-        // 内側に収まる前提のため、輪郭が削られることはなく毎フレーム更新する必要はない。
-        const minX = map.originX, maxX = map.originX + map.cols * map.cellSize;
-        const minY = map.originY, maxY = map.originY + map.rows * map.cellSize;
-        const { topZ, bottomZ } = map;
-        const skirtPositions: number[] = [];
-        const pushWall = (x0: number, y0: number, x1: number, y1: number) => {
-            skirtPositions.push(
-                x0, y0, topZ, x1, y1, topZ, x0, y0, bottomZ,
-                x1, y1, topZ, x1, y1, bottomZ, x0, y0, bottomZ,
-            );
-        };
-        pushWall(minX, minY, maxX, minY);
-        pushWall(maxX, minY, maxX, maxY);
-        pushWall(maxX, maxY, minX, maxY);
-        pushWall(minX, maxY, minX, minY);
-        skirtPositions.push(
-            minX, minY, bottomZ, maxX, minY, bottomZ, minX, maxY, bottomZ,
-            maxX, minY, bottomZ, maxX, maxY, bottomZ, minX, maxY, bottomZ,
-        );
+        // 側面・底面は外周セルの中心座標・高さを基準に生成し、外周セルの頂点インデックスを
+        // 記録しておく。切削が外周セルに達した際、stepSimulation側でその高さの変化を
+        // 側面頂点にも反映することで、トップメッシュとの間に隙間(空洞が透ける不具合)が
+        // 生じないようにする。
+        const skirtData = buildSkirtPositions(map);
         const skirtGeometry = new THREE.BufferGeometry();
-        skirtGeometry.setAttribute('position', new THREE.Float32BufferAttribute(skirtPositions, 3));
+        skirtGeometry.setAttribute('position', new THREE.Float32BufferAttribute(skirtData.positions, 3));
         skirtGeometry.computeVertexNormals();
         const skirtMaterial = new THREE.MeshStandardMaterial({ color: 0xb08968, metalness: 0.05, roughness: 0.9, side: THREE.DoubleSide });
         const skirtMesh = new THREE.Mesh(skirtGeometry, skirtMaterial);
         group.add(skirtMesh);
+        simSkirtMeshRef.current = skirtMesh;
+        simSkirtVertexMapRef.current = skirtData.vertexIndicesByCell;
 
         scene.add(group);
         simGroupRef.current = group;

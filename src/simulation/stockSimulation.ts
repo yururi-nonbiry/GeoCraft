@@ -265,3 +265,112 @@ export function buildGridIndices(map: Heightmap): Uint32Array {
   }
   return Uint32Array.from(indices);
 }
+
+export interface SkirtGeometryData {
+  positions: Float32Array;
+  // セルインデックス(row*cols+col) -> そのセルの高さに連動する頂点インデックスの一覧。
+  vertexIndicesByCell: Map<number, number[]>;
+}
+
+// 外周セルを時計回り(あるいは反時計回り)に一周する経路を作る。グリッドは矩形なので、
+// これは4辺のセル中心を重複なくつないだ単純な多角形になる。
+function buildPerimeterLoop(map: Heightmap): Array<{ col: number; row: number }> {
+  const { cols, rows } = map;
+  const loop: Array<{ col: number; row: number }> = [];
+  for (let col = 0; col < cols; col++) loop.push({ col, row: 0 });
+  for (let row = 1; row < rows; row++) loop.push({ col: cols - 1, row });
+  for (let col = cols - 2; col >= 0; col--) loop.push({ col, row: rows - 1 });
+  for (let row = rows - 2; row >= 1; row--) loop.push({ col: 0, row });
+  return loop;
+}
+
+// ストック側面(スカート)のジオメトリを、トップメッシュと同じ「外周セルの中心座標・高さ」を
+// 基準に生成する。以前は側面をストック外形の静的な矩形として一度だけ生成していたが、
+// 切削が外周セルに達すると側面の上端(topZ固定)とトップメッシュの頂点(削られてtopZ未満に
+// 下がる)がずれてしまい、その隙間から内部の空洞が透けて見える不具合があった。
+// 側面の各頂点をセル高さに追従させることで、切削のたびにトップメッシュと側面を同期させ、
+// 隙間が生じないようにする。
+export function buildSkirtPositions(map: Heightmap): SkirtGeometryData {
+  const loop = buildPerimeterLoop(map);
+  const n = loop.length;
+  const positions: number[] = [];
+  const vertexIndicesByCell = new Map<number, number[]>();
+
+  const pushVertex = (x: number, y: number, z: number, cellIdx: number | null) => {
+    const vIdx = positions.length / 3;
+    positions.push(x, y, z);
+    if (cellIdx !== null) {
+      const arr = vertexIndicesByCell.get(cellIdx);
+      if (arr) arr.push(vIdx);
+      else vertexIndicesByCell.set(cellIdx, [vIdx]);
+    }
+  };
+
+  // 側面(壁)
+  for (let i = 0; i < n; i++) {
+    const p0 = loop[i];
+    const p1 = loop[(i + 1) % n];
+    const [x0, y0] = cellCenter(map, p0.col, p0.row);
+    const [x1, y1] = cellCenter(map, p1.col, p1.row);
+    const idx0 = p0.row * map.cols + p0.col;
+    const idx1 = p1.row * map.cols + p1.col;
+    const z0 = map.heights[idx0];
+    const z1 = map.heights[idx1];
+
+    pushVertex(x0, y0, z0, idx0);
+    pushVertex(x1, y1, z1, idx1);
+    pushVertex(x0, y0, map.bottomZ, null);
+
+    pushVertex(x1, y1, z1, idx1);
+    pushVertex(x1, y1, map.bottomZ, null);
+    pushVertex(x0, y0, map.bottomZ, null);
+  }
+
+  // 底面(外周ループの扇形三角形分割。グリッドは矩形なので凸多角形になり成立する)
+  if (n >= 3) {
+    const [ax, ay] = cellCenter(map, loop[0].col, loop[0].row);
+    for (let i = 1; i < n - 1; i++) {
+      const [bx, by] = cellCenter(map, loop[i].col, loop[i].row);
+      const [cx, cy] = cellCenter(map, loop[i + 1].col, loop[i + 1].row);
+      pushVertex(ax, ay, map.bottomZ, null);
+      pushVertex(bx, by, map.bottomZ, null);
+      pushVertex(cx, cy, map.bottomZ, null);
+    }
+  }
+
+  return { positions: Float32Array.from(positions), vertexIndicesByCell };
+}
+
+// 切削で変化したセル(dirty領域)のうち外周セルに該当するものの高さを、スカート側の
+// 頂点位置に反映する。戻り値は実際に外周セルへ変化が及んだかどうか。
+export function updateSkirtPositions(
+  map: Heightmap,
+  posAttr: { setZ(index: number, z: number): void },
+  vertexIndicesByCell: Map<number, number[]>,
+  dirty: DirtyRegion,
+): boolean {
+  let touchedBoundary = false;
+  const touchCell = (col: number, row: number) => {
+    const idx = row * map.cols + col;
+    const vIdxs = vertexIndicesByCell.get(idx);
+    if (!vIdxs) return;
+    touchedBoundary = true;
+    const z = map.heights[idx];
+    for (const vIdx of vIdxs) posAttr.setZ(vIdx, z);
+  };
+
+  if (dirty.minRow === 0) {
+    for (let col = dirty.minCol; col <= dirty.maxCol; col++) touchCell(col, 0);
+  }
+  if (dirty.maxRow === map.rows - 1) {
+    for (let col = dirty.minCol; col <= dirty.maxCol; col++) touchCell(col, map.rows - 1);
+  }
+  if (dirty.minCol === 0) {
+    for (let row = dirty.minRow; row <= dirty.maxRow; row++) touchCell(0, row);
+  }
+  if (dirty.maxCol === map.cols - 1) {
+    for (let row = dirty.minRow; row <= dirty.maxRow; row++) touchCell(map.cols - 1, row);
+  }
+
+  return touchedBoundary;
+}
