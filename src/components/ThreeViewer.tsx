@@ -12,8 +12,7 @@ import {
     createHeightmapFromMesh,
     stampCircle,
     sampleToolpath,
-    buildGridPositions,
-    buildGridIndices,
+    buildTopTilePositions,
     buildSkirtPositions,
     updateSkirtPositions,
     buildInteriorWallPositions,
@@ -133,6 +132,7 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
     // --- 加工シミュレーション state (refs so the animate() loop always reads live values) ---
     const simGroupRef = useRef<THREE.Group | null>(null);
     const simTopMeshRef = useRef<THREE.Mesh | null>(null);
+    const simTopVertexMapRef = useRef<Map<number, number[]> | null>(null);
     const simSkirtMeshRef = useRef<THREE.Mesh | null>(null);
     const simSkirtVertexMapRef = useRef<Map<number, number[]> | null>(null);
     const simWallMeshRef = useRef<THREE.Mesh | null>(null);
@@ -185,8 +185,11 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
         traveledRef.current = samples[samples.length - 1].distance;
 
         const posAttr = topMesh.geometry.getAttribute('position') as THREE.BufferAttribute;
-        for (let i = 0; i < map.heights.length; i++) posAttr.setZ(i, map.heights[i]);
-        posAttr.needsUpdate = true;
+        const topVertexMap = simTopVertexMapRef.current;
+        if (topVertexMap) {
+            updateVertexHeights(map, posAttr, topVertexMap, { minCol: 0, maxCol: map.cols - 1, minRow: 0, maxRow: map.rows - 1 });
+            posAttr.needsUpdate = true;
+        }
         topMesh.geometry.computeVertexNormals();
 
         const skirtMesh = simSkirtMeshRef.current;
@@ -334,13 +337,11 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
 
             if (touched) {
                 const posAttr = topMesh.geometry.getAttribute('position') as THREE.BufferAttribute;
-                for (let row = minRow; row <= maxRow; row++) {
-                    for (let col = minCol; col <= maxCol; col++) {
-                        const idx = row * map.cols + col;
-                        posAttr.setZ(idx, map.heights[idx]);
-                    }
+                const topVertexMap = simTopVertexMapRef.current;
+                if (topVertexMap) {
+                    updateVertexHeights(map, posAttr, topVertexMap, { minCol, maxCol, minRow, maxRow });
+                    posAttr.needsUpdate = true;
                 }
-                posAttr.needsUpdate = true;
                 frameCounterRef.current++;
                 if (frameCounterRef.current % SIM_NORMAL_RECOMPUTE_INTERVAL === 0) {
                     topMesh.geometry.computeVertexNormals();
@@ -645,6 +646,7 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
         }
         simGroupRef.current = null;
         simTopMeshRef.current = null;
+        simTopVertexMapRef.current = null;
         simSkirtMeshRef.current = null;
         simSkirtVertexMapRef.current = null;
         simWallMeshRef.current = null;
@@ -675,21 +677,21 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
 
         const group = new THREE.Group();
 
+        // トップメッシュはセル1個ずつ独立した平らなタイルとして構築する(詳細は
+        // buildTopTilePositions のコメント参照)。セル間の高さの差は面を傾けず、
+        // buildInteriorWallPositions が追加する垂直な壁で埋める。
+        const topData = buildTopTilePositions(map);
         const topGeometry = new THREE.BufferGeometry();
-        topGeometry.setAttribute('position', new THREE.BufferAttribute(buildGridPositions(map), 3));
-        topGeometry.setIndex(new THREE.BufferAttribute(buildGridIndices(map), 1));
+        topGeometry.setAttribute('position', new THREE.BufferAttribute(topData.positions, 3));
+        topGeometry.setIndex(new THREE.BufferAttribute(topData.indices, 1));
         topGeometry.computeVertexNormals();
-        // 高さマップ(グリッド状の1点1高さの近似)では、垂直な壁は必ずセル1個分の水平距離に
-        // 高さ変化を押し込んだ急斜面として表現される。スムーズシェーディング(頂点法線の平均化)
-        // だと、この急斜面と平らな上面の法線がなめらかに補間され、実際より緩やかな
-        // テーパー(斜め)に見えてしまう。flatShadingで面ごとの法線を使うことで、
-        // 壁面をより垂直に近い見た目にする。
         const topMaterial = new THREE.MeshStandardMaterial({ color: 0xd9a066, metalness: 0.05, roughness: 0.8, side: THREE.DoubleSide, flatShading: true });
         const topMesh = new THREE.Mesh(topGeometry, topMaterial);
         group.add(topMesh);
         simTopMeshRef.current = topMesh;
+        simTopVertexMapRef.current = topData.vertexIndicesByCell;
 
-        // 側面・底面は外周セルの中心座標・高さを基準に生成し、外周セルの頂点インデックスを
+        // 側面・底面は外周セルの外形(タイル境界)・高さを基準に生成し、外周セルの頂点インデックスを
         // 記録しておく。切削が外周セルに達した際、stepSimulation側でその高さの変化を
         // 側面頂点にも反映することで、トップメッシュとの間に隙間(空洞が透ける不具合)が
         // 生じないようにする。

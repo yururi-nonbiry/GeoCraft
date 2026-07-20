@@ -253,61 +253,56 @@ export function sampleToolpath(segments: ToolpathSegment[], spacing: number): Sa
   return points;
 }
 
-export function buildGridPositions(map: Heightmap): Float32Array {
-  const positions = new Float32Array(map.cols * map.rows * 3);
-  for (let row = 0; row < map.rows; row++) {
-    for (let col = 0; col < map.cols; col++) {
-      const idx = row * map.cols + col;
-      const [x, y] = cellCenter(map, col, row);
-      positions[idx * 3] = x;
-      positions[idx * 3 + 1] = y;
-      positions[idx * 3 + 2] = map.heights[idx];
-    }
-  }
-  return positions;
-}
-
-export function buildGridIndices(map: Heightmap): Uint32Array {
-  const indices: number[] = [];
-  for (let row = 0; row < map.rows - 1; row++) {
-    for (let col = 0; col < map.cols - 1; col++) {
-      const a = row * map.cols + col;
-      const b = a + 1;
-      const c = a + map.cols;
-      const d = c + 1;
-      indices.push(a, c, b, b, c, d);
-    }
-  }
-  return Uint32Array.from(indices);
-}
-
 export interface SkirtGeometryData {
   positions: Float32Array;
   // セルインデックス(row*cols+col) -> そのセルの高さに連動する頂点インデックスの一覧。
   vertexIndicesByCell: Map<number, number[]>;
 }
 
-// 外周セルを時計回り(あるいは反時計回り)に一周する経路を作る。グリッドは矩形なので、
-// これは4辺のセル中心を重複なくつないだ単純な多角形になる。
-function buildPerimeterLoop(map: Heightmap): Array<{ col: number; row: number }> {
-  const { cols, rows } = map;
-  const loop: Array<{ col: number; row: number }> = [];
-  for (let col = 0; col < cols; col++) loop.push({ col, row: 0 });
-  for (let row = 1; row < rows; row++) loop.push({ col: cols - 1, row });
-  for (let col = cols - 2; col >= 0; col--) loop.push({ col, row: rows - 1 });
-  for (let row = rows - 2; row >= 1; row--) loop.push({ col: 0, row });
-  return loop;
+export interface TopTileGeometryData extends SkirtGeometryData {
+  indices: Uint32Array;
 }
 
-// ストック側面(スカート)のジオメトリを、トップメッシュと同じ「外周セルの中心座標・高さ」を
+// トップメッシュを、セル中心同士を結ぶ滑らかなグリッド(旧実装)ではなく、
+// セル1個ずつを独立した平らなタイル(セルの外形そのままの正方形)として構築する。
+// 旧実装はセルの高さが異なる箇所を必ず「1セル分の水平距離のなだらかな斜面」として
+// 補間してしまい、垂直な切削壁が斜めのテーパーに見える原因になっていた。
+// タイルを独立させ、セル境界をそのままセルの外形とすることで、面自体には一切傾斜が
+// 生じなくなる(高さの変化はセル間の垂直な壁として buildInteriorWallPositions が別途埋める)。
+export function buildTopTilePositions(map: Heightmap): TopTileGeometryData {
+  const { cols, rows, cellSize, originX, originY, heights } = map;
+  const positions: number[] = [];
+  const indices: number[] = [];
+  const vertexIndicesByCell = new Map<number, number[]>();
+
+  for (let row = 0; row < rows; row++) {
+    const y0 = originY + row * cellSize;
+    const y1 = y0 + cellSize;
+    for (let col = 0; col < cols; col++) {
+      const x0 = originX + col * cellSize;
+      const x1 = x0 + cellSize;
+      const idx = row * cols + col;
+      const z = heights[idx];
+
+      const base = positions.length / 3;
+      positions.push(x0, y0, z, x1, y0, z, x1, y1, z, x0, y1, z);
+      vertexIndicesByCell.set(idx, [base, base + 1, base + 2, base + 3]);
+      indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    }
+  }
+
+  return { positions: Float32Array.from(positions), indices: Uint32Array.from(indices), vertexIndicesByCell };
+}
+
+// ストック側面(スカート)のジオメトリを、トップメッシュと同じ「セルの外形(タイル境界)・高さ」を
 // 基準に生成する。以前は側面をストック外形の静的な矩形として一度だけ生成していたが、
 // 切削が外周セルに達すると側面の上端(topZ固定)とトップメッシュの頂点(削られてtopZ未満に
 // 下がる)がずれてしまい、その隙間から内部の空洞が透けて見える不具合があった。
 // 側面の各頂点をセル高さに追従させることで、切削のたびにトップメッシュと側面を同期させ、
 // 隙間が生じないようにする。
+// 外周セルごとに、そのセルが接する外側の辺(1〜2辺、角セルは2辺)だけを壁として追加する。
 export function buildSkirtPositions(map: Heightmap): SkirtGeometryData {
-  const loop = buildPerimeterLoop(map);
-  const n = loop.length;
+  const { cols, rows, cellSize, originX, originY, bottomZ, heights } = map;
   const positions: number[] = [];
   const vertexIndicesByCell = new Map<number, number[]>();
 
@@ -321,50 +316,50 @@ export function buildSkirtPositions(map: Heightmap): SkirtGeometryData {
     }
   };
 
-  // 側面(壁)
-  for (let i = 0; i < n; i++) {
-    const p0 = loop[i];
-    const p1 = loop[(i + 1) % n];
-    const [x0, y0] = cellCenter(map, p0.col, p0.row);
-    const [x1, y1] = cellCenter(map, p1.col, p1.row);
-    const idx0 = p0.row * map.cols + p0.col;
-    const idx1 = p1.row * map.cols + p1.col;
-    const z0 = map.heights[idx0];
-    const z1 = map.heights[idx1];
+  // セル idx の外形上の(x0,y0)-(x1,y1)の辺を、そのセルの高さからbottomZまでの壁にする。
+  const pushOuterWall = (x0: number, y0: number, x1: number, y1: number, idx: number) => {
+    const h = heights[idx];
+    pushVertex(x0, y0, h, idx);
+    pushVertex(x1, y1, h, idx);
+    pushVertex(x0, y0, bottomZ, null);
 
-    pushVertex(x0, y0, z0, idx0);
-    pushVertex(x1, y1, z1, idx1);
-    pushVertex(x0, y0, map.bottomZ, null);
+    pushVertex(x1, y1, h, idx);
+    pushVertex(x1, y1, bottomZ, null);
+    pushVertex(x0, y0, bottomZ, null);
+  };
 
-    pushVertex(x1, y1, z1, idx1);
-    pushVertex(x1, y1, map.bottomZ, null);
-    pushVertex(x0, y0, map.bottomZ, null);
-  }
-
-  // 底面(外周ループの扇形三角形分割。グリッドは矩形なので凸多角形になり成立する)
-  if (n >= 3) {
-    const [ax, ay] = cellCenter(map, loop[0].col, loop[0].row);
-    for (let i = 1; i < n - 1; i++) {
-      const [bx, by] = cellCenter(map, loop[i].col, loop[i].row);
-      const [cx, cy] = cellCenter(map, loop[i + 1].col, loop[i + 1].row);
-      pushVertex(ax, ay, map.bottomZ, null);
-      pushVertex(bx, by, map.bottomZ, null);
-      pushVertex(cx, cy, map.bottomZ, null);
+  for (let row = 0; row < rows; row++) {
+    const y0 = originY + row * cellSize;
+    const y1 = y0 + cellSize;
+    for (let col = 0; col < cols; col++) {
+      const x0 = originX + col * cellSize;
+      const x1 = x0 + cellSize;
+      const idx = row * cols + col;
+      if (row === 0) pushOuterWall(x0, y0, x1, y0, idx);
+      if (row === rows - 1) pushOuterWall(x1, y1, x0, y1, idx);
+      if (col === 0) pushOuterWall(x0, y1, x0, y0, idx);
+      if (col === cols - 1) pushOuterWall(x1, y0, x1, y1, idx);
     }
   }
+
+  // 底面(グリッドは常に矩形なので単純な2枚の三角形でよい)
+  const bx0 = originX, by0 = originY, bx1 = originX + cols * cellSize, by1 = originY + rows * cellSize;
+  pushVertex(bx0, by0, bottomZ, null);
+  pushVertex(bx1, by0, bottomZ, null);
+  pushVertex(bx1, by1, bottomZ, null);
+
+  pushVertex(bx0, by0, bottomZ, null);
+  pushVertex(bx1, by1, bottomZ, null);
+  pushVertex(bx0, by1, bottomZ, null);
 
   return { positions: Float32Array.from(positions), vertexIndicesByCell };
 }
 
-// トップメッシュ(セル中心同士を結ぶ三角形グリッド)は、高さマップという表現上の制約により、
-// 隣接セルの高さが異なる箇所を必ず「1セル分の水平距離になだらかに変化する斜面」として
-// 描画してしまう。これにより、実際には垂直なポケット壁やコンター壁を切削しても、
-// 3Dビュー上では斜めのテーパーに見えてしまう不具合があった(flatShadingは面の法線を
-// 補間しない効果はあるが、面そのものが斜めなことは解消しない)。
-// このセル境界の真上に、隣接する2セルの高さをそのまま結ぶ垂直な壁を追加で重ねて描画する。
-// 高低差が大きい箇所(垂直な壁)では、この壁がなだらかな斜面を覆い隠して垂直に見せる。
-// 高低差が小さい箇所(3Dラフィングなど本来なだらかな斜面)では壁がほぼ潰れて見えなくなり、
-// 元のなだらかな見た目を損なわない。
+// トップメッシュは独立した平らなタイルの集まりになったため(buildTopTilePositions参照)、
+// 高さの異なる隣接セル同士の間には面が存在せず、隙間が空いてしまう。このセル境界に、
+// 隣接する2セルの高さをそのまま結ぶ垂直な壁を追加し、その隙間を塞ぐ。
+// 高さが同じセル同士では壁の上端と下端が同じ高さになり、面積ゼロの壁として実質的に
+// 描画されない。
 export function buildInteriorWallPositions(map: Heightmap): SkirtGeometryData {
   const { cols, rows, cellSize, originX, originY, heights } = map;
   const positions: number[] = [];
