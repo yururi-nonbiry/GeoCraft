@@ -356,6 +356,90 @@ export function buildSkirtPositions(map: Heightmap): SkirtGeometryData {
   return { positions: Float32Array.from(positions), vertexIndicesByCell };
 }
 
+// トップメッシュ(セル中心同士を結ぶ三角形グリッド)は、高さマップという表現上の制約により、
+// 隣接セルの高さが異なる箇所を必ず「1セル分の水平距離になだらかに変化する斜面」として
+// 描画してしまう。これにより、実際には垂直なポケット壁やコンター壁を切削しても、
+// 3Dビュー上では斜めのテーパーに見えてしまう不具合があった(flatShadingは面の法線を
+// 補間しない効果はあるが、面そのものが斜めなことは解消しない)。
+// このセル境界の真上に、隣接する2セルの高さをそのまま結ぶ垂直な壁を追加で重ねて描画する。
+// 高低差が大きい箇所(垂直な壁)では、この壁がなだらかな斜面を覆い隠して垂直に見せる。
+// 高低差が小さい箇所(3Dラフィングなど本来なだらかな斜面)では壁がほぼ潰れて見えなくなり、
+// 元のなだらかな見た目を損なわない。
+export function buildInteriorWallPositions(map: Heightmap): SkirtGeometryData {
+  const { cols, rows, cellSize, originX, originY, heights } = map;
+  const positions: number[] = [];
+  const vertexIndicesByCell = new Map<number, number[]>();
+
+  const pushVertex = (x: number, y: number, z: number, cellIdx: number) => {
+    const vIdx = positions.length / 3;
+    positions.push(x, y, z);
+    const arr = vertexIndicesByCell.get(cellIdx);
+    if (arr) arr.push(vIdx);
+    else vertexIndicesByCell.set(cellIdx, [vIdx]);
+  };
+
+  // 境界線分(x0,y0)-(x1,y1)の両側にあるセルidxA/idxBの高さを結ぶ壁を1枚(三角形2枚)追加する。
+  const pushWall = (x0: number, y0: number, x1: number, y1: number, idxA: number, idxB: number) => {
+    const hA = heights[idxA];
+    const hB = heights[idxB];
+    pushVertex(x0, y0, hA, idxA);
+    pushVertex(x1, y1, hA, idxA);
+    pushVertex(x1, y1, hB, idxB);
+
+    pushVertex(x1, y1, hB, idxB);
+    pushVertex(x0, y0, hB, idxB);
+    pushVertex(x0, y0, hA, idxA);
+  };
+
+  // 水平方向に隣接するセルの境界(縦の壁): (col,row)-(col+1,row)
+  for (let row = 0; row < rows; row++) {
+    const cy = originY + (row + 0.5) * cellSize;
+    const y0 = cy - cellSize / 2;
+    const y1 = cy + cellSize / 2;
+    for (let col = 0; col < cols - 1; col++) {
+      const x = originX + (col + 1) * cellSize;
+      const idxA = row * cols + col;
+      const idxB = row * cols + col + 1;
+      pushWall(x, y0, x, y1, idxA, idxB);
+    }
+  }
+
+  // 垂直方向に隣接するセルの境界(横の壁): (col,row)-(col,row+1)
+  for (let col = 0; col < cols; col++) {
+    const cx = originX + (col + 0.5) * cellSize;
+    const x0 = cx - cellSize / 2;
+    const x1 = cx + cellSize / 2;
+    for (let row = 0; row < rows - 1; row++) {
+      const y = originY + (row + 1) * cellSize;
+      const idxA = row * cols + col;
+      const idxB = (row + 1) * cols + col;
+      pushWall(x0, y, x1, y, idxA, idxB);
+    }
+  }
+
+  return { positions: Float32Array.from(positions), vertexIndicesByCell };
+}
+
+// 切削によって高さが変化したセル(dirty領域)の頂点位置を、渡された頂点インデックス表を元に
+// 更新する汎用ヘルパー。buildInteriorWallPositions の壁メッシュのように、1セルの高さ変化が
+// 複数の頂点(=最大4方向の壁の端点)に影響する場合に使う。
+export function updateVertexHeights(
+  map: Heightmap,
+  posAttr: { setZ(index: number, z: number): void },
+  vertexIndicesByCell: Map<number, number[]>,
+  dirty: DirtyRegion,
+): void {
+  for (let row = dirty.minRow; row <= dirty.maxRow; row++) {
+    for (let col = dirty.minCol; col <= dirty.maxCol; col++) {
+      const idx = row * map.cols + col;
+      const vIdxs = vertexIndicesByCell.get(idx);
+      if (!vIdxs) continue;
+      const z = map.heights[idx];
+      for (const vIdx of vIdxs) posAttr.setZ(vIdx, z);
+    }
+  }
+}
+
 // 切削で変化したセル(dirty領域)のうち外周セルに該当するものの高さを、スカート側の
 // 頂点位置に反映する。戻り値は実際に外周セルへ変化が及んだかどうか。
 export function updateSkirtPositions(

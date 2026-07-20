@@ -16,6 +16,8 @@ import {
     buildGridIndices,
     buildSkirtPositions,
     updateSkirtPositions,
+    buildInteriorWallPositions,
+    updateVertexHeights,
 } from '../simulation/stockSimulation';
 
 // Playback pace (mm of toolpath traveled per real second at 1x speed). Not tied to the
@@ -133,6 +135,8 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
     const simTopMeshRef = useRef<THREE.Mesh | null>(null);
     const simSkirtMeshRef = useRef<THREE.Mesh | null>(null);
     const simSkirtVertexMapRef = useRef<Map<number, number[]> | null>(null);
+    const simWallMeshRef = useRef<THREE.Mesh | null>(null);
+    const simWallVertexMapRef = useRef<Map<number, number[]> | null>(null);
     const heightmapRef = useRef<Heightmap | null>(null);
     const samplesRef = useRef<SamplePoint[]>([]);
     const sampleCursorRef = useRef(0);
@@ -192,6 +196,15 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
             updateSkirtPositions(map, skirtPosAttr, skirtVertexMap, { minCol: 0, maxCol: map.cols - 1, minRow: 0, maxRow: map.rows - 1 });
             skirtPosAttr.needsUpdate = true;
             skirtMesh.geometry.computeVertexNormals();
+        }
+
+        const wallMesh = simWallMeshRef.current;
+        const wallVertexMap = simWallVertexMapRef.current;
+        if (wallMesh && wallVertexMap) {
+            const wallPosAttr = wallMesh.geometry.getAttribute('position') as THREE.BufferAttribute;
+            updateVertexHeights(map, wallPosAttr, wallVertexMap, { minCol: 0, maxCol: map.cols - 1, minRow: 0, maxRow: map.rows - 1 });
+            wallPosAttr.needsUpdate = true;
+            wallMesh.geometry.computeVertexNormals();
         }
 
         finishedRef.current = true;
@@ -345,6 +358,17 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
                         }
                     }
                 }
+
+                const wallMesh = simWallMeshRef.current;
+                const wallVertexMap = simWallVertexMapRef.current;
+                if (wallMesh && wallVertexMap) {
+                    const wallPosAttr = wallMesh.geometry.getAttribute('position') as THREE.BufferAttribute;
+                    updateVertexHeights(map, wallPosAttr, wallVertexMap, { minCol, maxCol, minRow, maxRow });
+                    wallPosAttr.needsUpdate = true;
+                    if (frameCounterRef.current % SIM_NORMAL_RECOMPUTE_INTERVAL === 0) {
+                        wallMesh.geometry.computeVertexNormals();
+                    }
+                }
             }
 
             const reachedEnd = targetDistance >= totalDistance;
@@ -352,6 +376,7 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
                 finishedRef.current = true;
                 topMesh.geometry.computeVertexNormals();
                 simSkirtMeshRef.current?.geometry.computeVertexNormals();
+                simWallMeshRef.current?.geometry.computeVertexNormals();
                 onSimProgressRef.current?.(1);
                 onSimFinishedRef.current?.();
             } else if (now - lastProgressReportRef.current > SIM_PROGRESS_REPORT_INTERVAL_MS) {
@@ -622,6 +647,8 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
         simTopMeshRef.current = null;
         simSkirtMeshRef.current = null;
         simSkirtVertexMapRef.current = null;
+        simWallMeshRef.current = null;
+        simWallVertexMapRef.current = null;
         heightmapRef.current = null;
         samplesRef.current = [];
         sampleCursorRef.current = 0;
@@ -675,6 +702,18 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
         group.add(skirtMesh);
         simSkirtMeshRef.current = skirtMesh;
         simSkirtVertexMapRef.current = skirtData.vertexIndicesByCell;
+
+        // グリッド内部のセル境界に垂直な壁を重ねて描画し、垂直な切削壁が斜面に見えてしまう
+        // ヒートマップ表現上の制約を緩和する(詳細は buildInteriorWallPositions のコメント参照)。
+        const wallData = buildInteriorWallPositions(map);
+        const wallGeometry = new THREE.BufferGeometry();
+        wallGeometry.setAttribute('position', new THREE.Float32BufferAttribute(wallData.positions, 3));
+        wallGeometry.computeVertexNormals();
+        const wallMaterial = new THREE.MeshStandardMaterial({ color: 0xd9a066, metalness: 0.05, roughness: 0.8, side: THREE.DoubleSide, flatShading: true });
+        const wallMesh = new THREE.Mesh(wallGeometry, wallMaterial);
+        group.add(wallMesh);
+        simWallMeshRef.current = wallMesh;
+        simWallVertexMapRef.current = wallData.vertexIndicesByCell;
 
         scene.add(group);
         simGroupRef.current = group;
