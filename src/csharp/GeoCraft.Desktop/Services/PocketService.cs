@@ -11,7 +11,17 @@ namespace GeoCraft.Desktop.Services
     {
         private GeometryFactory _factory = new GeometryFactory();
 
-        public object GeneratePocket(List<double[]> geometryData, double toolDiameter, double stepover, double stockToLeave = 0.0)
+        private LinearRing ToClosedRing(List<double[]> points)
+        {
+            var coordinates = points.Select(p => new Coordinate(p[0], p[1])).ToArray();
+            if (!coordinates[0].Equals2D(coordinates.Last()))
+            {
+                coordinates = coordinates.Concat(new[] { coordinates[0] }).ToArray();
+            }
+            return _factory.CreateLinearRing(coordinates);
+        }
+
+        public object GeneratePocket(List<double[]> geometryData, double toolDiameter, double stepover, double stockToLeave = 0.0, List<List<double[]>> holes = null)
         {
              if (stepover <= 0)
              {
@@ -25,14 +35,13 @@ namespace GeoCraft.Desktop.Services
 
             try
             {
-                var coordinates = geometryData.Select(p => new Coordinate(p[0], p[1])).ToArray();
-                // Ensure closed
-                if (!coordinates[0].Equals2D(coordinates.Last()))
-                {
-                    coordinates = coordinates.Concat(new[] { coordinates[0] }).ToArray();
-                }
+                var shell = ToClosedRing(geometryData);
+                var holeRings = (holes ?? new List<List<double[]>>())
+                    .Where(h => h != null && h.Count >= 3)
+                    .Select(ToClosedRing)
+                    .ToArray();
 
-                var mainPoly = _factory.CreatePolygon(coordinates);
+                var mainPoly = _factory.CreatePolygon(shell, holeRings);
                 if (!mainPoly.IsValid)
                 {
                      var fixedGeom = mainPoly.Buffer(0);
@@ -73,8 +82,10 @@ namespace GeoCraft.Desktop.Services
                     foreach (var poly in polygons)
                     {
                          allPaths.Add(poly.ExteriorRing.Coordinates.Select(c => new[] { c.X, c.Y }).ToList());
-                         // Python only took exterior. What about holes?
-                         // Python: path = list(poly.exterior.coords). Holes ignored? Yes.
+                         for (int i = 0; i < poly.NumInteriorRings; i++)
+                         {
+                             allPaths.Add(poly.GetInteriorRingN(i).Coordinates.Select(c => new[] { c.X, c.Y }).ToList());
+                         }
                     }
 
                     currentOffset -= stepover;

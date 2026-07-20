@@ -712,24 +712,28 @@ const App = () => {
   const handleGeneratePocket = async () => {
     const geometries = getConnectedGeometries();
     if (geometries.length === 0) return alert('ツールパスを生成するための図形が読み込まれていません。');
+    // 最大面積のループを外形、それ以外は内側の穴（島）とみなし、
+    // 外形から穴を差し引いた領域をまとめて1回でオフセットする（穴を無視すると格子状の内部形状が正しく削れないため）
+    const outerIndex = geometries.reduce(
+      (maxIdx, verts, idx, arr) => (Math.abs(polygonSignedArea(verts)) > Math.abs(polygonSignedArea(arr[maxIdx])) ? idx : maxIdx),
+      0
+    );
     try {
-      const allSegments: ToolpathSegment[] = [];
-      let errorCount = 0;
-      let lastError: string | null = null;
-      for (const vertices of geometries) {
-        const params = { geometry: vertices, toolDiameter, stepover: toolDiameter * stepover, stockToLeave: processType === 'roughing' ? stockToLeave : 0.0 };
-        const result = await api.generatePocketPath(params);
-        if (result.status === 'success') {
-          allSegments.push(...result.toolpaths.map((path: number[][]) => ({ type: 'line' as const, points: path })));
-        } else {
-          errorCount++;
-          lastError = result.message;
-        }
+      const shell = geometries[outerIndex].map(([x, y]) => [x, y]);
+      const holes = geometries.filter((_, idx) => idx !== outerIndex).map(verts => verts.map(([x, y]) => [x, y]));
+      const params = {
+        geometry: shell,
+        toolDiameter,
+        stepover: toolDiameter * stepover,
+        stockToLeave: processType === 'roughing' ? stockToLeave : 0.0,
+        holes,
+      };
+      const result = await api.generatePocketPath(params);
+      if (result.status === 'success') {
+        setToolpaths(result.toolpaths.map((path: number[][]) => ({ type: 'line' as const, points: path })));
+      } else {
+        alert(`パス生成エラー: ${result.message}`);
       }
-      if (errorCount > 0) {
-        alert(errorCount === 1 ? `パス生成エラー: ${lastError}` : `パス生成エラー: ${errorCount}件の形状でパスを生成できませんでした（${lastError}）`);
-      }
-      if (allSegments.length > 0) setToolpaths(allSegments);
       resetSimulation();
     } catch (error) {
       alert(`パス生成に失敗しました: ${error}`);

@@ -197,14 +197,15 @@ namespace GeoCraft.Desktop
              });
         }
 
-        public string GeneratePocketPath(string paramsJson) { 
+        public string GeneratePocketPath(string paramsJson) {
              return ExecuteSafe(() => {
                  dynamic p = JsonConvert.DeserializeObject(paramsJson);
                  List<double[]> geometry = p.geometry.ToObject<List<double[]>>();
                  double toolDiameter = p.toolDiameter;
                  double stepover = p.stepover;
                  double stockToLeave = p.stockToLeave ?? 0.0;
-                 return _pocketService.GeneratePocket(geometry, toolDiameter, stepover, stockToLeave);
+                 List<List<double[]>> holes = p.holes != null ? p.holes.ToObject<List<List<double[]>>>() : new List<List<double[]>>();
+                 return _pocketService.GeneratePocket(geometry, toolDiameter, stepover, stockToLeave, holes);
              });
         }
         

@@ -22,6 +22,7 @@ export type PocketPathParams = {
     toolDiameter: number;
     stepover: number;
     stockToLeave?: number;
+    holes?: number[][][];
 };
 
 export type RoughingPathParams = {
