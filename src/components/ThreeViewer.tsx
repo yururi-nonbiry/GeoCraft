@@ -270,7 +270,8 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
             let touched = false;
             while (sampleCursorRef.current < samples.length && samples[sampleCursorRef.current].distance <= targetDistance) {
                 const p = samples[sampleCursorRef.current];
-                const dirty = stampCircle(map, p.x, p.y, simToolRadius, simCutZRef.current);
+                const cutZ = p.z ?? simCutZRef.current;
+                const dirty = stampCircle(map, p.x, p.y, simToolRadius, cutZ);
                 if (dirty) {
                     touched = true;
                     minCol = Math.min(minCol, dirty.minCol);

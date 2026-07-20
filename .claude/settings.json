@@ -32,7 +32,16 @@
       "Bash(git -C c:/git/GeoCraft show --stat fa353bb)",
       "Bash(git -C c:/git/GeoCraft show eeec744 -- src/simulation/stockSimulation.ts)",
       "Bash(git -C c:/git/GeoCraft show eeec744 -- src/components/ThreeViewer.tsx)",
-      "Bash(git -C c:/git/GeoCraft show eeec744 -- src/renderer.tsx src/stlUtils.ts src/types.ts)"
+      "Bash(git -C c:/git/GeoCraft show eeec744 -- src/renderer.tsx src/stlUtils.ts src/types.ts)",
+      "Bash(ls /tmp/simcheck)",
+      "Read(//tmp/**)",
+      "Bash(node test.js)",
+      "Bash(mkdir -p \"C:/Users/sw20m/AppData/Local/Temp/claude/c--git-GeoCraft/f15d37be-a321-4774-9e09-0a7734cc4c25/scratchpad/simcheck\")",
+      "Bash(cp -r /tmp/simcheck/* \"C:/Users/sw20m/AppData/Local/Temp/claude/c--git-GeoCraft/f15d37be-a321-4774-9e09-0a7734cc4c25/scratchpad/simcheck/\")",
+      "Bash(NODE_PATH=\"c:/git/GeoCraft/node_modules\" node test.js)"
+    ],
+    "additionalDirectories": [
+      "\\tmp\\simcheck"
     ]
   }
 }

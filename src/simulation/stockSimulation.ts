@@ -42,6 +42,8 @@ export interface DirtyRegion {
 export interface SamplePoint {
   x: number;
   y: number;
+  // ツールパス点が実際に持つZ座標。2D輪郭パスのようにZ情報を持たない点はnull。
+  z: number | null;
   distance: number;
 }
 
@@ -188,33 +190,43 @@ export function stampCircle(map: Heightmap, cx: number, cy: number, radius: numb
 
 // Samples line/arc segments into a flat, ordered point list with cumulative path distance,
 // so playback can be driven by "distance traveled" rather than by segment/point index.
+// 各点のZは、そのツールパス点が実際に持つZ座標(points[i][2] / start[2] / end[2])をそのまま使う。
+// 3Dラフィングパスや層分けされたポケット/輪郭パスは各点・各層に本来の切削深さを持っているため、
+// それを無視して一律の深さ(旧実装ではマシン設定のstepDown固定値)で削ると、層ごとの
+// 段階的な切削が再現されず、最初に触れた瞬間に最終深さまで一気に削れてしまう不具合になる。
+// Z座標を持たない(2要素のみの)点はnullとし、呼び出し側でフォールバック値を適用する。
 export function sampleToolpath(segments: ToolpathSegment[], spacing: number): SamplePoint[] {
   const points: SamplePoint[] = [];
   let distance = 0;
   const step = Math.max(spacing, 1e-3);
 
-  const pushPoint = (x: number, y: number) => {
+  const pushPoint = (x: number, y: number, z: number | null) => {
     if (points.length > 0) {
       const last = points[points.length - 1];
       distance += Math.hypot(x - last.x, y - last.y);
     }
-    points.push({ x, y, distance });
+    points.push({ x, y, z, distance });
   };
 
   for (const seg of segments) {
     if (seg.type === 'line') {
       for (let i = 0; i < seg.points.length - 1; i++) {
-        const [x0, y0] = seg.points[i];
-        const [x1, y1] = seg.points[i + 1];
+        const [x0, y0, z0raw] = seg.points[i];
+        const [x1, y1, z1raw] = seg.points[i + 1];
+        const z0 = z0raw ?? null;
+        const z1 = z1raw ?? null;
         const len = Math.hypot(x1 - x0, y1 - y0);
         const steps = Math.max(1, Math.ceil(len / step));
         for (let s = 0; s <= steps; s++) {
           const t = s / steps;
-          pushPoint(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t);
+          const z = z0 === null || z1 === null ? (z0 ?? z1) : z0 + (z1 - z0) * t;
+          pushPoint(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, z);
         }
       }
     } else {
       const { start, end, center, direction } = seg;
+      const startZ = start[2] ?? null;
+      const endZ = end[2] ?? null;
       const radius = Math.hypot(start[0] - center[0], start[1] - center[1]);
       const startAngle = Math.atan2(start[1] - center[1], start[0] - center[0]);
       let endAngle = Math.atan2(end[1] - center[1], end[0] - center[0]);
@@ -230,7 +242,8 @@ export function sampleToolpath(segments: ToolpathSegment[], spacing: number): Sa
       for (let s = 0; s <= steps; s++) {
         const t = s / steps;
         const angle = startAngle + (endAngle - startAngle) * t;
-        pushPoint(center[0] + radius * Math.cos(angle), center[1] + radius * Math.sin(angle));
+        const z = startZ === null || endZ === null ? (startZ ?? endZ) : startZ + (endZ - startZ) * t;
+        pushPoint(center[0] + radius * Math.cos(angle), center[1] + radius * Math.sin(angle), z);
       }
     }
   }
