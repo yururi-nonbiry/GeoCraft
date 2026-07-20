@@ -534,6 +534,20 @@ const ControlPanel = (props: ControlPanelProps) => {
                             control={<Checkbox checked={props.simEnabled} onChange={(e) => props.setSimEnabled(e.target.checked)} />}
                             label="シミュレーションを表示"
                         />
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', mb: 1 }}>
+                            <FormControlLabel
+                                control={<Checkbox checked={props.showStock} onChange={(e) => props.setShowStock(e.target.checked)} />}
+                                label="材料を表示"
+                            />
+                            <FormControlLabel
+                                control={<Checkbox checked={props.showTarget} onChange={(e) => props.setShowTarget(e.target.checked)} />}
+                                label="加工後形状を表示"
+                            />
+                            <FormControlLabel
+                                control={<Checkbox checked={props.showToolpaths} onChange={(e) => props.setShowToolpaths(e.target.checked)} />}
+                                label="パスを表示"
+                            />
+                        </Box>
                         <TextField
                             label="素材マージン (mm)"
                             type="number"
@@ -563,6 +577,8 @@ const ControlPanel = (props: ControlPanelProps) => {
                                 <MenuItem value={1}>1x</MenuItem>
                                 <MenuItem value={2}>2x</MenuItem>
                                 <MenuItem value={5}>5x</MenuItem>
+                                <MenuItem value={10}>10x</MenuItem>
+                                <MenuItem value={50}>50x</MenuItem>
                             </Select>
                         </FormControl>
                         <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
