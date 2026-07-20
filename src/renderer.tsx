@@ -42,7 +42,7 @@ import { api } from './api';
 import ThreeViewer from './components/ThreeViewer';
 import ControlPanel from './components/ControlPanel';
 import { Geometry, ToolpathSegment, Toolpath, SerialPortInfo, MachineSetting, EditableMachineSetting, ToolSetting, EditableToolSetting } from './types';
-import { createBoxStlData, translateStlData } from './stlUtils';
+import { createBoxStlData, translateStlData, getStlMinZ } from './stlUtils';
 
 const theme = createTheme({
   palette: {
@@ -771,12 +771,14 @@ const App = () => {
   const handleSelectStockStl = async () => {
     const result = await api.openFile('stl');
     if (result.status === 'success') {
+      const data = await loadStlData(result.filePath);
       setStockStlFile(result.filePath);
       setStockStlPath(result.filePath);
-      setStockStlData(await loadStlData(result.filePath));
+      setStockStlData(data);
       setPickFaceMode(null);
       setPreviewMode(false);
-      setStockOffset({ x: 0, y: 0, z: 0 });
+      // STL自体のモデリング原点は底面と一致しているとは限らないため、底面を作業エリアの床(Z=0)に合わせる
+      setStockOffset({ x: 0, y: 0, z: data ? -getStlMinZ(data) : 0 });
       setToolpaths(null);
     }
   };
@@ -799,11 +801,13 @@ const App = () => {
   const handleSelectTargetStl = async () => {
     const result = await api.openFile('stl');
     if (result.status === 'success') {
+      const data = await loadStlData(result.filePath);
       setTargetStlFile(result.filePath);
-      setTargetStlData(await loadStlData(result.filePath));
+      setTargetStlData(data);
       setPickFaceMode(null);
       setPreviewMode(false);
-      setTargetOffset({ x: 0, y: 0, z: 0 });
+      // STL自体のモデリング原点は底面と一致しているとは限らないため、底面を作業エリアの床(Z=0)に合わせる
+      setTargetOffset({ x: 0, y: 0, z: data ? -getStlMinZ(data) : 0 });
       setToolpaths(null);
     }
   };

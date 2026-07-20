@@ -544,7 +544,7 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
         stockBasePositionRef.current.set(0, 0, 0);
         targetBasePositionRef.current.set(0, 0, 0);
 
-        const loadStl = (data: ArrayBuffer, material: THREE.Material, modelRef: React.MutableRefObject<THREE.Object3D | null>, baseRef: React.MutableRefObject<THREE.Vector3>) => {
+        const loadStl = (data: ArrayBuffer, material: THREE.Material, modelRef: React.MutableRefObject<THREE.Object3D | null>) => {
             try {
                 const loader = new STLLoader();
                 const geometry = loader.parse(data);
@@ -552,13 +552,6 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
                 const mesh = new THREE.Mesh(geometry, material);
                 scene.add(mesh);
                 modelRef.current = mesh;
-
-                // STL自体のモデリング原点は底面(Z最小)と一致しているとは限らないため、
-                // 底面を作業エリアの床(Z=0)に合わせる(床に埋まる/浮くのを防ぐ)
-                const box = new THREE.Box3().setFromObject(mesh);
-                mesh.position.z -= box.min.z;
-                mesh.updateMatrixWorld(true);
-                baseRef.current.copy(mesh.position);
 
                 // 両方のモデルが読み込まれた後にカメラを調整
                 const combinedBox = new THREE.Box3();
@@ -581,7 +574,7 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
                 opacity: 0.3,
                 wireframe: true,
             });
-            loadStl(stockStlData, stockMaterial, stockModelRef, stockBasePositionRef);
+            loadStl(stockStlData, stockMaterial, stockModelRef);
         }
 
         // 加工後形状STLの読み込み
@@ -589,7 +582,7 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
             const targetMaterial = new THREE.MeshStandardMaterial({
                 color: 0x999999, metalness: 0.1, roughness: 0.5, side: THREE.DoubleSide,
             });
-            loadStl(targetStlData, targetMaterial, targetModelRef, targetBasePositionRef);
+            loadStl(targetStlData, targetMaterial, targetModelRef);
         }
 
     }, [stockStlData, targetStlData]);
