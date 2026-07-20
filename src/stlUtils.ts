@@ -22,10 +22,17 @@ export const getStlMinZ = (data: ArrayBuffer): number => {
     return geometry.boundingBox?.min.z ?? 0;
 };
 
-// STLの頂点座標をoffset分だけ平行移動したバイナリSTLデータを生成する。
-// ビューア上でのオフセット表示(見た目上の位置合わせ)を、実際のジオメトリにも反映するために使用する。
-export const translateStlData = (data: ArrayBuffer, offset: { x: number; y: number; z: number }): ArrayBuffer => {
+// STLの頂点座標に回転(任意)とoffset分の平行移動を適用したバイナリSTLデータを生成する。
+// ビューア上での表示位置・向き(底面選択による回転を含む)を、実際のジオメトリにも反映するために使用する。
+export const translateStlData = (
+    data: ArrayBuffer,
+    offset: { x: number; y: number; z: number },
+    rotation?: { x: number; y: number; z: number; w: number }
+): ArrayBuffer => {
     const geometry = new STLLoader().parse(data);
+    if (rotation) {
+        geometry.applyQuaternion(new THREE.Quaternion(rotation.x, rotation.y, rotation.z, rotation.w));
+    }
     geometry.translate(offset.x, offset.y, offset.z);
     const mesh = new THREE.Mesh(geometry);
     const exporter = new STLExporter();

@@ -41,7 +41,7 @@ import { api } from './api';
 
 import ThreeViewer from './components/ThreeViewer';
 import ControlPanel from './components/ControlPanel';
-import { Geometry, ToolpathSegment, Toolpath, SerialPortInfo, MachineSetting, EditableMachineSetting, ToolSetting, EditableToolSetting } from './types';
+import { Geometry, ToolpathSegment, Toolpath, SerialPortInfo, MachineSetting, EditableMachineSetting, ToolSetting, EditableToolSetting, StlBaseTransform } from './types';
 import { createBoxStlData, translateStlData, getStlMinZ } from './stlUtils';
 
 const theme = createTheme({
@@ -80,6 +80,8 @@ type StlPlacement = {
   stlDataBase64: string | null;
   offset: { x: number; y: number; z: number };
   boxSize?: { x: number; y: number; z: number };
+  // 底面選択(ピックフェース)で決まった基準位置・回転(未選択なら null)
+  baseTransform?: StlBaseTransform | null;
 };
 
 const PROJECT_FILE_VERSION = 1;
@@ -205,6 +207,9 @@ const App = () => {
   const [previewMode, setPreviewMode] = useState(false);
   const [stockOffset, setStockOffset] = useState({ x: 0, y: 0, z: 0 });
   const [targetOffset, setTargetOffset] = useState({ x: 0, y: 0, z: 0 });
+  // 底面選択(ピックフェース)で決まった基準位置・回転。プロジェクト保存・復元の対象。
+  const [stockBaseTransform, setStockBaseTransform] = useState<StlBaseTransform | null>(null);
+  const [targetBaseTransform, setTargetBaseTransform] = useState<StlBaseTransform | null>(null);
   const [stockBoxSize, setStockBoxSize] = useState({ x: 100, y: 100, z: 20 });
   const [feedRate, setFeedRate] = useState<number>(DEFAULT_MATERIALS[0]?.feedRate ?? 100);
   const [contourSide, setContourSide] = useState('outer');
@@ -777,6 +782,7 @@ const App = () => {
       setStockStlData(data);
       setPickFaceMode(null);
       setPreviewMode(false);
+      setStockBaseTransform(null);
       // STL自体のモデリング原点は底面と一致しているとは限らないため、底面を作業エリアの床(Z=0)に合わせる
       setStockOffset({ x: 0, y: 0, z: data ? -getStlMinZ(data) : 0 });
       setToolpaths(null);
@@ -794,6 +800,7 @@ const App = () => {
     setStockStlData(stlData);
     setPickFaceMode(null);
     setPreviewMode(false);
+    setStockBaseTransform(null);
     setStockOffset({ x: 0, y: 0, z: 0 });
     setToolpaths(null);
   };
@@ -806,22 +813,28 @@ const App = () => {
       setTargetStlData(data);
       setPickFaceMode(null);
       setPreviewMode(false);
+      setTargetBaseTransform(null);
       // STL自体のモデリング原点は底面と一致しているとは限らないため、底面を作業エリアの床(Z=0)に合わせる
       setTargetOffset({ x: 0, y: 0, z: data ? -getStlMinZ(data) : 0 });
       setToolpaths(null);
     }
   };
 
-  // ビューア上のオフセット(stockOffset/targetOffset)は表示位置の調整用だが、
-  // パス生成はSTLファイルの実座標を元に行われるため、オフセットが設定されている場合は
-  // 頂点座標にオフセットを焼き込んだ一時STLを生成してからパスを生成する。
+  // ビューア上のオフセット(stockOffset/targetOffset)・底面選択による基準位置/回転(baseTransform)は
+  // 表示位置の調整用だが、パス生成はSTLファイルの実座標を元に行われるため、これらが設定されている場合は
+  // 頂点座標に焼き込んだ一時STLを生成してからパスを生成する。
   const resolveOffsetStlPath = async (
     originalPath: string,
     data: ArrayBuffer | null,
-    offset: { x: number; y: number; z: number }
+    offset: { x: number; y: number; z: number },
+    baseTransform: StlBaseTransform | null
   ): Promise<string> => {
-    if (!data || (offset.x === 0 && offset.y === 0 && offset.z === 0)) return originalPath;
-    const translated = translateStlData(data, offset);
+    const hasOffset = offset.x !== 0 || offset.y !== 0 || offset.z !== 0;
+    if (!data || (!hasOffset && !baseTransform)) return originalPath;
+    const translation = baseTransform
+      ? { x: baseTransform.position.x + offset.x, y: baseTransform.position.y + offset.y, z: baseTransform.position.z + offset.z }
+      : offset;
+    const translated = translateStlData(data, translation, baseTransform?.rotation);
     const result = await api.writeTempStlFile(arrayBufferToBase64(translated));
     if (result.status !== 'success') throw new Error(result.message ?? '一時STLファイルの書き込みに失敗しました。');
     return result.filePath;
@@ -832,8 +845,8 @@ const App = () => {
     setPath3dProgress({ current: 0, total: 0 });
     setIsGenerating3dPath(true);
     try {
-      const stockPath = await resolveOffsetStlPath(stockStlPath, stockStlData, stockOffset);
-      const targetPath = await resolveOffsetStlPath(targetStlFile, targetStlData, targetOffset);
+      const stockPath = await resolveOffsetStlPath(stockStlPath, stockStlData, stockOffset, stockBaseTransform);
+      const targetPath = await resolveOffsetStlPath(targetStlFile, targetStlData, targetOffset, targetBaseTransform);
       const params = {
         stockPath,
         targetPath,
@@ -902,11 +915,13 @@ const App = () => {
           stlDataBase64: stockStlData ? arrayBufferToBase64(stockStlData) : null,
           offset: stockOffset,
           boxSize: stockBoxSize,
+          baseTransform: stockBaseTransform,
         },
         target: {
           fileName: targetStlFile,
           stlDataBase64: targetStlData ? arrayBufferToBase64(targetStlData) : null,
           offset: targetOffset,
+          baseTransform: targetBaseTransform,
         },
         geometry,
         toolpaths,
@@ -937,12 +952,14 @@ const App = () => {
     setFile: (v: string | null) => void,
     setData: (v: ArrayBuffer | null) => void,
     setOffset: (v: { x: number; y: number; z: number }) => void,
+    setBaseTransform: (v: StlBaseTransform | null) => void,
     setPath?: (v: string | null) => void
   ) => {
     if (!placement || !placement.stlDataBase64) {
       setFile(null);
       setData(null);
       setOffset({ x: 0, y: 0, z: 0 });
+      setBaseTransform(null);
       if (setPath) setPath(null);
       return;
     }
@@ -950,6 +967,7 @@ const App = () => {
     setFile(placement.fileName ?? null);
     setData(data);
     setOffset(placement.offset ?? { x: 0, y: 0, z: 0 });
+    setBaseTransform(placement.baseTransform ?? null);
     if (setPath) {
       // 復元されたSTLは元のファイルパスが存在しない可能性があるため、
       // ツールパス生成に使える一時ファイルとして書き出し直す。
@@ -972,8 +990,8 @@ const App = () => {
 
     setPickFaceMode(null);
     setPreviewMode(false);
-    await restorePlacement(project.stock, setStockStlFile, setStockStlData, setStockOffset, setStockStlPath);
-    await restorePlacement(project.target, setTargetStlFile, setTargetStlData, setTargetOffset);
+    await restorePlacement(project.stock, setStockStlFile, setStockStlData, setStockOffset, setStockBaseTransform, setStockStlPath);
+    await restorePlacement(project.target, setTargetStlFile, setTargetStlData, setTargetOffset, setTargetBaseTransform);
     if (project.stock?.boxSize) setStockBoxSize(project.stock.boxSize);
 
     setGeometry(project.geometry ?? null);
@@ -1045,16 +1063,23 @@ const App = () => {
               stockStlData={stockStlData}
               targetStlData={targetStlData}
               pickFaceMode={pickFaceMode}
-              onFacePicked={(mode) => {
+              onFacePicked={(mode, baseTransform) => {
                 setPickFaceMode(null);
-                if (mode === 'stock') setStockOffset({ x: 0, y: 0, z: 0 });
-                else setTargetOffset({ x: 0, y: 0, z: 0 });
+                if (mode === 'stock') {
+                  setStockOffset({ x: 0, y: 0, z: 0 });
+                  setStockBaseTransform(baseTransform);
+                } else {
+                  setTargetOffset({ x: 0, y: 0, z: 0 });
+                  setTargetBaseTransform(baseTransform);
+                }
               }}
               machineWorkArea={{ x: currentMachine.workAreaX, y: currentMachine.workAreaY, z: currentMachine.workAreaZ }}
               stockOffset={stockOffset}
               targetOffset={targetOffset}
               onStockOffsetChange={setStockOffset}
               onTargetOffsetChange={setTargetOffset}
+              stockBaseTransform={stockBaseTransform}
+              targetBaseTransform={targetBaseTransform}
               previewMode={previewMode}
               showStock={showStock}
               showTarget={showTarget}

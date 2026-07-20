@@ -3,6 +3,11 @@ export type DxfArc = { center: [number, number, number]; radius: number; start_a
 export type DrillPoint = number[];
 export type Geometry = { segments: DxfSegment[]; arcs: DxfArc[]; drill_points: DrillPoint[] };
 export type Toolpath = number[][];
+// 底面選択(ピックフェース)で決まる3Dモデルの基準位置・回転。位置調整オフセットはこの基準位置に加算して適用する。
+export type StlBaseTransform = {
+    position: { x: number; y: number; z: number };
+    rotation: { x: number; y: number; z: number; w: number };
+};
 export type ToolpathSegment =
     | { type: 'line'; points: number[][] }
     | { type: 'arc'; start: number[]; end: number[]; center: number[]; direction: 'cw' | 'ccw' };

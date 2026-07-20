@@ -2,13 +2,14 @@ import React, { useRef, useEffect } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader';
-import { ToolpathSegment, Geometry } from '../types';
+import { ToolpathSegment, Geometry, StlBaseTransform } from '../types';
 import {
     SimulationConfig,
     Heightmap,
     SamplePoint,
     computeBounds,
     createHeightmap,
+    createHeightmapFromMesh,
     stampCircle,
     sampleToolpath,
     buildGridPositions,
@@ -31,13 +32,17 @@ interface ThreeViewerProps {
     targetStlData: ArrayBuffer | null;
     // 'stock'/'target' の間、3Dビュー上でクリックされた面をそのモデルの底面(-Z)にする。null なら通常操作。
     pickFaceMode: 'stock' | 'target' | null;
-    onFacePicked: (mode: 'stock' | 'target') => void;
+    onFacePicked: (mode: 'stock' | 'target', baseTransform: StlBaseTransform) => void;
     // 選択中の加工機の加工可能範囲(mm)。原点(0,0,0)を作業エリアの手前角(テーブル面)とし、
     // X: 0〜x, Y: 0〜y, Z: 0〜z (原点から上方向、ストックが載る向き) の範囲として描画する。
     machineWorkArea: { x: number; y: number; z: number };
     // 読み込んだ3Dモデルの位置調整量(mm)。面選択などで決まる基準位置に加算して適用する。
     stockOffset: { x: number; y: number; z: number };
     targetOffset: { x: number; y: number; z: number };
+    // 底面選択(ピックフェース)で決まった基準位置・回転(未選択なら null で原点・無回転)。
+    // プロジェクト再読み込み時にこれを復元することで、選択済みの向き・位置を再現する。
+    stockBaseTransform?: StlBaseTransform | null;
+    targetBaseTransform?: StlBaseTransform | null;
     // 3Dビュー上でのマウスドラッグによる位置調整(X/Y平面上の移動)を親に反映するコールバック。
     onStockOffsetChange?: (offset: { x: number; y: number; z: number }) => void;
     onTargetOffsetChange?: (offset: { x: number; y: number; z: number }) => void;
@@ -94,7 +99,7 @@ const createWorkVolumeBox = (width: number, depth: number, height: number): THRE
     return box;
 };
 
-const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targetStlData, pickFaceMode, onFacePicked, machineWorkArea, stockOffset, targetOffset, onStockOffsetChange, onTargetOffsetChange, previewMode, simulation, showStock = true, showTarget = true, showToolpaths = true }: ThreeViewerProps) => {
+const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targetStlData, pickFaceMode, onFacePicked, machineWorkArea, stockOffset, targetOffset, onStockOffsetChange, onTargetOffsetChange, previewMode, simulation, showStock = true, showTarget = true, showToolpaths = true, stockBaseTransform = null, targetBaseTransform = null }: ThreeViewerProps) => {
     const mountRef = useRef<HTMLDivElement>(null);
     const sceneRef = useRef<THREE.Scene | null>(null);
     const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
@@ -431,12 +436,15 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
             targetMesh.position.z -= box.min.z;
             targetMesh.updateMatrixWorld(true);
 
-            // この位置を新たな基準位置とする(位置調整オフセットは呼び出し側でリセットされる)
+            // この位置・回転を新たな基準とする(位置調整オフセットは呼び出し側でリセットされる)
             const baseRef = mode === 'stock' ? stockBasePositionRef : targetBasePositionRef;
             baseRef.current.copy(targetMesh.position);
 
             fitCameraToObject(targetMesh);
-            onFacePickedRef.current?.(mode);
+            onFacePickedRef.current?.(mode, {
+                position: { x: targetMesh.position.x, y: targetMesh.position.y, z: targetMesh.position.z },
+                rotation: { x: targetMesh.quaternion.x, y: targetMesh.quaternion.y, z: targetMesh.quaternion.z, w: targetMesh.quaternion.w },
+            });
         };
 
         renderer.domElement.addEventListener('pointerdown', onPointerDown);
@@ -454,7 +462,94 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
         };
     }, []);
 
-    // 加工シミュレーション用ストックの構築（トグル/リセット/工具・素材条件の変更時に再構築）
+    // STL/OBJ 読み込み処理
+    useEffect(() => {
+        if (!sceneRef.current) return;
+        const scene = sceneRef.current;
+
+        // 前のモデルを削除
+        if (stockModelRef.current) scene.remove(stockModelRef.current);
+        if (targetModelRef.current) scene.remove(targetModelRef.current);
+        stockBasePositionRef.current.set(0, 0, 0);
+        targetBasePositionRef.current.set(0, 0, 0);
+
+        const loadStl = (
+            data: ArrayBuffer,
+            material: THREE.Material,
+            modelRef: React.MutableRefObject<THREE.Object3D | null>,
+            baseRef: React.MutableRefObject<THREE.Vector3>,
+            savedTransform: StlBaseTransform | null | undefined
+        ) => {
+            try {
+                const loader = new STLLoader();
+                const geometry = loader.parse(data);
+                geometry.computeVertexNormals();
+                const mesh = new THREE.Mesh(geometry, material);
+                // 底面選択(ピックフェース)で決まった基準位置・回転が保存されていれば復元する
+                if (savedTransform) {
+                    mesh.quaternion.set(savedTransform.rotation.x, savedTransform.rotation.y, savedTransform.rotation.z, savedTransform.rotation.w);
+                    mesh.position.set(savedTransform.position.x, savedTransform.position.y, savedTransform.position.z);
+                    mesh.updateMatrixWorld(true);
+                    baseRef.current.set(savedTransform.position.x, savedTransform.position.y, savedTransform.position.z);
+                }
+                scene.add(mesh);
+                modelRef.current = mesh;
+
+                // 両方のモデルが読み込まれた後にカメラを調整
+                const combinedBox = new THREE.Box3();
+                if (stockModelRef.current) combinedBox.expandByObject(stockModelRef.current);
+                if (targetModelRef.current) combinedBox.expandByObject(targetModelRef.current);
+                if (!combinedBox.isEmpty()) {
+                    fitCameraToObject(stockModelRef.current ?? targetModelRef.current!);
+                }
+            } catch (err) {
+                console.error('STLファイルの解析に失敗しました:', err);
+                alert(`STLファイルの解析に失敗しました: ${err}`);
+            }
+        };
+
+        // 材料STLの読み込み
+        if (stockStlData) {
+            const stockMaterial = new THREE.MeshStandardMaterial({
+                color: 0x1565c0, // Blue
+                transparent: true,
+                opacity: 0.3,
+                wireframe: true,
+            });
+            loadStl(stockStlData, stockMaterial, stockModelRef, stockBasePositionRef, stockBaseTransform);
+        }
+
+        // 加工後形状STLの読み込み
+        if (targetStlData) {
+            const targetMaterial = new THREE.MeshStandardMaterial({
+                color: 0x999999, metalness: 0.1, roughness: 0.5, side: THREE.DoubleSide,
+            });
+            loadStl(targetStlData, targetMaterial, targetModelRef, targetBasePositionRef, targetBaseTransform);
+        }
+
+    }, [stockStlData, targetStlData, stockBaseTransform, targetBaseTransform]);
+
+    // 読み込んだモデルの位置調整(オフセット)を反映する。position = 基準位置(面選択などで決まる) + オフセット
+    useEffect(() => {
+        const stockMesh = stockModelRef.current;
+        if (stockMesh) {
+            const base = stockBasePositionRef.current;
+            stockMesh.position.set(base.x + stockOffset.x, base.y + stockOffset.y, base.z + stockOffset.z);
+            stockMesh.updateMatrixWorld(true);
+        }
+        const targetMesh = targetModelRef.current;
+        if (targetMesh) {
+            const base = targetBasePositionRef.current;
+            targetMesh.position.set(base.x + targetOffset.x, base.y + targetOffset.y, base.z + targetOffset.z);
+            targetMesh.updateMatrixWorld(true);
+        }
+    }, [stockOffset.x, stockOffset.y, stockOffset.z, targetOffset.x, targetOffset.y, targetOffset.z, stockStlData, targetStlData]);
+
+    // 加工シミュレーション用ストックの構築（トグル/リセット/工具・素材条件の変更時に再構築）。
+    // 材料STLが読み込まれていればその実形状(外形・高さ)からストックを構築し、
+    // 読み込まれていなければ従来通り図形/ツールパスの範囲+マージン+厚みから矩形ストックを構築する。
+    // 材料モデルの位置・回転(上の位置調整エフェクト)が確定した後に読み取る必要があるため、
+    // このエフェクトはそれより後に定義している。
     useEffect(() => {
         const scene = sceneRef.current;
         if (!scene) return;
@@ -484,10 +579,13 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
             return;
         }
 
-        const bounds = computeBounds(geometry, toolpaths);
-        if (!bounds) return;
-
-        const map = createHeightmap(bounds, simStockMargin, simStockThickness, 0);
+        const map = stockModelRef.current
+            ? createHeightmapFromMesh(stockModelRef.current)
+            : (() => {
+                const bounds = computeBounds(geometry, toolpaths);
+                return bounds ? createHeightmap(bounds, simStockMargin, simStockThickness, 0) : null;
+            })();
+        if (!map) return;
         heightmapRef.current = map;
         samplesRef.current = sampleToolpath(toolpaths, map.cellSize * 0.5);
 
@@ -531,77 +629,7 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
 
         scene.add(group);
         simGroupRef.current = group;
-    }, [toolpaths, geometry, simEnabled, simToolRadius, simStockMargin, simStockThickness, simResetToken]);
-
-    // STL/OBJ 読み込み処理
-    useEffect(() => {
-        if (!sceneRef.current) return;
-        const scene = sceneRef.current;
-
-        // 前のモデルを削除
-        if (stockModelRef.current) scene.remove(stockModelRef.current);
-        if (targetModelRef.current) scene.remove(targetModelRef.current);
-        stockBasePositionRef.current.set(0, 0, 0);
-        targetBasePositionRef.current.set(0, 0, 0);
-
-        const loadStl = (data: ArrayBuffer, material: THREE.Material, modelRef: React.MutableRefObject<THREE.Object3D | null>) => {
-            try {
-                const loader = new STLLoader();
-                const geometry = loader.parse(data);
-                geometry.computeVertexNormals();
-                const mesh = new THREE.Mesh(geometry, material);
-                scene.add(mesh);
-                modelRef.current = mesh;
-
-                // 両方のモデルが読み込まれた後にカメラを調整
-                const combinedBox = new THREE.Box3();
-                if (stockModelRef.current) combinedBox.expandByObject(stockModelRef.current);
-                if (targetModelRef.current) combinedBox.expandByObject(targetModelRef.current);
-                if (!combinedBox.isEmpty()) {
-                    fitCameraToObject(stockModelRef.current ?? targetModelRef.current!);
-                }
-            } catch (err) {
-                console.error('STLファイルの解析に失敗しました:', err);
-                alert(`STLファイルの解析に失敗しました: ${err}`);
-            }
-        };
-
-        // 材料STLの読み込み
-        if (stockStlData) {
-            const stockMaterial = new THREE.MeshStandardMaterial({
-                color: 0x1565c0, // Blue
-                transparent: true,
-                opacity: 0.3,
-                wireframe: true,
-            });
-            loadStl(stockStlData, stockMaterial, stockModelRef);
-        }
-
-        // 加工後形状STLの読み込み
-        if (targetStlData) {
-            const targetMaterial = new THREE.MeshStandardMaterial({
-                color: 0x999999, metalness: 0.1, roughness: 0.5, side: THREE.DoubleSide,
-            });
-            loadStl(targetStlData, targetMaterial, targetModelRef);
-        }
-
-    }, [stockStlData, targetStlData]);
-
-    // 読み込んだモデルの位置調整(オフセット)を反映する。position = 基準位置(面選択などで決まる) + オフセット
-    useEffect(() => {
-        const stockMesh = stockModelRef.current;
-        if (stockMesh) {
-            const base = stockBasePositionRef.current;
-            stockMesh.position.set(base.x + stockOffset.x, base.y + stockOffset.y, base.z + stockOffset.z);
-            stockMesh.updateMatrixWorld(true);
-        }
-        const targetMesh = targetModelRef.current;
-        if (targetMesh) {
-            const base = targetBasePositionRef.current;
-            targetMesh.position.set(base.x + targetOffset.x, base.y + targetOffset.y, base.z + targetOffset.z);
-            targetMesh.updateMatrixWorld(true);
-        }
-    }, [stockOffset.x, stockOffset.y, stockOffset.z, targetOffset.x, targetOffset.y, targetOffset.z, stockStlData, targetStlData]);
+    }, [toolpaths, geometry, simEnabled, simToolRadius, simStockMargin, simStockThickness, simResetToken, stockStlData, stockOffset.x, stockOffset.y, stockOffset.z, stockBaseTransform]);
 
     // 材料/加工後形状の表示・非表示切り替え
     useEffect(() => {

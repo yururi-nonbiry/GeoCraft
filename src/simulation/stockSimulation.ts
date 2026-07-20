@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { Geometry, ToolpathSegment } from '../types';
 
 export interface SimulationConfig {
@@ -47,6 +48,11 @@ export interface SamplePoint {
 const MIN_GRID_CELLS = 40;
 const MAX_GRID_CELLS = 300;
 const MIN_CELL_SIZE = 0.2;
+// STLメッシュへの下方向レイキャストで高さマップを構築する際のグリッド上限。
+// 通常のヒートマップ(MAX_GRID_CELLS=300)より粗くしているのは、
+// アクセラレーション構造を持たない Three.js の Raycaster で セル数×三角形数 の総当たりになり、
+// 300×300 だと大きなSTLで著しく遅くなるため。
+const MAX_GRID_CELLS_STL = 120;
 
 export function computeBounds(geometry: Geometry | null, toolpaths: ToolpathSegment[] | null): Bounds2D | null {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -106,6 +112,45 @@ export function createHeightmap(bounds: Bounds2D, margin: number, thickness: num
     bottomZ: topZ - Math.abs(thickness),
     heights: new Float32Array(cols * rows).fill(topZ),
   };
+}
+
+// 材料STLメッシュの実形状(外形・上面の高さ)から高さマップを構築する。
+// メッシュの底面(Z最小)を bottomZ とし、各セル中心から下向きにレイキャストして
+// ヒットした最も高いZを初期の材料表面とする。メッシュの外形(フットプリント)外のセルは
+// 材料が無いものとして bottomZ(=何も残っていない状態)にする。
+export function createHeightmapFromMesh(mesh: THREE.Object3D): Heightmap | null {
+  const box = new THREE.Box3().setFromObject(mesh);
+  if (box.isEmpty()) return null;
+
+  const width = Math.max(box.max.x - box.min.x, 1e-6);
+  const depth = Math.max(box.max.y - box.min.y, 1e-6);
+  const longestSide = Math.max(width, depth, 1e-6);
+
+  const cellSize = Math.max(longestSide / MAX_GRID_CELLS_STL, MIN_CELL_SIZE);
+  const cols = Math.min(MAX_GRID_CELLS_STL, Math.max(MIN_GRID_CELLS, Math.round(width / cellSize)));
+  const rows = Math.min(MAX_GRID_CELLS_STL, Math.max(MIN_GRID_CELLS, Math.round(depth / cellSize)));
+
+  const originX = box.min.x;
+  const originY = box.min.y;
+  const bottomZ = box.min.z;
+  const rayOriginZ = box.max.z + Math.max(1, (box.max.z - box.min.z) * 0.1);
+  const raycaster = new THREE.Raycaster(undefined, undefined, 0, (rayOriginZ - box.min.z) + 1);
+  const origin = new THREE.Vector3();
+  const down = new THREE.Vector3(0, 0, -1);
+
+  const heights = new Float32Array(cols * rows);
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const x = originX + (col + 0.5) * cellSize;
+      const y = originY + (row + 0.5) * cellSize;
+      origin.set(x, y, rayOriginZ);
+      raycaster.set(origin, down);
+      const hits = raycaster.intersectObject(mesh, true);
+      heights[row * cols + col] = hits.length > 0 ? hits[0].point.z : bottomZ;
+    }
+  }
+
+  return { cols, rows, cellSize, originX, originY, topZ: box.max.z, bottomZ, heights };
 }
 
 export function cellCenter(map: Heightmap, col: number, row: number): [number, number] {
