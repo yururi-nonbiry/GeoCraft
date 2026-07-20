@@ -99,6 +99,12 @@ interface ControlPanelProps {
     setProcessType: (val: 'roughing' | 'finishing') => void;
     stockToLeave: number;
     setStockToLeave: (val: number) => void;
+    showStock: boolean;
+    setShowStock: (val: boolean) => void;
+    showTarget: boolean;
+    setShowTarget: (val: boolean) => void;
+    showToolpaths: boolean;
+    setShowToolpaths: (val: boolean) => void;
     simEnabled: boolean;
     setSimEnabled: (val: boolean) => void;
     simPlaying: boolean;
@@ -242,6 +248,20 @@ const ControlPanel = (props: ControlPanelProps) => {
                                 プレビューモード中は材料・加工後形状の位置を変更できません。パラメータ変更とパスの再生成は可能です。プレビューを解除すると生成済みのパスは削除されます。
                             </Typography>
                         )}
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', mb: 1 }}>
+                            <FormControlLabel
+                                control={<Checkbox checked={props.showStock} onChange={(e) => props.setShowStock(e.target.checked)} />}
+                                label="材料を表示"
+                            />
+                            <FormControlLabel
+                                control={<Checkbox checked={props.showTarget} onChange={(e) => props.setShowTarget(e.target.checked)} />}
+                                label="加工後形状を表示"
+                            />
+                            <FormControlLabel
+                                control={<Checkbox checked={props.showToolpaths} onChange={(e) => props.setShowToolpaths(e.target.checked)} />}
+                                label="パスを表示"
+                            />
+                        </Box>
                         <Box sx={{ mb: 2 }}>
                             <Button variant="outlined" onClick={props.handleSelectStockStl} fullWidth>材料STLを選択</Button>
                             <Box sx={{ mt: 1 }}>

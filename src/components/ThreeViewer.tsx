@@ -44,6 +44,10 @@ interface ThreeViewerProps {
     // true の間は材料/加工後形状のドラッグ移動・底面選択を禁止する(3Dパス生成後のプレビュー用)
     previewMode?: boolean;
     simulation?: SimulationConfig | null;
+    // 材料/加工後形状/ツールパスの表示・非表示切り替え(省略時は表示)
+    showStock?: boolean;
+    showTarget?: boolean;
+    showToolpaths?: boolean;
 }
 
 // 加工可能範囲を示すテーブル面の格子線と外周の矩形を生成する
@@ -90,7 +94,7 @@ const createWorkVolumeBox = (width: number, depth: number, height: number): THRE
     return box;
 };
 
-const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targetStlData, pickFaceMode, onFacePicked, machineWorkArea, stockOffset, targetOffset, onStockOffsetChange, onTargetOffsetChange, previewMode, simulation }: ThreeViewerProps) => {
+const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targetStlData, pickFaceMode, onFacePicked, machineWorkArea, stockOffset, targetOffset, onStockOffsetChange, onTargetOffsetChange, previewMode, simulation, showStock = true, showTarget = true, showToolpaths = true }: ThreeViewerProps) => {
     const mountRef = useRef<HTMLDivElement>(null);
     const sceneRef = useRef<THREE.Scene | null>(null);
     const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
@@ -540,7 +544,7 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
         stockBasePositionRef.current.set(0, 0, 0);
         targetBasePositionRef.current.set(0, 0, 0);
 
-        const loadStl = (data: ArrayBuffer, material: THREE.Material, modelRef: React.MutableRefObject<THREE.Object3D | null>) => {
+        const loadStl = (data: ArrayBuffer, material: THREE.Material, modelRef: React.MutableRefObject<THREE.Object3D | null>, baseRef: React.MutableRefObject<THREE.Vector3>) => {
             try {
                 const loader = new STLLoader();
                 const geometry = loader.parse(data);
@@ -548,6 +552,13 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
                 const mesh = new THREE.Mesh(geometry, material);
                 scene.add(mesh);
                 modelRef.current = mesh;
+
+                // STL自体のモデリング原点は底面(Z最小)と一致しているとは限らないため、
+                // 底面を作業エリアの床(Z=0)に合わせる(床に埋まる/浮くのを防ぐ)
+                const box = new THREE.Box3().setFromObject(mesh);
+                mesh.position.z -= box.min.z;
+                mesh.updateMatrixWorld(true);
+                baseRef.current.copy(mesh.position);
 
                 // 両方のモデルが読み込まれた後にカメラを調整
                 const combinedBox = new THREE.Box3();
@@ -570,7 +581,7 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
                 opacity: 0.3,
                 wireframe: true,
             });
-            loadStl(stockStlData, stockMaterial, stockModelRef);
+            loadStl(stockStlData, stockMaterial, stockModelRef, stockBasePositionRef);
         }
 
         // 加工後形状STLの読み込み
@@ -578,7 +589,7 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
             const targetMaterial = new THREE.MeshStandardMaterial({
                 color: 0x999999, metalness: 0.1, roughness: 0.5, side: THREE.DoubleSide,
             });
-            loadStl(targetStlData, targetMaterial, targetModelRef);
+            loadStl(targetStlData, targetMaterial, targetModelRef, targetBasePositionRef);
         }
 
     }, [stockStlData, targetStlData]);
@@ -598,6 +609,14 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
             targetMesh.updateMatrixWorld(true);
         }
     }, [stockOffset.x, stockOffset.y, stockOffset.z, targetOffset.x, targetOffset.y, targetOffset.z, stockStlData, targetStlData]);
+
+    // 材料/加工後形状の表示・非表示切り替え
+    useEffect(() => {
+        if (stockModelRef.current) stockModelRef.current.visible = showStock;
+    }, [showStock, stockStlData]);
+    useEffect(() => {
+        if (targetModelRef.current) targetModelRef.current.visible = showTarget;
+    }, [showTarget, targetStlData]);
 
     // 加工可能範囲(選択中の加工機の可動範囲)のグリッド・ワイヤーフレーム表示
     useEffect(() => {
@@ -711,10 +730,15 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
                     group.add(arcLine);
                 }
             }
+            group.visible = showToolpaths;
             sceneRef.current.add(group);
             toolpathGroupRef.current = group;
         }
     }, [toolpaths, displayToolpaths]);
+
+    useEffect(() => {
+        if (toolpathGroupRef.current) toolpathGroupRef.current.visible = showToolpaths;
+    }, [showToolpaths]);
 
     return <div ref={mountRef} style={{ width: '100%', height: '100%', position: 'relative' }} />;
 };

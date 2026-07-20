@@ -215,6 +215,11 @@ const App = () => {
   const [processType, setProcessType] = useState<'roughing' | 'finishing'>('roughing');
   const [stockToLeave, setStockToLeave] = useState<number>(0.0);
 
+  // --- 3Dビューの表示・非表示 state ---
+  const [showStock, setShowStock] = useState(true);
+  const [showTarget, setShowTarget] = useState(true);
+  const [showToolpaths, setShowToolpaths] = useState(true);
+
   // --- 加工シミュレーション state ---
   const [simEnabled, setSimEnabled] = useState(false);
   const [simPlaying, setSimPlaying] = useState(false);
@@ -1047,6 +1052,9 @@ const App = () => {
               onStockOffsetChange={setStockOffset}
               onTargetOffsetChange={setTargetOffset}
               previewMode={previewMode}
+              showStock={showStock}
+              showTarget={showTarget}
+              showToolpaths={showToolpaths}
               simulation={{
                 enabled: simEnabled,
                 toolRadius: toolDiameter / 2,
@@ -1225,6 +1233,12 @@ const App = () => {
             setProcessType={setProcessType}
             stockToLeave={stockToLeave}
             setStockToLeave={setStockToLeave}
+            showStock={showStock}
+            setShowStock={setShowStock}
+            showTarget={showTarget}
+            setShowTarget={setShowTarget}
+            showToolpaths={showToolpaths}
+            setShowToolpaths={setShowToolpaths}
             simEnabled={simEnabled}
             setSimEnabled={setSimEnabled}
             simPlaying={simPlaying}

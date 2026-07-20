@@ -24,7 +24,8 @@
       "Bash(curl -s http://localhost:5173/)",
       "Bash(curl -s http://localhost:5173/bundle.js)",
       "Bash(cmd.exe /c start \"\" \"GeoCraft.Desktop.exe\")",
-      "Bash(./GeoCraft.Desktop.exe)"
+      "Bash(./GeoCraft.Desktop.exe)",
+      "Bash(echo \"EXIT:$?\")"
     ]
   }
 }
