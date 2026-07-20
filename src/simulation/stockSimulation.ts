@@ -10,6 +10,8 @@ export interface SimulationConfig {
   playing: boolean;
   speed: number;
   resetToken: number;
+  // 値が変化するたびに、残りのツールパスを即座に最後まで適用して完了状態にする。
+  skipToken: number;
   onProgress?: (ratio: number) => void;
   onFinished?: () => void;
 }

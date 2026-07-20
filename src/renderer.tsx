@@ -233,6 +233,7 @@ const App = () => {
   const [stockMargin, setStockMargin] = useState(5);
   const [stockThickness, setStockThickness] = useState(10);
   const [simResetToken, setSimResetToken] = useState(0);
+  const [simSkipToken, setSimSkipToken] = useState(0);
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isMachineDialogOpen, setIsMachineDialogOpen] = useState(false);
@@ -342,6 +343,10 @@ const App = () => {
     setSimPlaying(false);
     setSimProgress(0);
     setSimResetToken((c) => c + 1);
+  };
+
+  const handleSkipSimulation = () => {
+    setSimSkipToken((c) => c + 1);
   };
 
   const handleTogglePreviewMode = () => {
@@ -1093,6 +1098,7 @@ const App = () => {
                 playing: simPlaying,
                 speed: simSpeed,
                 resetToken: simResetToken,
+                skipToken: simSkipToken,
                 onProgress: setSimProgress,
                 onFinished: () => setSimPlaying(false),
               }}
@@ -1280,6 +1286,7 @@ const App = () => {
             stockThickness={stockThickness}
             setStockThickness={setStockThickness}
             handleResetSimulation={resetSimulation}
+            handleSkipSimulation={handleSkipSimulation}
           />
         </Grid>
       </Box>

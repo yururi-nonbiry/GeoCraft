@@ -17,7 +17,7 @@ import {
     Checkbox,
     FormControlLabel,
 } from '@mui/material';
-import { Refresh, Link, LinkOff, PlayArrow, Pause, Stop, Settings } from '@mui/icons-material';
+import { Refresh, Link, LinkOff, PlayArrow, Pause, Stop, SkipNext, Settings } from '@mui/icons-material';
 import { MachineSetting, ToolSetting } from '../types';
 
 interface ControlPanelProps {
@@ -117,6 +117,7 @@ interface ControlPanelProps {
     stockThickness: number;
     setStockThickness: (val: number) => void;
     handleResetSimulation: () => void;
+    handleSkipSimulation: () => void;
 }
 
 const SIDE_PANEL_WIDTH = 360;
@@ -591,13 +592,14 @@ const ControlPanel = (props: ControlPanelProps) => {
                                 {props.simPlaying ? '一時停止' : '再生'}
                             </Button>
                             <Button variant="outlined" startIcon={<Stop />} disabled={!props.simEnabled} onClick={props.handleResetSimulation}>リセット</Button>
+                            <Button variant="outlined" startIcon={<SkipNext />} disabled={!props.simEnabled || props.simProgress >= 1} onClick={props.handleSkipSimulation}>最後まで飛ばす</Button>
                         </Box>
                         <Box sx={{ width: '100%' }}>
                             <LinearProgress variant="determinate" value={props.simProgress * 100} />
                             <Typography variant="body2" align="right">{Math.round(props.simProgress * 100)}%</Typography>
                         </Box>
                         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-                            現在生成されているツールパスを、選択中の工具径・切込み深さで単一パス加工した場合の材料除去をシミュレートします（工具形状は区別せず円柱状の除去として近似、複数段の深さ加工には対応していません）。
+                            現在生成されているツールパスを、選択中の工具径・各点の切込み深さ(3D荒加工パスは層ごとの実際の深さ、2D輪郭/ポケットパスは選択中の切込み深さ設定)で材料除去をシミュレートします（工具はボールエンド/Vビット等の形状を区別せず円柱状の除去として近似しています）。
                         </Typography>
                     </Paper>
                 </TabPanel>

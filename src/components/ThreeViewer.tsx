@@ -148,6 +148,7 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
     const simStockMargin = simulation?.stockMargin ?? 5;
     const simStockThickness = simulation?.stockThickness ?? 10;
     const simResetToken = simulation?.resetToken ?? 0;
+    const simSkipToken = simulation?.skipToken ?? 0;
 
     const simPlayingRef = useRef(simulation?.playing ?? false);
     const simSpeedRef = useRef(simulation?.speed ?? 1);
@@ -162,6 +163,41 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
         onSimProgressRef.current = simulation?.onProgress;
         onSimFinishedRef.current = simulation?.onFinished;
     }, [simulation?.playing, simulation?.speed, simCutZ, simulation?.onProgress, simulation?.onFinished]);
+
+    // シミュレーションを最後まで即座に進める(残りのツールパスを一括で適用する)。
+    useEffect(() => {
+        if (simSkipToken <= 0) return;
+        const map = heightmapRef.current;
+        const topMesh = simTopMeshRef.current;
+        const samples = samplesRef.current;
+        if (!map || !topMesh || samples.length === 0 || finishedRef.current) return;
+
+        for (let i = sampleCursorRef.current; i < samples.length; i++) {
+            const p = samples[i];
+            const cutZ = p.z ?? simCutZRef.current;
+            stampCircle(map, p.x, p.y, simToolRadius, cutZ);
+        }
+        sampleCursorRef.current = samples.length;
+        traveledRef.current = samples[samples.length - 1].distance;
+
+        const posAttr = topMesh.geometry.getAttribute('position') as THREE.BufferAttribute;
+        for (let i = 0; i < map.heights.length; i++) posAttr.setZ(i, map.heights[i]);
+        posAttr.needsUpdate = true;
+        topMesh.geometry.computeVertexNormals();
+
+        const skirtMesh = simSkirtMeshRef.current;
+        const skirtVertexMap = simSkirtVertexMapRef.current;
+        if (skirtMesh && skirtVertexMap) {
+            const skirtPosAttr = skirtMesh.geometry.getAttribute('position') as THREE.BufferAttribute;
+            updateSkirtPositions(map, skirtPosAttr, skirtVertexMap, { minCol: 0, maxCol: map.cols - 1, minRow: 0, maxRow: map.rows - 1 });
+            skirtPosAttr.needsUpdate = true;
+            skirtMesh.geometry.computeVertexNormals();
+        }
+
+        finishedRef.current = true;
+        onSimProgressRef.current?.(1);
+        onSimFinishedRef.current?.();
+    }, [simSkipToken]);
 
     useEffect(() => {
         pickFaceModeRef.current = pickFaceMode;
@@ -616,7 +652,12 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
         topGeometry.setAttribute('position', new THREE.BufferAttribute(buildGridPositions(map), 3));
         topGeometry.setIndex(new THREE.BufferAttribute(buildGridIndices(map), 1));
         topGeometry.computeVertexNormals();
-        const topMaterial = new THREE.MeshStandardMaterial({ color: 0xd9a066, metalness: 0.05, roughness: 0.8, side: THREE.DoubleSide });
+        // 高さマップ(グリッド状の1点1高さの近似)では、垂直な壁は必ずセル1個分の水平距離に
+        // 高さ変化を押し込んだ急斜面として表現される。スムーズシェーディング(頂点法線の平均化)
+        // だと、この急斜面と平らな上面の法線がなめらかに補間され、実際より緩やかな
+        // テーパー(斜め)に見えてしまう。flatShadingで面ごとの法線を使うことで、
+        // 壁面をより垂直に近い見た目にする。
+        const topMaterial = new THREE.MeshStandardMaterial({ color: 0xd9a066, metalness: 0.05, roughness: 0.8, side: THREE.DoubleSide, flatShading: true });
         const topMesh = new THREE.Mesh(topGeometry, topMaterial);
         group.add(topMesh);
         simTopMeshRef.current = topMesh;
