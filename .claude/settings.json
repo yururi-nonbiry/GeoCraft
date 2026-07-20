@@ -14,7 +14,17 @@
       "Bash(dotnet new *)",
       "Bash(dotnet add *)",
       "Bash(tasklist //FI \"IMAGENAME eq GeoCraft.Desktop.exe\")",
-      "Bash(xargs grep -liE \"pocket|ポケット\")"
+      "Bash(xargs grep -liE \"pocket|ポケット\")",
+      "Bash(mkdir -p \"C:\\\\Users\\\\sw20m\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--git-GeoCraft\\\\76050443-0c08-474c-b8f0-6074dba37338\\\\scratchpad\\\\nts_test\")",
+      "Bash(wmic process *)",
+      "Bash(taskkill //IM GeoCraft.Desktop.exe //F)",
+      "Bash(netstat -ano)",
+      "Bash(tasklist //FI \"IMAGENAME eq node.exe\")",
+      "Bash(curl -s http://localhost:5173/main.js)",
+      "Bash(curl -s http://localhost:5173/)",
+      "Bash(curl -s http://localhost:5173/bundle.js)",
+      "Bash(cmd.exe /c start \"\" \"GeoCraft.Desktop.exe\")",
+      "Bash(./GeoCraft.Desktop.exe)"
     ]
   }
 }

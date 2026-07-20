@@ -130,8 +130,10 @@ namespace GeoCraft.Desktop.Services
 
             if (polygons.Count == 0) return null;
 
+            // 各ループは外形か穴かをここでは判別できないため、対称差(XOR/偶奇規則)で合成する。
+            // ネストしたループは外形→穴→島…の順に交互に加算/減算され、正しい「穴あき断面」になる。
             Geometry union = polygons[0];
-            for (int i = 1; i < polygons.Count; i++) union = union.Union(polygons[i]);
+            for (int i = 1; i < polygons.Count; i++) union = union.SymmetricDifference(polygons[i]);
             return union;
         }
 
