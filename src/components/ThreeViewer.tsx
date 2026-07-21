@@ -7,15 +7,21 @@ import {
     SimulationConfig,
     Heightmap,
     SamplePoint,
+    WallSegment,
     computeBounds,
     createHeightmap,
     createHeightmapFromMesh,
     stampCircle,
     sampleToolpath,
     buildTopTilePositions,
+    updateTopTilePositions,
     buildSkirtPositions,
     updateSkirtPositions,
     buildInteriorWallPositions,
+    updateInteriorWallPositions,
+    buildChamferPositions,
+    buildChamferIndices,
+    updateChamferPositions,
     updateVertexHeights,
 } from '../simulation/stockSimulation';
 
@@ -136,7 +142,8 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
     const simSkirtMeshRef = useRef<THREE.Mesh | null>(null);
     const simSkirtVertexMapRef = useRef<Map<number, number[]> | null>(null);
     const simWallMeshRef = useRef<THREE.Mesh | null>(null);
-    const simWallVertexMapRef = useRef<Map<number, number[]> | null>(null);
+    const simWallSegmentsRef = useRef<WallSegment[] | null>(null);
+    const simChamferMeshRef = useRef<THREE.Mesh | null>(null);
     const heightmapRef = useRef<Heightmap | null>(null);
     const samplesRef = useRef<SamplePoint[]>([]);
     const sampleCursorRef = useRef(0);
@@ -184,10 +191,12 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
         sampleCursorRef.current = samples.length;
         traveledRef.current = samples[samples.length - 1].distance;
 
+        const fullRegion = { minCol: 0, maxCol: map.cols - 1, minRow: 0, maxRow: map.rows - 1 };
+
         const posAttr = topMesh.geometry.getAttribute('position') as THREE.BufferAttribute;
         const topVertexMap = simTopVertexMapRef.current;
         if (topVertexMap) {
-            updateVertexHeights(map, posAttr, topVertexMap, { minCol: 0, maxCol: map.cols - 1, minRow: 0, maxRow: map.rows - 1 });
+            updateTopTilePositions(map, posAttr, topVertexMap, fullRegion);
             posAttr.needsUpdate = true;
         }
         topMesh.geometry.computeVertexNormals();
@@ -196,18 +205,26 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
         const skirtVertexMap = simSkirtVertexMapRef.current;
         if (skirtMesh && skirtVertexMap) {
             const skirtPosAttr = skirtMesh.geometry.getAttribute('position') as THREE.BufferAttribute;
-            updateSkirtPositions(map, skirtPosAttr, skirtVertexMap, { minCol: 0, maxCol: map.cols - 1, minRow: 0, maxRow: map.rows - 1 });
+            updateSkirtPositions(map, skirtPosAttr, skirtVertexMap, fullRegion);
             skirtPosAttr.needsUpdate = true;
             skirtMesh.geometry.computeVertexNormals();
         }
 
         const wallMesh = simWallMeshRef.current;
-        const wallVertexMap = simWallVertexMapRef.current;
-        if (wallMesh && wallVertexMap) {
+        const wallSegments = simWallSegmentsRef.current;
+        if (wallMesh && wallSegments) {
             const wallPosAttr = wallMesh.geometry.getAttribute('position') as THREE.BufferAttribute;
-            updateVertexHeights(map, wallPosAttr, wallVertexMap, { minCol: 0, maxCol: map.cols - 1, minRow: 0, maxRow: map.rows - 1 });
+            updateInteriorWallPositions(map, wallPosAttr, wallSegments, fullRegion);
             wallPosAttr.needsUpdate = true;
             wallMesh.geometry.computeVertexNormals();
+        }
+
+        const chamferMesh = simChamferMeshRef.current;
+        if (chamferMesh) {
+            const chamferPosAttr = chamferMesh.geometry.getAttribute('position') as THREE.BufferAttribute;
+            updateChamferPositions(map, chamferPosAttr, fullRegion);
+            chamferPosAttr.needsUpdate = true;
+            chamferMesh.geometry.computeVertexNormals();
         }
 
         finishedRef.current = true;
@@ -336,10 +353,12 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
             traveledRef.current = targetDistance;
 
             if (touched) {
+                const dirtyRegion = { minCol, maxCol, minRow, maxRow };
+
                 const posAttr = topMesh.geometry.getAttribute('position') as THREE.BufferAttribute;
                 const topVertexMap = simTopVertexMapRef.current;
                 if (topVertexMap) {
-                    updateVertexHeights(map, posAttr, topVertexMap, { minCol, maxCol, minRow, maxRow });
+                    updateTopTilePositions(map, posAttr, topVertexMap, dirtyRegion);
                     posAttr.needsUpdate = true;
                 }
                 frameCounterRef.current++;
@@ -351,7 +370,7 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
                 const skirtVertexMap = simSkirtVertexMapRef.current;
                 if (skirtMesh && skirtVertexMap) {
                     const skirtPosAttr = skirtMesh.geometry.getAttribute('position') as THREE.BufferAttribute;
-                    const touchedBoundary = updateSkirtPositions(map, skirtPosAttr, skirtVertexMap, { minCol, maxCol, minRow, maxRow });
+                    const touchedBoundary = updateSkirtPositions(map, skirtPosAttr, skirtVertexMap, dirtyRegion);
                     if (touchedBoundary) {
                         skirtPosAttr.needsUpdate = true;
                         if (frameCounterRef.current % SIM_NORMAL_RECOMPUTE_INTERVAL === 0) {
@@ -361,13 +380,23 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
                 }
 
                 const wallMesh = simWallMeshRef.current;
-                const wallVertexMap = simWallVertexMapRef.current;
-                if (wallMesh && wallVertexMap) {
+                const wallSegments = simWallSegmentsRef.current;
+                if (wallMesh && wallSegments) {
                     const wallPosAttr = wallMesh.geometry.getAttribute('position') as THREE.BufferAttribute;
-                    updateVertexHeights(map, wallPosAttr, wallVertexMap, { minCol, maxCol, minRow, maxRow });
+                    updateInteriorWallPositions(map, wallPosAttr, wallSegments, dirtyRegion);
                     wallPosAttr.needsUpdate = true;
                     if (frameCounterRef.current % SIM_NORMAL_RECOMPUTE_INTERVAL === 0) {
                         wallMesh.geometry.computeVertexNormals();
+                    }
+                }
+
+                const chamferMesh = simChamferMeshRef.current;
+                if (chamferMesh) {
+                    const chamferPosAttr = chamferMesh.geometry.getAttribute('position') as THREE.BufferAttribute;
+                    updateChamferPositions(map, chamferPosAttr, dirtyRegion);
+                    chamferPosAttr.needsUpdate = true;
+                    if (frameCounterRef.current % SIM_NORMAL_RECOMPUTE_INTERVAL === 0) {
+                        chamferMesh.geometry.computeVertexNormals();
                     }
                 }
             }
@@ -378,6 +407,7 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
                 topMesh.geometry.computeVertexNormals();
                 simSkirtMeshRef.current?.geometry.computeVertexNormals();
                 simWallMeshRef.current?.geometry.computeVertexNormals();
+                simChamferMeshRef.current?.geometry.computeVertexNormals();
                 onSimProgressRef.current?.(1);
                 onSimFinishedRef.current?.();
             } else if (now - lastProgressReportRef.current > SIM_PROGRESS_REPORT_INTERVAL_MS) {
@@ -650,7 +680,8 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
         simSkirtMeshRef.current = null;
         simSkirtVertexMapRef.current = null;
         simWallMeshRef.current = null;
-        simWallVertexMapRef.current = null;
+        simWallSegmentsRef.current = null;
+        simChamferMeshRef.current = null;
         heightmapRef.current = null;
         samplesRef.current = [];
         sampleCursorRef.current = 0;
@@ -709,13 +740,26 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
         // ヒートマップ表現上の制約を緩和する(詳細は buildInteriorWallPositions のコメント参照)。
         const wallData = buildInteriorWallPositions(map);
         const wallGeometry = new THREE.BufferGeometry();
-        wallGeometry.setAttribute('position', new THREE.Float32BufferAttribute(wallData.positions, 3));
+        wallGeometry.setAttribute('position', new THREE.BufferAttribute(wallData.positions, 3));
         wallGeometry.computeVertexNormals();
         const wallMaterial = new THREE.MeshStandardMaterial({ color: 0xd9a066, metalness: 0.05, roughness: 0.8, side: THREE.DoubleSide, flatShading: true });
         const wallMesh = new THREE.Mesh(wallGeometry, wallMaterial);
         group.add(wallMesh);
         simWallMeshRef.current = wallMesh;
-        simWallVertexMapRef.current = wallData.vertexIndicesByCell;
+        simWallSegmentsRef.current = wallData.walls;
+
+        // 斜め方向の切削境界がグリッド升目に沿った階段状に見えてしまう問題を緩和するため、
+        // 面取りされた隅の隙間を埋めるキャップ三角形・斜め壁(buildChamferPositions参照)を
+        // 別メッシュとして重ねて描画する。
+        const chamferPositions = buildChamferPositions(map);
+        const chamferGeometry = new THREE.BufferGeometry();
+        chamferGeometry.setAttribute('position', new THREE.BufferAttribute(chamferPositions, 3));
+        chamferGeometry.setIndex(new THREE.BufferAttribute(buildChamferIndices(map), 1));
+        chamferGeometry.computeVertexNormals();
+        const chamferMaterial = new THREE.MeshStandardMaterial({ color: 0xd9a066, metalness: 0.05, roughness: 0.8, side: THREE.DoubleSide, flatShading: true });
+        const chamferMesh = new THREE.Mesh(chamferGeometry, chamferMaterial);
+        group.add(chamferMesh);
+        simChamferMeshRef.current = chamferMesh;
 
         scene.add(group);
         simGroupRef.current = group;

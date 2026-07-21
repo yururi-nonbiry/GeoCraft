@@ -263,12 +263,105 @@ export interface TopTileGeometryData extends SkirtGeometryData {
   indices: Uint32Array;
 }
 
+// 内部グリッド頂点(セル4つが接する角)における、周囲4象限のセルの呼び方。
+// UR=(vcol,vrow)自身のセル、UL=左隣、DR=下隣、DL=左下斜め隣。
+export type CornerQuadrant = 'UL' | 'UR' | 'DL' | 'DR';
+
+// 高さが「同じ」とみなす許容誤差。ランプ加工などでZが連続的に変化する経路でも、
+// 実用上意味のある段差だけを面取り対象として検出するための閾値。
+const CORNER_HEIGHT_EPS = 1e-4;
+
+function quadrantCellIdx(map: Heightmap, vcol: number, vrow: number, quadrant: CornerQuadrant): number {
+  const { cols } = map;
+  switch (quadrant) {
+    case 'UR': return vrow * cols + vcol;
+    case 'UL': return vrow * cols + (vcol - 1);
+    case 'DR': return (vrow - 1) * cols + vcol;
+    case 'DL': return (vrow - 1) * cols + (vcol - 1);
+  }
+}
+
+// 内部グリッド頂点(col=1..cols-1, row=1..rows-1)を、周囲4セルの高さから分類する。
+// 3セルが同じ高さ・1セルだけ異なる(3対1)の場合のみ、その少数派セルの象限を返し
+// 面取り対象とする。全て同じ/2対2(直線境界・鞍点)/3種類以上は null とし、
+// 現状通りシャープな角のままにする(2対2は既存の垂直壁で正しく表現できており、
+// 鞍点は面取り方向が幾何学的に曖昧なため安全側でスキップする)。
+export function classifyCorner(map: Heightmap, vcol: number, vrow: number): CornerQuadrant | null {
+  if (vcol <= 0 || vcol >= map.cols || vrow <= 0 || vrow >= map.rows) return null;
+
+  const quadrants: CornerQuadrant[] = ['UR', 'UL', 'DR', 'DL'];
+  const groups: { height: number; members: CornerQuadrant[] }[] = [];
+  for (const q of quadrants) {
+    const h = map.heights[quadrantCellIdx(map, vcol, vrow, q)];
+    const g = groups.find((g) => Math.abs(g.height - h) <= CORNER_HEIGHT_EPS);
+    if (g) g.members.push(q);
+    else groups.push({ height: h, members: [q] });
+  }
+
+  if (groups.length !== 2) return null;
+  const minority = groups.find((g) => g.members.length === 1);
+  return minority ? minority.members[0] : null;
+}
+
+// 頂点(vcol,vrow)における面取りが、セル idxA/idxB のどちらかを少数派としているかどうか。
+// buildInteriorWallPositions で、セル境界壁の両端を面取り分だけtrimすべきか判定するのに使う。
+function isMinorityAtVertex(map: Heightmap, vcol: number, vrow: number, idxA: number, idxB: number): boolean {
+  const q = classifyCorner(map, vcol, vrow);
+  if (!q) return false;
+  const minorityIdx = quadrantCellIdx(map, vcol, vrow, q);
+  return minorityIdx === idxA || minorityIdx === idxB;
+}
+
+interface CellChamferInfo {
+  blIn: [number, number]; blOut: [number, number];
+  brIn: [number, number]; brOut: [number, number];
+  trIn: [number, number]; trOut: [number, number];
+  tlIn: [number, number]; tlOut: [number, number];
+}
+
+// セル(col,row)の4隅について、面取りされている場合はその隅を隣接2辺の中点まで
+// 引っ込めた位置を、されていない場合は元の隅の位置をそのまま返す。
+// セル自身の4隅は、それぞれ独自のグリッド頂点における次の象限に対応する:
+// 左下角→頂点(col,row)のUR、右下角→頂点(col+1,row)のUL、
+// 右上角→頂点(col+1,row+1)のDL、左上角→頂点(col,row+1)のDR。
+function computeCellChamfer(map: Heightmap, col: number, row: number): CellChamferInfo {
+  const { cellSize, originX, originY } = map;
+  const x0 = originX + col * cellSize;
+  const x1 = x0 + cellSize;
+  const y0 = originY + row * cellSize;
+  const y1 = y0 + cellSize;
+  const midX = (x0 + x1) / 2;
+  const midY = (y0 + y1) / 2;
+
+  const chamferBL = classifyCorner(map, col, row) === 'UR';
+  const chamferBR = classifyCorner(map, col + 1, row) === 'UL';
+  const chamferTR = classifyCorner(map, col + 1, row + 1) === 'DL';
+  const chamferTL = classifyCorner(map, col, row + 1) === 'DR';
+
+  return {
+    blIn: chamferBL ? [x0, midY] : [x0, y0],
+    blOut: chamferBL ? [midX, y0] : [x0, y0],
+    brIn: chamferBR ? [midX, y0] : [x1, y0],
+    brOut: chamferBR ? [x1, midY] : [x1, y0],
+    trIn: chamferTR ? [x1, midY] : [x1, y1],
+    trOut: chamferTR ? [midX, y1] : [x1, y1],
+    tlIn: chamferTL ? [midX, y1] : [x0, y1],
+    tlOut: chamferTL ? [x0, midY] : [x0, y1],
+  };
+}
+
 // トップメッシュを、セル中心同士を結ぶ滑らかなグリッド(旧実装)ではなく、
 // セル1個ずつを独立した平らなタイル(セルの外形そのままの正方形)として構築する。
 // 旧実装はセルの高さが異なる箇所を必ず「1セル分の水平距離のなだらかな斜面」として
 // 補間してしまい、垂直な切削壁が斜めのテーパーに見える原因になっていた。
 // タイルを独立させ、セル境界をそのままセルの外形とすることで、面自体には一切傾斜が
 // 生じなくなる(高さの変化はセル間の垂直な壁として buildInteriorWallPositions が別途埋める)。
+//
+// 各セルは中心1頂点+外周8頂点(4隅×2、面取りされていない隅は同一点に重複)の
+// 固定9頂点・8三角形ファンとして構築する。面取りされていない隅は退化三角形
+// (面積0)になるだけで見た目は通常の正方形と変わらない。面取りされている隅は
+// 三角形が消え、代わりに斜めにカットされた輪郭になる(空いた分は
+// buildChamferPositions が生成するキャップ三角形・斜め壁で埋める)。
 export function buildTopTilePositions(map: Heightmap): TopTileGeometryData {
   const { cols, rows, cellSize, originX, originY, heights } = map;
   const positions: number[] = [];
@@ -276,22 +369,65 @@ export function buildTopTilePositions(map: Heightmap): TopTileGeometryData {
   const vertexIndicesByCell = new Map<number, number[]>();
 
   for (let row = 0; row < rows; row++) {
-    const y0 = originY + row * cellSize;
-    const y1 = y0 + cellSize;
     for (let col = 0; col < cols; col++) {
-      const x0 = originX + col * cellSize;
-      const x1 = x0 + cellSize;
       const idx = row * cols + col;
       const z = heights[idx];
+      const cx = originX + (col + 0.5) * cellSize;
+      const cy = originY + (row + 0.5) * cellSize;
+      const c = computeCellChamfer(map, col, row);
+      const perimeter: [number, number][] = [c.blIn, c.blOut, c.brIn, c.brOut, c.trIn, c.trOut, c.tlIn, c.tlOut];
 
       const base = positions.length / 3;
-      positions.push(x0, y0, z, x1, y0, z, x1, y1, z, x0, y1, z);
-      vertexIndicesByCell.set(idx, [base, base + 1, base + 2, base + 3]);
-      indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+      positions.push(cx, cy, z);
+      for (const [px, py] of perimeter) positions.push(px, py, z);
+
+      const vIdxs = [base];
+      for (let i = 0; i < 8; i++) {
+        const a = base + 1 + i;
+        const b = base + 1 + ((i + 1) % 8);
+        indices.push(base, a, b);
+        vIdxs.push(a);
+      }
+      vertexIndicesByCell.set(idx, vIdxs);
     }
   }
 
   return { positions: Float32Array.from(positions), indices: Uint32Array.from(indices), vertexIndicesByCell };
+}
+
+// buildTopTilePositions で生成した固定9頂点ファンのXY・Zを、現在のheightsと面取り
+// 判定に基づいて再計算する。面取りの有無は切削の進行(周囲セルの高さ変化)で
+// 動的に変わり、対象セル自身の高さが変わっていなくても再分類が必要になるため、
+// dirty regionを四方に1セル分広げた範囲のセルを対象にする。
+export function updateTopTilePositions(
+  map: Heightmap,
+  posAttr: { setXYZ(index: number, x: number, y: number, z: number): void },
+  vertexIndicesByCell: Map<number, number[]>,
+  dirty: DirtyRegion,
+): void {
+  const minCol = Math.max(0, dirty.minCol - 1);
+  const maxCol = Math.min(map.cols - 1, dirty.maxCol + 1);
+  const minRow = Math.max(0, dirty.minRow - 1);
+  const maxRow = Math.min(map.rows - 1, dirty.maxRow + 1);
+
+  for (let row = minRow; row <= maxRow; row++) {
+    for (let col = minCol; col <= maxCol; col++) {
+      const idx = row * map.cols + col;
+      const vIdxs = vertexIndicesByCell.get(idx);
+      if (!vIdxs) continue;
+      const z = map.heights[idx];
+      const cx = map.originX + (col + 0.5) * map.cellSize;
+      const cy = map.originY + (row + 0.5) * map.cellSize;
+      const c = computeCellChamfer(map, col, row);
+      const perimeter: [number, number][] = [c.blIn, c.blOut, c.brIn, c.brOut, c.trIn, c.trOut, c.tlIn, c.tlOut];
+
+      posAttr.setXYZ(vIdxs[0], cx, cy, z);
+      for (let i = 0; i < 8; i++) {
+        const [px, py] = perimeter[i];
+        posAttr.setXYZ(vIdxs[i + 1], px, py, z);
+      }
+    }
+  }
 }
 
 // ストック側面(スカート)のジオメトリを、トップメッシュと同じ「セルの外形(タイル境界)・高さ」を
@@ -355,64 +491,127 @@ export function buildSkirtPositions(map: Heightmap): SkirtGeometryData {
   return { positions: Float32Array.from(positions), vertexIndicesByCell };
 }
 
+export interface WallSegment {
+  x0: number; y0: number; x1: number; y1: number;
+  idxA: number; idxB: number;
+  startVCol: number; startVRow: number;
+  endVCol: number; endVRow: number;
+  base: number;
+}
+
+export interface InteriorWallGeometryData {
+  positions: Float32Array;
+  walls: WallSegment[];
+}
+
+// セル境界壁の6頂点(三角形2枚)を計算する。面取りされた頂点に接する側は、
+// その頂点から半セル分(=面取りの引っ込み量と同じ距離)だけtrimし、
+// buildTopTilePositions側で短くなったセル外形の辺と壁の端が一致するようにする。
+function computeWallQuadPoints(
+  map: Heightmap,
+  x0: number, y0: number, x1: number, y1: number,
+  idxA: number, idxB: number,
+  trimStart: boolean, trimEnd: boolean,
+): number[] {
+  const trim = map.cellSize / 2;
+  const dx = x1 - x0;
+  const dy = y1 - y0;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len;
+  const uy = dy / len;
+  const sx = trimStart ? x0 + ux * trim : x0;
+  const sy = trimStart ? y0 + uy * trim : y0;
+  const ex = trimEnd ? x1 - ux * trim : x1;
+  const ey = trimEnd ? y1 - uy * trim : y1;
+  const hA = map.heights[idxA];
+  const hB = map.heights[idxB];
+
+  return [
+    sx, sy, hA, ex, ey, hA, ex, ey, hB,
+    ex, ey, hB, sx, sy, hB, sx, sy, hA,
+  ];
+}
+
 // トップメッシュは独立した平らなタイルの集まりになったため(buildTopTilePositions参照)、
 // 高さの異なる隣接セル同士の間には面が存在せず、隙間が空いてしまう。このセル境界に、
 // 隣接する2セルの高さをそのまま結ぶ垂直な壁を追加し、その隙間を塞ぐ。
 // 高さが同じセル同士では壁の上端と下端が同じ高さになり、面積ゼロの壁として実質的に
 // 描画されない。
-export function buildInteriorWallPositions(map: Heightmap): SkirtGeometryData {
-  const { cols, rows, cellSize, originX, originY, heights } = map;
+// 壁の両端が面取りされた頂点に接する場合は、その端をtrimして短くする
+// (面取りされた分は buildChamferPositions が生成する斜め壁が埋める)。
+export function buildInteriorWallPositions(map: Heightmap): InteriorWallGeometryData {
+  const { cols, rows, cellSize, originX, originY } = map;
   const positions: number[] = [];
-  const vertexIndicesByCell = new Map<number, number[]>();
-
-  const pushVertex = (x: number, y: number, z: number, cellIdx: number) => {
-    const vIdx = positions.length / 3;
-    positions.push(x, y, z);
-    const arr = vertexIndicesByCell.get(cellIdx);
-    if (arr) arr.push(vIdx);
-    else vertexIndicesByCell.set(cellIdx, [vIdx]);
-  };
-
-  // 境界線分(x0,y0)-(x1,y1)の両側にあるセルidxA/idxBの高さを結ぶ壁を1枚(三角形2枚)追加する。
-  const pushWall = (x0: number, y0: number, x1: number, y1: number, idxA: number, idxB: number) => {
-    const hA = heights[idxA];
-    const hB = heights[idxB];
-    pushVertex(x0, y0, hA, idxA);
-    pushVertex(x1, y1, hA, idxA);
-    pushVertex(x1, y1, hB, idxB);
-
-    pushVertex(x1, y1, hB, idxB);
-    pushVertex(x0, y0, hB, idxB);
-    pushVertex(x0, y0, hA, idxA);
-  };
+  const walls: WallSegment[] = [];
 
   // 水平方向に隣接するセルの境界(縦の壁): (col,row)-(col+1,row)
   for (let row = 0; row < rows; row++) {
-    const cy = originY + (row + 0.5) * cellSize;
-    const y0 = cy - cellSize / 2;
-    const y1 = cy + cellSize / 2;
+    const y0 = originY + row * cellSize;
+    const y1 = y0 + cellSize;
     for (let col = 0; col < cols - 1; col++) {
       const x = originX + (col + 1) * cellSize;
       const idxA = row * cols + col;
       const idxB = row * cols + col + 1;
-      pushWall(x, y0, x, y1, idxA, idxB);
+      const startVCol = col + 1, startVRow = row;
+      const endVCol = col + 1, endVRow = row + 1;
+      const trimStart = isMinorityAtVertex(map, startVCol, startVRow, idxA, idxB);
+      const trimEnd = isMinorityAtVertex(map, endVCol, endVRow, idxA, idxB);
+      const base = positions.length / 3;
+      positions.push(...computeWallQuadPoints(map, x, y0, x, y1, idxA, idxB, trimStart, trimEnd));
+      walls.push({ x0: x, y0, x1: x, y1, idxA, idxB, startVCol, startVRow, endVCol, endVRow, base });
     }
   }
 
   // 垂直方向に隣接するセルの境界(横の壁): (col,row)-(col,row+1)
   for (let col = 0; col < cols; col++) {
-    const cx = originX + (col + 0.5) * cellSize;
-    const x0 = cx - cellSize / 2;
-    const x1 = cx + cellSize / 2;
+    const x0 = originX + col * cellSize;
+    const x1 = x0 + cellSize;
     for (let row = 0; row < rows - 1; row++) {
       const y = originY + (row + 1) * cellSize;
       const idxA = row * cols + col;
       const idxB = (row + 1) * cols + col;
-      pushWall(x0, y, x1, y, idxA, idxB);
+      const startVCol = col, startVRow = row + 1;
+      const endVCol = col + 1, endVRow = row + 1;
+      const trimStart = isMinorityAtVertex(map, startVCol, startVRow, idxA, idxB);
+      const trimEnd = isMinorityAtVertex(map, endVCol, endVRow, idxA, idxB);
+      const base = positions.length / 3;
+      positions.push(...computeWallQuadPoints(map, x0, y, x1, y, idxA, idxB, trimStart, trimEnd));
+      walls.push({ x0, y0: y, x1, y1: y, idxA, idxB, startVCol, startVRow, endVCol, endVRow, base });
     }
   }
 
-  return { positions: Float32Array.from(positions), vertexIndicesByCell };
+  return { positions: Float32Array.from(positions), walls };
+}
+
+// buildInteriorWallPositions で生成した壁のうち、dirty region(四方に1セル分広げた範囲)
+// 内のセルに接する壁だけを対象に、trim状態も含めて頂点位置を再計算する。
+export function updateInteriorWallPositions(
+  map: Heightmap,
+  posAttr: { setXYZ(index: number, x: number, y: number, z: number): void },
+  walls: WallSegment[],
+  dirty: DirtyRegion,
+): void {
+  const minCol = Math.max(0, dirty.minCol - 1);
+  const maxCol = Math.min(map.cols - 1, dirty.maxCol + 1);
+  const minRow = Math.max(0, dirty.minRow - 1);
+  const maxRow = Math.min(map.rows - 1, dirty.maxRow + 1);
+  const { cols } = map;
+
+  const inRange = (idx: number) => {
+    const c = idx % cols;
+    const r = Math.floor(idx / cols);
+    return c >= minCol && c <= maxCol && r >= minRow && r <= maxRow;
+  };
+
+  for (const wall of walls) {
+    if (!inRange(wall.idxA) && !inRange(wall.idxB)) continue;
+    const trimStart = isMinorityAtVertex(map, wall.startVCol, wall.startVRow, wall.idxA, wall.idxB);
+    const trimEnd = isMinorityAtVertex(map, wall.endVCol, wall.endVRow, wall.idxA, wall.idxB);
+    const pts = computeWallQuadPoints(map, wall.x0, wall.y0, wall.x1, wall.y1, wall.idxA, wall.idxB, trimStart, trimEnd);
+    for (let i = 0; i < 6; i++) {
+      posAttr.setXYZ(wall.base + i, pts[i * 3], pts[i * 3 + 1], pts[i * 3 + 2]);
+    }
+  }
 }
 
 // 切削によって高さが変化したセル(dirty領域)の頂点位置を、渡された頂点インデックス表を元に
@@ -467,4 +666,108 @@ export function updateSkirtPositions(
   }
 
   return touchedBoundary;
+}
+
+// buildTopTilePositions/buildInteriorWallPositions で面取りされた隅の分だけ、
+// トップサーフェスに隙間が空く。ここに、多数派の高さで埋める小さな三角形
+// (キャップ)と、キャップ〜少数派セルの間を結ぶ斜めの垂直壁を追加して隙間を塞ぐ。
+// 面取りされていない内部頂点では、9頂点すべてを同一点に縮退させ
+// (面積0の三角形3枚)、何も描画しない。
+const CHAMFER_VERTS_PER_SLOT = 9;
+
+function chamferSlotIndex(map: Heightmap, vcol: number, vrow: number): number {
+  return (vrow - 1) * (map.cols - 1) + (vcol - 1);
+}
+
+// 面取り象限qにおける、キャップ/斜め壁で使う2つの引っ込み点(V基準)と、
+// それらの高さの基準となる多数派側の象限を返す。
+function chamferOffsets(
+  q: CornerQuadrant,
+  Vx: number,
+  Vy: number,
+  half: number,
+): { inPt: [number, number]; outPt: [number, number]; majority: CornerQuadrant } {
+  if (q === 'UR') return { inPt: [Vx, Vy + half], outPt: [Vx + half, Vy], majority: 'DL' };
+  if (q === 'UL') return { inPt: [Vx - half, Vy], outPt: [Vx, Vy + half], majority: 'DR' };
+  if (q === 'DR') return { inPt: [Vx + half, Vy], outPt: [Vx, Vy - half], majority: 'UL' };
+  return { inPt: [Vx, Vy - half], outPt: [Vx - half, Vy], majority: 'UR' };
+}
+
+function computeChamferSlotPoints(map: Heightmap, vcol: number, vrow: number): number[] {
+  const Vx = map.originX + vcol * map.cellSize;
+  const Vy = map.originY + vrow * map.cellSize;
+  const q = classifyCorner(map, vcol, vrow);
+
+  if (!q) {
+    // 面取りなし: 9頂点すべてを同一点に縮退させ、面積ゼロにする(どの高さを使っても
+    // 描画結果に影響しないが、便宜上DL象限の高さを使う)。
+    const h = map.heights[quadrantCellIdx(map, vcol, vrow, 'DL')];
+    const p = [Vx, Vy, h];
+    return [...p, ...p, ...p, ...p, ...p, ...p, ...p, ...p, ...p];
+  }
+
+  const half = map.cellSize / 2;
+  const { inPt, outPt, majority } = chamferOffsets(q, Vx, Vy, half);
+  const hA = map.heights[quadrantCellIdx(map, vcol, vrow, majority)];
+  const hB = map.heights[quadrantCellIdx(map, vcol, vrow, q)];
+
+  return [
+    // キャップ三角形(多数派の高さhAで、少数派セルが引っ込めた分の隙間を埋める)
+    Vx, Vy, hA, outPt[0], outPt[1], hA, inPt[0], inPt[1], hA,
+    // キャップ〜少数派セルを結ぶ斜めの垂直壁
+    inPt[0], inPt[1], hA, outPt[0], outPt[1], hA, outPt[0], outPt[1], hB,
+    outPt[0], outPt[1], hB, inPt[0], inPt[1], hB, inPt[0], inPt[1], hA,
+  ];
+}
+
+export function buildChamferPositions(map: Heightmap): Float32Array {
+  const count = Math.max(0, map.cols - 1) * Math.max(0, map.rows - 1);
+  const positions = new Float32Array(count * CHAMFER_VERTS_PER_SLOT * 3);
+  for (let vrow = 1; vrow < map.rows; vrow++) {
+    for (let vcol = 1; vcol < map.cols; vcol++) {
+      const base = chamferSlotIndex(map, vcol, vrow) * CHAMFER_VERTS_PER_SLOT * 3;
+      positions.set(computeChamferSlotPoints(map, vcol, vrow), base);
+    }
+  }
+  return positions;
+}
+
+export function buildChamferIndices(map: Heightmap): Uint32Array {
+  const count = Math.max(0, map.cols - 1) * Math.max(0, map.rows - 1);
+  const indices = new Uint32Array(count * 9);
+  for (let i = 0; i < count; i++) {
+    const base = i * CHAMFER_VERTS_PER_SLOT;
+    let o = i * 9;
+    indices[o++] = base; indices[o++] = base + 1; indices[o++] = base + 2;
+    indices[o++] = base + 3; indices[o++] = base + 4; indices[o++] = base + 5;
+    indices[o++] = base + 6; indices[o++] = base + 7; indices[o++] = base + 8;
+  }
+  return indices;
+}
+
+// dirty regionを四方に1セル分広げた範囲に接する内部グリッド頂点だけを対象に、
+// キャップ・斜め壁の頂点位置を再計算する。
+export function updateChamferPositions(
+  map: Heightmap,
+  posAttr: { setXYZ(index: number, x: number, y: number, z: number): void },
+  dirty: DirtyRegion,
+): void {
+  const minCol = Math.max(0, dirty.minCol - 1);
+  const maxCol = Math.min(map.cols - 1, dirty.maxCol + 1);
+  const minRow = Math.max(0, dirty.minRow - 1);
+  const maxRow = Math.min(map.rows - 1, dirty.maxRow + 1);
+  const minVCol = Math.max(1, minCol);
+  const maxVCol = Math.min(map.cols - 1, maxCol + 1);
+  const minVRow = Math.max(1, minRow);
+  const maxVRow = Math.min(map.rows - 1, maxRow + 1);
+
+  for (let vrow = minVRow; vrow <= maxVRow; vrow++) {
+    for (let vcol = minVCol; vcol <= maxVCol; vcol++) {
+      const base = chamferSlotIndex(map, vcol, vrow) * CHAMFER_VERTS_PER_SLOT;
+      const pts = computeChamferSlotPoints(map, vcol, vrow);
+      for (let i = 0; i < CHAMFER_VERTS_PER_SLOT; i++) {
+        posAttr.setXYZ(base + i, pts[i * 3], pts[i * 3 + 1], pts[i * 3 + 2]);
+      }
+    }
+  }
 }

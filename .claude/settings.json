@@ -38,7 +38,20 @@
       "Bash(node test.js)",
       "Bash(mkdir -p \"C:/Users/sw20m/AppData/Local/Temp/claude/c--git-GeoCraft/f15d37be-a321-4774-9e09-0a7734cc4c25/scratchpad/simcheck\")",
       "Bash(cp -r /tmp/simcheck/* \"C:/Users/sw20m/AppData/Local/Temp/claude/c--git-GeoCraft/f15d37be-a321-4774-9e09-0a7734cc4c25/scratchpad/simcheck/\")",
-      "Bash(NODE_PATH=\"c:/git/GeoCraft/node_modules\" node test.js)"
+      "Bash(NODE_PATH=\"c:/git/GeoCraft/node_modules\" node test.js)",
+      "Bash(xargs grep -l \"BufferGeometry\\\\|heightmap\\\\|HeightMap\" -i)",
+      "Bash(curl -sf http://localhost:5173)",
+      "Bash(curl -s http://localhost:5173)",
+      "Bash(command -v chromium-cli)",
+      "Bash(npm ls *)",
+      "Read(//c//**)",
+      "Bash(node -e \"console.log\\(require.resolve\\('playwright'\\)\\)\")",
+      "Bash(node -e \"console.log\\(require.resolve\\('puppeteer'\\)\\)\")",
+      "Bash(mkdir -p /c/Users/sw20m/AppData/Local/Temp/claude/c--git-GeoCraft/56144d22-29fa-4062-aad7-13ba7c26f444/scratchpad/verify-out)",
+      "Bash(find \"/c/Users/sw20m/AppData/Local/Temp/claude/c--git-GeoCraft/56144d22-29fa-4062-aad7-13ba7c26f444/scratchpad/verify-out\" -name \"*.js\")",
+      "Read(//c/Users/sw20m/AppData/Local/Temp/claude/c--git-GeoCraft/56144d22-29fa-4062-aad7-13ba7c26f444/scratchpad/verify-out/**)",
+      "Bash(node test-chamfer.js)",
+      "Bash(NODE_PATH=\"/c/git/GeoCraft/node_modules\" node test-chamfer.js)"
     ],
     "additionalDirectories": [
       "\\tmp\\simcheck"
