@@ -50,13 +50,17 @@ export interface SamplePoint {
 }
 
 const MIN_GRID_CELLS = 40;
-const MAX_GRID_CELLS = 300;
+// 斜め/曲線の切削境界のガタガタを抑えるため、セルサイズ自体を小さくする方向で
+// 300から引き上げた値。面取り(classifyCorner等)と併用することで、階段の1段が
+// 小さくなった上にさらに角が斜めに均されるため、体感の滑らかさは相乗的に向上する。
+// セル数はこの値のN倍でN²倍になる点に注意(大きいストックほど負荷が増える)。
+const MAX_GRID_CELLS = 600;
 const MIN_CELL_SIZE = 0.2;
 // STLメッシュへの下方向レイキャストで高さマップを構築する際のグリッド上限。
-// 通常のヒートマップ(MAX_GRID_CELLS=300)より粗くしているのは、
+// 通常のヒートマップ(MAX_GRID_CELLS=600)より粗くしているのは、
 // アクセラレーション構造を持たない Three.js の Raycaster で セル数×三角形数 の総当たりになり、
-// 300×300 だと大きなSTLで著しく遅くなるため。
-const MAX_GRID_CELLS_STL = 120;
+// セル数を増やすほど大きなSTLで著しく遅くなるため。
+const MAX_GRID_CELLS_STL = 240;
 
 export function computeBounds(geometry: Geometry | null, toolpaths: ToolpathSegment[] | null): Bounds2D | null {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
