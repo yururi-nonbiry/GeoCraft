@@ -126,6 +126,39 @@ export function createHeightmap(bounds: Bounds2D, margin: number, thickness: num
 // メッシュの底面(Z最小)を bottomZ とし、各セル中心から下向きにレイキャストして
 // ヒットした最も高いZを初期の材料表面とする。メッシュの外形(フットプリント)外のセルは
 // 材料が無いものとして bottomZ(=何も残っていない状態)にする。
+// 指定したグリッド(セルサイズ・原点・列数行数)に沿って、メッシュへ真上から下向きに
+// レイキャストし、各セル中心での最初のヒットZ(=そのセルの最も高い表面)を返す。
+// ヒットしなかったセルは fallback を返す。createHeightmapFromMesh(ストック用)と
+// sampleTargetHeights(加工後形状の保護フロア用)の両方から、同一ロジックを共有するために使う。
+function raycastMeshHeightsOnGrid(
+  mesh: THREE.Object3D,
+  cols: number,
+  rows: number,
+  cellSize: number,
+  originX: number,
+  originY: number,
+  rayOriginZ: number,
+  raycastDistance: number,
+  fallback: number,
+): Float32Array {
+  const raycaster = new THREE.Raycaster(undefined, undefined, 0, raycastDistance);
+  const origin = new THREE.Vector3();
+  const down = new THREE.Vector3(0, 0, -1);
+
+  const heights = new Float32Array(cols * rows);
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const x = originX + (col + 0.5) * cellSize;
+      const y = originY + (row + 0.5) * cellSize;
+      origin.set(x, y, rayOriginZ);
+      raycaster.set(origin, down);
+      const hits = raycaster.intersectObject(mesh, true);
+      heights[row * cols + col] = hits.length > 0 ? hits[0].point.z : fallback;
+    }
+  }
+  return heights;
+}
+
 export function createHeightmapFromMesh(mesh: THREE.Object3D): Heightmap | null {
   const box = new THREE.Box3().setFromObject(mesh);
   if (box.isEmpty()) return null;
@@ -142,31 +175,37 @@ export function createHeightmapFromMesh(mesh: THREE.Object3D): Heightmap | null 
   const originY = box.min.y;
   const bottomZ = box.min.z;
   const rayOriginZ = box.max.z + Math.max(1, (box.max.z - box.min.z) * 0.1);
-  const raycaster = new THREE.Raycaster(undefined, undefined, 0, (rayOriginZ - box.min.z) + 1);
-  const origin = new THREE.Vector3();
-  const down = new THREE.Vector3(0, 0, -1);
-
-  const heights = new Float32Array(cols * rows);
-  for (let row = 0; row < rows; row++) {
-    for (let col = 0; col < cols; col++) {
-      const x = originX + (col + 0.5) * cellSize;
-      const y = originY + (row + 0.5) * cellSize;
-      origin.set(x, y, rayOriginZ);
-      raycaster.set(origin, down);
-      const hits = raycaster.intersectObject(mesh, true);
-      heights[row * cols + col] = hits.length > 0 ? hits[0].point.z : bottomZ;
-    }
-  }
+  const heights = raycastMeshHeightsOnGrid(mesh, cols, rows, cellSize, originX, originY, rayOriginZ, (rayOriginZ - box.min.z) + 1, bottomZ);
 
   return { cols, rows, cellSize, originX, originY, topZ: box.max.z, bottomZ, heights };
+}
+
+// 加工後形状(target)メッシュを、ストック側と同じグリッド(セルサイズ・原点)で真上から
+// レイキャストし、セルごとの「最終的に残すべき最も高い面のZ」を求める。
+// これを切削時の下限(フロア)として使うことで、下の層(より深いZ)の切削が、まだ
+// 到達すべきでない上の層の残り material を巻き込んで削ってしまう不具合を防ぐ
+// (3D荒加工は各スライスのオフセット経路を毎回ストック側の断面から独立に計算しているため、
+// 面取りの丸め誤差やオフセット計算の丸め誤差で経路がわずかに目標形状の境界を越えることがあり、
+// ヒートマップ側で防波堤を用意しないと、その越境がそのまま上の層の削れすぎとして描画されてしまう)。
+// ターゲットのフットプリント外(レイが当たらない)のセルは bottomZ を返し、
+// そこには保護フロアが無い(=最後まで削れる)ことを表す。
+export function sampleTargetHeights(map: Heightmap, mesh: THREE.Object3D): Float32Array {
+  const box = new THREE.Box3().setFromObject(mesh);
+  const topBound = Math.max(map.topZ, box.isEmpty() ? map.topZ : box.max.z);
+  const rayOriginZ = topBound + Math.max(1, (map.topZ - map.bottomZ) * 0.1);
+  const raycastDistance = (rayOriginZ - map.bottomZ) + 1;
+  return raycastMeshHeightsOnGrid(mesh, map.cols, map.rows, map.cellSize, map.originX, map.originY, rayOriginZ, raycastDistance, map.bottomZ);
 }
 
 export function cellCenter(map: Heightmap, col: number, row: number): [number, number] {
   return [map.originX + (col + 0.5) * map.cellSize, map.originY + (row + 0.5) * map.cellSize];
 }
 
-export function stampCircle(map: Heightmap, cx: number, cy: number, radius: number, cutZ: number): DirtyRegion | null {
-  const clampedCutZ = Math.max(map.bottomZ, Math.min(cutZ, map.topZ));
+// targetHeights を渡すと、そのセルでは加工後形状の表面より深くは絶対に削らない
+// (=そのセルに残っているべき上の層の material を、下の層の切削から保護する)。
+// 渡さない場合は従来通り map.bottomZ までどこまでも削れる。
+export function stampCircle(map: Heightmap, cx: number, cy: number, radius: number, cutZ: number, targetHeights?: Float32Array | null): DirtyRegion | null {
+  const cappedCutZ = Math.min(cutZ, map.topZ);
   const minCol = Math.max(0, Math.floor((cx - radius - map.originX) / map.cellSize));
   const maxCol = Math.min(map.cols - 1, Math.ceil((cx + radius - map.originX) / map.cellSize));
   const minRow = Math.max(0, Math.floor((cy - radius - map.originY) / map.cellSize));
@@ -183,6 +222,8 @@ export function stampCircle(map: Heightmap, cx: number, cy: number, radius: numb
       const dy = py - cy;
       if (dx * dx + dy * dy <= r2) {
         const idx = row * map.cols + col;
+        const floor = targetHeights ? Math.max(map.bottomZ, targetHeights[idx]) : map.bottomZ;
+        const clampedCutZ = Math.max(floor, cappedCutZ);
         if (clampedCutZ < map.heights[idx]) {
           map.heights[idx] = clampedCutZ;
           touched = true;

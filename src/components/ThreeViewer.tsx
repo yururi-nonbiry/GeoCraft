@@ -11,6 +11,7 @@ import {
     computeBounds,
     createHeightmap,
     createHeightmapFromMesh,
+    sampleTargetHeights,
     stampCircle,
     sampleToolpath,
     buildTopTilePositions,
@@ -145,6 +146,9 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
     const simWallSegmentsRef = useRef<WallSegment[] | null>(null);
     const simChamferMeshRef = useRef<THREE.Mesh | null>(null);
     const heightmapRef = useRef<Heightmap | null>(null);
+    // 加工後形状(target)から求めた、セルごとに「これより深くは削らない」保護フロア。
+    // targetStlDataが無い場合はnull(=保護なし、従来通りbottomZまで削れる)。
+    const targetHeightsRef = useRef<Float32Array | null>(null);
     const samplesRef = useRef<SamplePoint[]>([]);
     const sampleCursorRef = useRef(0);
     const traveledRef = useRef(0);
@@ -186,7 +190,7 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
         for (let i = sampleCursorRef.current; i < samples.length; i++) {
             const p = samples[i];
             const cutZ = p.z ?? simCutZRef.current;
-            stampCircle(map, p.x, p.y, simToolRadius, cutZ);
+            stampCircle(map, p.x, p.y, simToolRadius, cutZ, targetHeightsRef.current);
         }
         sampleCursorRef.current = samples.length;
         traveledRef.current = samples[samples.length - 1].distance;
@@ -340,7 +344,7 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
             while (sampleCursorRef.current < samples.length && samples[sampleCursorRef.current].distance <= targetDistance) {
                 const p = samples[sampleCursorRef.current];
                 const cutZ = p.z ?? simCutZRef.current;
-                const dirty = stampCircle(map, p.x, p.y, simToolRadius, cutZ);
+                const dirty = stampCircle(map, p.x, p.y, simToolRadius, cutZ, targetHeightsRef.current);
                 if (dirty) {
                     touched = true;
                     minCol = Math.min(minCol, dirty.minCol);
@@ -683,6 +687,7 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
         simWallSegmentsRef.current = null;
         simChamferMeshRef.current = null;
         heightmapRef.current = null;
+        targetHeightsRef.current = null;
         samplesRef.current = [];
         sampleCursorRef.current = 0;
         traveledRef.current = 0;
@@ -704,6 +709,9 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
             })();
         if (!map) return;
         heightmapRef.current = map;
+        // 加工後形状(target)が読み込まれていれば、その表面を「これより深くは削らない」
+        // 保護フロアとして使う。無い場合は保護なし(従来通り)。
+        targetHeightsRef.current = targetModelRef.current ? sampleTargetHeights(map, targetModelRef.current) : null;
         samplesRef.current = sampleToolpath(toolpaths, map.cellSize * 0.5);
 
         const group = new THREE.Group();
@@ -763,7 +771,7 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
 
         scene.add(group);
         simGroupRef.current = group;
-    }, [toolpaths, geometry, simEnabled, simToolRadius, simStockMargin, simStockThickness, simResetToken, stockStlData, stockOffset.x, stockOffset.y, stockOffset.z, stockBaseTransform]);
+    }, [toolpaths, geometry, simEnabled, simToolRadius, simStockMargin, simStockThickness, simResetToken, stockStlData, stockOffset.x, stockOffset.y, stockOffset.z, stockBaseTransform, targetStlData, targetOffset.x, targetOffset.y, targetOffset.z, targetBaseTransform]);
 
     // 材料/加工後形状の表示・非表示切り替え
     useEffect(() => {
