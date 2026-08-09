@@ -607,6 +607,22 @@ const App = () => {
   const handleResumeGcode = () => api.resumeGcode();
   const handleStopGcode = () => api.stopGcode();
 
+  const handleEmergencyStop = () => {
+    if (!isConnected) return;
+    api.emergencyStop();
+    setSpindleOn(false);
+    setGcodeStatus('idle');
+  };
+
+  // Escape キーをどこにフォーカスがあっても緊急停止として扱う（ダイアログ/入力欄内でも動作させるため window に登録）
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') handleEmergencyStop();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isConnected]);
+
   // 完全な円（DXFのCIRCLEエンティティ等）はセグメントを持たずarcsのみに格納されるため、
   // 他の形状と線分共有していない（＝隣接していない）円は別途ループとして追加する
   const arcToPolygon = (arc: { center: number[]; radius: number }, segmentCount = 64): Array<[number, number, number]> => {
@@ -1064,6 +1080,17 @@ const App = () => {
             <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
               GeoCraft
             </Typography>
+            <Button
+              variant="contained"
+              color="error"
+              startIcon={<Stop />}
+              onClick={handleEmergencyStop}
+              disabled={!isConnected}
+              title="機械の動作を即座に停止します"
+              sx={{ mr: 2, fontWeight: 'bold' }}
+            >
+              緊急停止 (Esc)
+            </Button>
             <IconButton color="inherit" onClick={handleOpenProject} aria-label="open project" title="プロジェクトを開く">
               <FolderOpen />
             </IconButton>

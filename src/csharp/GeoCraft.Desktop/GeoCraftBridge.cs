@@ -362,6 +362,21 @@ namespace GeoCraft.Desktop
             });
         }
 
+        public void EmergencyStop() {
+            ExecuteSafeVoid(() => {
+                lock (_stateLock)
+                {
+                    _isSending = false;
+                    _isPaused = false;
+                    _gcodeQueue.Clear();
+                    // Grbl reset command (ctrl-x): immediately halts all motion and turns off spindle/coolant,
+                    // regardless of whether a G-code job is currently streaming (jogging, spindle-only, etc.)
+                    _serialService.Write("\x18");
+                    Broadcast("gcode-progress", new { sent = _sentLines, total = _totalLines, status = "idle" });
+                }
+            });
+        }
+
         public void Jog(string axis, double direction, double step) {
              ExecuteSafeVoid(() => {
                  string cmd = $"$J=G91 {axis}{step * direction} F1000\n";

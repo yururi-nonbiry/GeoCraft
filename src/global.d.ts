@@ -79,6 +79,7 @@ export interface ElectronAPI {
     pauseGcode: () => void;
     resumeGcode: () => void;
     stopGcode: () => void;
+    emergencyStop: () => void;
     onGcodeProgress: (callback: (progress: { sent: number, total: number, status: 'sending' | 'paused' | 'finished' | 'error' }) => void) => () => void;
 
     // --- Jogging ---
