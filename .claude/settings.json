@@ -61,7 +61,8 @@
       "Bash(xargs wc -l)",
       "Bash(kill 877)",
       "Bash(pkill -f \"webpack serve\")",
-      "Bash(npm install *)"
+      "Bash(npm install *)",
+      "Bash(powershell -NoProfile -Command \"Get-Process -Name 'GeoCraft.Desktop' -ErrorAction SilentlyContinue | Select-Object Id, StartTime, Path\")"
     ],
     "additionalDirectories": [
       "\\tmp\\simcheck"

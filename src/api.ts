@@ -51,12 +51,13 @@ class WebView2API implements ElectronAPI {
 
     // Helper to parse JSON result from C#
     private async callBridge(method: string, ...args: any[]): Promise<any> {
-        if (!this.bridge || !this.bridge[method]) {
-            console.error(`Bridge method ${method} not found.`);
-            return { status: 'error', message: 'Bridge not connected' };
-        }
         try {
-            const resultJson = await this.bridge[method](...args);
+            const fn = this.bridge ? this.bridge[method] : undefined;
+            if (!fn) {
+                console.error(`Bridge method ${method} not found.`);
+                return { status: 'error', message: 'Bridge not connected' };
+            }
+            const resultJson = await fn(...args);
             try {
                 return JSON.parse(resultJson);
             } catch {
