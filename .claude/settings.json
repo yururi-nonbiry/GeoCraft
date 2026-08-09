@@ -51,7 +51,17 @@
       "Bash(find \"/c/Users/sw20m/AppData/Local/Temp/claude/c--git-GeoCraft/56144d22-29fa-4062-aad7-13ba7c26f444/scratchpad/verify-out\" -name \"*.js\")",
       "Read(//c/Users/sw20m/AppData/Local/Temp/claude/c--git-GeoCraft/56144d22-29fa-4062-aad7-13ba7c26f444/scratchpad/verify-out/**)",
       "Bash(node test-chamfer.js)",
-      "Bash(NODE_PATH=\"/c/git/GeoCraft/node_modules\" node test-chamfer.js)"
+      "Bash(NODE_PATH=\"/c/git/GeoCraft/node_modules\" node test-chamfer.js)",
+      "Bash(npm audit *)",
+      "Bash(node -e ' *)",
+      "PowerShell(Get-Process | Where-Object { $_.ProcessName -match 'GeoCraft|dotnet|node' } | Select-Object Id,ProcessName,MainWindowTitle,StartTime | Format-Table -AutoSize)",
+      "PowerShell(Get-Process -Id 8568,6444,7248,4852,12872)",
+      "PowerShell(query session 2>$null)",
+      "PowerShell(quser 2>$null)",
+      "Bash(xargs wc -l)",
+      "Bash(kill 877)",
+      "Bash(pkill -f \"webpack serve\")",
+      "Bash(npm install *)"
     ],
     "additionalDirectories": [
       "\\tmp\\simcheck"

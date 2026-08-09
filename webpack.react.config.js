@@ -1,5 +1,6 @@
 const path = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
+const ForkTsCheckerWebpackPlugin = require('fork-ts-checker-webpack-plugin');
 
 module.exports = {
     mode: 'development',
@@ -15,7 +16,10 @@ module.exports = {
             {
                 test: /\.(ts|tsx)$/,
                 include: /src/,
-                use: [{ loader: 'ts-loader' }],
+                // transpileOnly skips type-checking during the compile itself (type
+                // errors are still reported, just asynchronously by ForkTsCheckerWebpackPlugin
+                // below), which is what makes the dev build fast.
+                use: [{ loader: 'ts-loader', options: { transpileOnly: true } }],
             },
             {
                 test: /\.css$/,
@@ -28,11 +32,15 @@ module.exports = {
             template: './src/index.html',
             favicon: './src/assets/favicon.png',
         }),
+        new ForkTsCheckerWebpackPlugin(),
     ],
     resolve: {
         extensions: ['.tsx', '.ts', '.js'],
     },
-    devtool: 'inline-source-map',
+    devtool: 'eval-cheap-module-source-map',
+    cache: {
+        type: 'filesystem',
+    },
     devServer: {
         static: {
             directory: path.join(__dirname, 'dist'),
