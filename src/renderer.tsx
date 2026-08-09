@@ -261,6 +261,8 @@ const App = () => {
 
   // Jog & Status State
   const [jogStep, setJogStep] = useState(10);
+  const [spindleSpeed, setSpindleSpeed] = useState(1000);
+  const [spindleOn, setSpindleOn] = useState(false);
   const [machinePosition, setMachinePosition] = useState({ wpos: { x: 0, y: 0, z: 0 }, mpos: { x: 0, y: 0, z: 0 }, status: 'Unknown' });
   const [grblSettings, setGrblSettings] = useState({
     stepsX: 250,
@@ -558,6 +560,20 @@ const App = () => {
   const handleSetZero = () => {
     if (isConnected && confirm('現在のワーク座標をすべて0に設定します。よろしいですか？')) {
       api.setZero();
+    }
+  };
+
+  const handleSpindleOn = () => {
+    if (isConnected) {
+      api.spindleOn(spindleSpeed);
+      setSpindleOn(true);
+    }
+  };
+
+  const handleSpindleOff = () => {
+    if (isConnected) {
+      api.spindleOff();
+      setSpindleOn(false);
     }
   };
 
@@ -1254,6 +1270,11 @@ const App = () => {
             setJogStep={setJogStep}
             handleJog={handleJog}
             handleSetZero={handleSetZero}
+            spindleSpeed={spindleSpeed}
+            setSpindleSpeed={setSpindleSpeed}
+            spindleOn={spindleOn}
+            handleSpindleOn={handleSpindleOn}
+            handleSpindleOff={handleSpindleOff}
             machineSettings={machineSettings}
             selectedMachineId={selectedMachineId}
             setSelectedMachineId={setSelectedMachineId}

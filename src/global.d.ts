@@ -84,6 +84,8 @@ export interface ElectronAPI {
     // --- Jogging ---
     jog: (axis: 'X' | 'Y' | 'Z', direction: number, step: number) => void;
     setZero: () => void;
+    spindleOn: (speed: number) => void;
+    spindleOff: () => void;
     onStatus: (callback: (status: any) => void) => () => void;
     requestGrblSettings: () => void;
     saveGrblSettings: (stepsX: number, stepsY: number, stepsZ: number, invertX: boolean, invertY: boolean, invertZ: boolean) => void;

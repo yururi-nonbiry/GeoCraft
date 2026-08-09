@@ -85,6 +85,11 @@ interface ControlPanelProps {
     setJogStep: (val: number) => void;
     handleJog: (axis: 'X' | 'Y' | 'Z', direction: number) => void;
     handleSetZero: () => void;
+    spindleSpeed: number;
+    setSpindleSpeed: (val: number) => void;
+    spindleOn: boolean;
+    handleSpindleOn: () => void;
+    handleSpindleOff: () => void;
     machineSettings: MachineSetting[];
     selectedMachineId: number | '';
     setSelectedMachineId: (val: number) => void;
@@ -526,6 +531,37 @@ const ControlPanel = (props: ControlPanelProps) => {
                             <Grid item xs={4}><Button fullWidth variant="outlined" onClick={() => props.handleJog('Y', -1)}>Y-</Button></Grid>
                             <Grid item xs={4}><Button fullWidth variant="outlined" onClick={() => props.handleJog('Z', -1)}>Z-</Button></Grid>
                         </Grid>
+                        <Box sx={{ mt: 3, pt: 2, borderTop: '1px solid rgba(255,255,255,0.12)' }}>
+                            <Typography variant="subtitle2" gutterBottom>スピンドル</Typography>
+                            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                                <TextField
+                                    label="回転数 (rpm)"
+                                    type="number"
+                                    size="small"
+                                    value={props.spindleSpeed}
+                                    onChange={(e) => props.setSpindleSpeed(Number(e.target.value))}
+                                    sx={{ width: 140 }}
+                                />
+                                <Button
+                                    variant="contained"
+                                    color="success"
+                                    startIcon={<PlayArrow />}
+                                    onClick={props.handleSpindleOn}
+                                    disabled={!props.isConnected || props.spindleOn}
+                                >
+                                    ON
+                                </Button>
+                                <Button
+                                    variant="outlined"
+                                    color="secondary"
+                                    startIcon={<Stop />}
+                                    onClick={props.handleSpindleOff}
+                                    disabled={!props.isConnected || !props.spindleOn}
+                                >
+                                    OFF
+                                </Button>
+                            </Box>
+                        </Box>
                     </Paper>
                 </TabPanel>
                 <TabPanel value={activeTab} index={2}>
