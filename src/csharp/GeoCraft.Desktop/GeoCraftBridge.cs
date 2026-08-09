@@ -268,7 +268,11 @@ namespace GeoCraft.Desktop
              });
         }
 
-        public string GenerateDrillGcode(string paramsJson) { 
+        public string GenerateGcodeForTransfer(string paramsJson) {
+             return ExecuteSafe(() => _gcodeService.GenerateGcode(paramsJson));
+        }
+
+        public string GenerateDrillGcode(string paramsJson) {
             return ExecuteSafe(() => new { status = "error", message = "Not implemented" }); 
         }
         

@@ -95,6 +95,9 @@ class WebView2API implements ElectronAPI {
     generateGcode(params: GcodeGenerationParams) {
         return this.callBridge('GenerateGcode', JSON.stringify(params));
     }
+    generateGcodeForTransfer(params: GcodeGenerationParams) {
+        return this.callBridge('GenerateGcodeForTransfer', JSON.stringify(params));
+    }
     generateDrillGcode(params: GcodeGenerationParams) {
         return this.callBridge('GenerateDrillGcode', JSON.stringify(params));
     }

@@ -61,6 +61,7 @@ export interface ElectronAPI {
     onPathProgress: (callback: (progress: { current: number, total: number }) => void) => () => void;
     fitArcsToToolpath: (toolpath: number[][], arcs: any[]) => Promise<any>;
     generateGcode: (params: GcodeGenerationParams) => Promise<any>;
+    generateGcodeForTransfer: (params: GcodeGenerationParams) => Promise<any>;
     generateDrillGcode: (params: GcodeGenerationParams) => Promise<any>;
 
     // Settings

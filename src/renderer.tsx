@@ -943,6 +943,33 @@ const App = () => {
     }
   };
 
+  const handleTransferGcodeToCnc = async (): Promise<boolean> => {
+    if (!toolpaths || toolpaths.length === 0) {
+      alert('転送するツールパスがありません。');
+      return false;
+    }
+    try {
+      const params = {
+        toolpaths: toolpaths,
+        feedRate,
+        safeZ: currentMachine.safeZ,
+        stepDown: currentMachine.stepDown,
+        retractZ: currentMachine.retractZ,
+      };
+      const result = await api.generateGcodeForTransfer(params);
+      if (result.status === 'success') {
+        setGcode(result.gcode);
+        setGcodeStatus('idle');
+        return true;
+      }
+      alert(`Gコードの生成に失敗しました: ${result.message}`);
+      return false;
+    } catch (error) {
+      alert(`Gコードの生成に失敗しました: ${error}`);
+      return false;
+    }
+  };
+
   const handleSaveProject = async () => {
     try {
       const project: ProjectData = {
@@ -1270,6 +1297,7 @@ const App = () => {
             feedRate={feedRate}
             setFeedRate={setFeedRate}
             handleSaveGcode={handleSaveGcode}
+            handleTransferGcodeToCnc={handleTransferGcodeToCnc}
             safeZ={currentMachine.safeZ}
             setSafeZ={(val) => updateMachineSetting('safeZ', val)}
             stepDown={currentMachine.stepDown}

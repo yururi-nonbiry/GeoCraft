@@ -58,6 +58,7 @@ interface ControlPanelProps {
     feedRate: number;
     setFeedRate: (val: number) => void;
     handleSaveGcode: () => void;
+    handleTransferGcodeToCnc: () => Promise<boolean>;
     safeZ: number;
     setSafeZ: (val: number) => void;
     stepDown: number;
@@ -367,7 +368,19 @@ const ControlPanel = (props: ControlPanelProps) => {
                     <Paper sx={{ p: 2, mb: 2 }}>
                         <Typography variant="h6" gutterBottom>Gコード保存</Typography>
                         <TextField label="送り速度 (mm/min)" type="number" value={props.feedRate} onChange={(e) => props.setFeedRate(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
-                        <Button variant="contained" onClick={props.handleSaveGcode}>Gコード保存</Button>
+                        <Box sx={{ display: 'flex', gap: 1 }}>
+                            <Button variant="contained" onClick={props.handleSaveGcode}>Gコード保存</Button>
+                            <Button
+                                variant="contained"
+                                color="secondary"
+                                onClick={async () => {
+                                    const ok = await props.handleTransferGcodeToCnc();
+                                    if (ok) setActiveTab(1);
+                                }}
+                            >
+                                CNCへ転送
+                            </Button>
+                        </Box>
                     </Paper>
                 </TabPanel>
                 <TabPanel value={activeTab} index={1}>
