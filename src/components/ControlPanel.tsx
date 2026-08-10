@@ -553,14 +553,21 @@ const ControlPanel = (props: ControlPanelProps) => {
                             <Typography variant="body2">WPos: X:{props.machinePosition.wpos.x.toFixed(3)} Y:{props.machinePosition.wpos.y.toFixed(3)} Z:{props.machinePosition.wpos.z.toFixed(3)}</Typography>
                             <Typography variant="body2">MPos: X:{props.machinePosition.mpos.x.toFixed(3)} Y:{props.machinePosition.mpos.y.toFixed(3)} Z:{props.machinePosition.mpos.z.toFixed(3)}</Typography>
                         </Box>
-                        <Box sx={{ mb: 2 }}>
-                            <Typography component="span" sx={{ mr: 1 }}>移動量(mm):</Typography>
-                            {[0.1, 1, 10, 100].map(step => (
-                                <Button key={step} size="small" variant={props.jogStep === step ? 'contained' : 'outlined'} onClick={() => props.setJogStep(step)} sx={{ mr: 1 }}>
-                                    {step}
-                                </Button>
-                            ))}
-                        </Box>
+                        <FormControl fullWidth margin="dense" size="small" sx={{ mb: 2 }}>
+                            <InputLabel id="jog-step-select-label">移動量 (mm)</InputLabel>
+                            <Select
+                                labelId="jog-step-select-label"
+                                value={props.jogStep}
+                                label="移動量 (mm)"
+                                onChange={(e) => props.setJogStep(Number(e.target.value))}
+                            >
+                                {[0.01, 0.1, 1, 10, 50, 100].map((step) => (
+                                    <MenuItem key={step} value={step}>
+                                        {step} mm
+                                    </MenuItem>
+                                ))}
+                            </Select>
+                        </FormControl>
                         <Grid container spacing={1} alignItems="center" justifyContent="center">
                             <Grid item xs={4} />
                             <Grid item xs={4}><Button fullWidth variant="outlined" onClick={() => props.handleJog('Y', 1)}>Y+</Button></Grid>
