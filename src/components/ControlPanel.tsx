@@ -92,6 +92,9 @@ interface ControlPanelProps {
     setJogStep: (val: number) => void;
     handleJog: (axis: 'X' | 'Y' | 'Z', direction: number) => void;
     handleSetZero: () => void;
+    enableMachineOriginReset: boolean;
+    setEnableMachineOriginReset: (val: boolean) => void;
+    handleResetMachineOrigin: () => void;
     spindleSpeed: number;
     setSpindleSpeed: (val: number) => void;
     spindleOn: boolean;
@@ -154,6 +157,92 @@ const TabPanel = (props: { children?: React.ReactNode; index: number; value: num
                 </Box>
             )}
         </div>
+    );
+};
+
+const LongPressButton = (props: {
+    disabled?: boolean;
+    onLongPress: () => void;
+    holdDuration?: number;
+    children: React.ReactNode;
+    color?: 'primary' | 'secondary' | 'error' | 'warning' | 'info' | 'success';
+    variant?: 'contained' | 'outlined' | 'text';
+    fullWidth?: boolean;
+    startIcon?: React.ReactNode;
+}) => {
+    const holdDuration = props.holdDuration || 1500;
+    const [progress, setProgress] = useState(0);
+    const [isHolding, setIsHolding] = useState(false);
+    const timerRef = React.useRef<any>(null);
+    const intervalRef = React.useRef<any>(null);
+    const startTimeRef = React.useRef<number>(0);
+
+    const cancelHold = () => {
+        if (timerRef.current) clearTimeout(timerRef.current);
+        if (intervalRef.current) clearInterval(intervalRef.current);
+        timerRef.current = null;
+        intervalRef.current = null;
+        setIsHolding(false);
+        setProgress(0);
+    };
+
+    const startHold = (e: React.SyntheticEvent) => {
+        if (props.disabled) return;
+        e.preventDefault();
+        cancelHold();
+
+        setIsHolding(true);
+        startTimeRef.current = Date.now();
+
+        intervalRef.current = setInterval(() => {
+            const elapsed = Date.now() - startTimeRef.current;
+            const pct = Math.min(100, (elapsed / holdDuration) * 100);
+            setProgress(pct);
+        }, 50);
+
+        timerRef.current = setTimeout(() => {
+            if (intervalRef.current) clearInterval(intervalRef.current);
+            setIsHolding(false);
+            setProgress(100);
+            props.onLongPress();
+            setTimeout(() => setProgress(0), 500);
+        }, holdDuration);
+    };
+
+    return (
+        <Tooltip title={props.disabled ? "マシン設定で有効化が必要です" : "長押しで機械原点をリセット"}>
+            <Box sx={{ position: 'relative', width: props.fullWidth ? '100%' : 'auto' }}>
+                <Button
+                    fullWidth={props.fullWidth}
+                    variant={props.variant || 'contained'}
+                    color={props.color || 'warning'}
+                    disabled={props.disabled}
+                    onMouseDown={startHold}
+                    onMouseUp={cancelHold}
+                    onMouseLeave={cancelHold}
+                    onTouchStart={startHold}
+                    onTouchEnd={cancelHold}
+                    startIcon={props.startIcon}
+                >
+                    {isHolding ? `長押し中... (${Math.ceil((holdDuration - progress * holdDuration / 100) / 1000)}s)` : props.children}
+                </Button>
+                {isHolding && (
+                    <LinearProgress
+                        variant="determinate"
+                        value={progress}
+                        color={props.color || 'warning'}
+                        sx={{
+                            position: 'absolute',
+                            bottom: 0,
+                            left: 0,
+                            right: 0,
+                            height: 4,
+                            borderRadius: '0 0 4px 4px'
+                        }}
+                    />
+                )}
+            </Box>
+        </Tooltip>
     );
 };
 
@@ -573,12 +662,24 @@ const ControlPanel = (props: ControlPanelProps) => {
                             <Grid item xs={4}><Button fullWidth variant="outlined" onClick={() => props.handleJog('Y', 1)}>Y+</Button></Grid>
                             <Grid item xs={4}><Button fullWidth variant="outlined" onClick={() => props.handleJog('Z', 1)}>Z+</Button></Grid>
                             <Grid item xs={4}><Button fullWidth variant="outlined" onClick={() => props.handleJog('X', -1)}>X-</Button></Grid>
-                            <Grid item xs={4}><Button fullWidth variant="contained" color="secondary" onClick={props.handleSetZero} startIcon={<Settings />}>原点</Button></Grid>
+                            <Grid item xs={4}><Button fullWidth variant="contained" color="secondary" onClick={props.handleSetZero} startIcon={<Settings />}>原点(G54)</Button></Grid>
                             <Grid item xs={4}><Button fullWidth variant="outlined" onClick={() => props.handleJog('X', 1)}>X+</Button></Grid>
                             <Grid item xs={4} />
                             <Grid item xs={4}><Button fullWidth variant="outlined" onClick={() => props.handleJog('Y', -1)}>Y-</Button></Grid>
                             <Grid item xs={4}><Button fullWidth variant="outlined" onClick={() => props.handleJog('Z', -1)}>Z-</Button></Grid>
                         </Grid>
+                        <Box sx={{ mt: 1.5 }}>
+                            <LongPressButton
+                                fullWidth
+                                variant="contained"
+                                color="warning"
+                                disabled={!props.isConnected || !props.enableMachineOriginReset}
+                                onLongPress={props.handleResetMachineOrigin}
+                                startIcon={<Refresh />}
+                            >
+                                機械原点リセット (長押し)
+                            </LongPressButton>
+                        </Box>
                         <Box sx={{ mt: 3, pt: 2, borderTop: '1px solid rgba(255,255,255,0.12)' }}>
                             <Typography variant="subtitle2" gutterBottom>スピンドル</Typography>
                             <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
@@ -733,6 +834,16 @@ const ControlPanel = (props: ControlPanelProps) => {
                         fullWidth
                         margin="normal"
                         size="small"
+                    />
+                    <FormControlLabel
+                        control={
+                            <Checkbox
+                                checked={props.enableMachineOriginReset}
+                                onChange={(e) => props.setEnableMachineOriginReset(e.target.checked)}
+                            />
+                        }
+                        label="機械原点のリセットを有効にする"
+                        sx={{ mt: 1, display: 'block' }}
                     />
                 </DialogContent>
                 <DialogActions>

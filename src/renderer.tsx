@@ -263,6 +263,7 @@ const App = () => {
   const [jogStep, setJogStep] = useState(10);
   const [spindleSpeed, setSpindleSpeed] = useState(1000);
   const [spindleOn, setSpindleOn] = useState(false);
+  const [enableMachineOriginReset, setEnableMachineOriginReset] = useState(false);
   const [machinePosition, setMachinePosition] = useState({ wpos: { x: 0, y: 0, z: 0 }, mpos: { x: 0, y: 0, z: 0 }, status: 'Unknown' });
   const [grblSettings, setGrblSettings] = useState({
     stepsX: 250,
@@ -560,6 +561,12 @@ const App = () => {
   const handleSetZero = () => {
     if (isConnected && confirm('現在のワーク座標をすべて0に設定します。よろしいですか？')) {
       api.setZero();
+    }
+  };
+
+  const handleResetMachineOrigin = () => {
+    if (isConnected) {
+      api.resetMachineOrigin();
     }
   };
 
@@ -1325,6 +1332,9 @@ const App = () => {
             setJogStep={setJogStep}
             handleJog={handleJog}
             handleSetZero={handleSetZero}
+            enableMachineOriginReset={enableMachineOriginReset}
+            setEnableMachineOriginReset={setEnableMachineOriginReset}
+            handleResetMachineOrigin={handleResetMachineOrigin}
             spindleSpeed={spindleSpeed}
             setSpindleSpeed={setSpindleSpeed}
             spindleOn={spindleOn}

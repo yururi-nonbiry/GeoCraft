@@ -29,6 +29,8 @@ export type MachineSetting = {
   workAreaX: number;
   workAreaY: number;
   workAreaZ: number;
+  // 機械原点リセットを有効にするフラグ
+  enableMachineOriginReset?: boolean;
 };
 
 export type EditableMachineSetting = Omit<MachineSetting, 'id'> & { id: number | null };
