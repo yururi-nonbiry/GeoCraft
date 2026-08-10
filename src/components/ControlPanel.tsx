@@ -24,9 +24,14 @@ import {
     Tooltip,
 } from '@mui/material';
 import { Refresh, Link, LinkOff, PlayArrow, Pause, Stop, SkipNext, Settings } from '@mui/icons-material';
-import { MachineSetting, ToolSetting } from '../types';
+import { MachineSetting, ToolSetting, WorkOrigin } from '../types';
 
 interface ControlPanelProps {
+    workOrigin: WorkOrigin | null;
+    setWorkOrigin: (val: WorkOrigin | null) => void;
+    pickOriginMode: boolean;
+    setPickOriginMode: (val: boolean) => void;
+    handleSelectOriginPreset: (preset: 'left-front-top' | 'left-front-bottom' | 'center-top' | 'center-bottom' | 'right-back-top' | 'table-origin') => void;
     toolDiameter: number;
     setToolDiameter: (val: number) => void;
     stepover: number;
@@ -333,6 +338,102 @@ const ControlPanel = (props: ControlPanelProps) => {
                                     size="small"
                                 />
                             )}
+                        </Paper>
+                        <Paper sx={{ p: 2, mb: 2 }}>
+                            <Typography variant="h6" gutterBottom>加工開始原点 (ワーク原点 G54)</Typography>
+                            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+                                Gコード出力時の原点(0,0,0)位置を設定します。3Dビュー上の頂点を選択するか、プリセットから指定できます。
+                            </Typography>
+                            <Button
+                                variant={props.pickOriginMode ? 'contained' : 'outlined'}
+                                color={props.pickOriginMode ? 'secondary' : 'primary'}
+                                onClick={() => props.setPickOriginMode(!props.pickOriginMode)}
+                                fullWidth
+                                size="small"
+                                sx={{ mb: 1 }}
+                            >
+                                {props.pickOriginMode ? '3Dビューで頂点を選択中 (クリックで決定)' : '3Dビュー上で頂点を選択'}
+                            </Button>
+                            <FormControl fullWidth size="small" margin="dense">
+                                <InputLabel>プリセット選択</InputLabel>
+                                <Select
+                                    value={props.workOrigin?.presetName || 'custom'}
+                                    label="プリセット選択"
+                                    onChange={(e) => {
+                                        const val = e.target.value;
+                                        if (val !== 'custom') {
+                                            props.handleSelectOriginPreset(val as any);
+                                        }
+                                    }}
+                                >
+                                    <MenuItem value="custom">頂点指定 / カスタム</MenuItem>
+                                    <MenuItem value="left-front-top">材料: 左前上角</MenuItem>
+                                    <MenuItem value="left-front-bottom">材料: 左前下角</MenuItem>
+                                    <MenuItem value="center-top">材料: 中央上面</MenuItem>
+                                    <MenuItem value="center-bottom">材料: 中央下面</MenuItem>
+                                    <MenuItem value="right-back-top">材料: 右後上角</MenuItem>
+                                    <MenuItem value="table-origin">テーブル基準原点 (0,0,0)</MenuItem>
+                                </Select>
+                            </FormControl>
+                            <Box sx={{ mt: 1 }}>
+                                <Typography variant="caption" display="block">原点座標 (mm)</Typography>
+                                <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                                    <TextField
+                                        label="X"
+                                        type="number"
+                                        size="small"
+                                        value={props.workOrigin ? props.workOrigin.x : 0}
+                                        onChange={(e) => {
+                                            const val = parseFloat(e.target.value) || 0;
+                                            props.setWorkOrigin({
+                                                x: val,
+                                                y: props.workOrigin?.y || 0,
+                                                z: props.workOrigin?.z || 0,
+                                                type: 'custom',
+                                                presetName: 'custom',
+                                            });
+                                        }}
+                                    />
+                                    <TextField
+                                        label="Y"
+                                        type="number"
+                                        size="small"
+                                        value={props.workOrigin ? props.workOrigin.y : 0}
+                                        onChange={(e) => {
+                                            const val = parseFloat(e.target.value) || 0;
+                                            props.setWorkOrigin({
+                                                x: props.workOrigin?.x || 0,
+                                                y: val,
+                                                z: props.workOrigin?.z || 0,
+                                                type: 'custom',
+                                                presetName: 'custom',
+                                            });
+                                        }}
+                                    />
+                                    <TextField
+                                        label="Z"
+                                        type="number"
+                                        size="small"
+                                        value={props.workOrigin ? props.workOrigin.z : 0}
+                                        onChange={(e) => {
+                                            const val = parseFloat(e.target.value) || 0;
+                                            props.setWorkOrigin({
+                                                x: props.workOrigin?.x || 0,
+                                                y: props.workOrigin?.y || 0,
+                                                z: val,
+                                                type: 'custom',
+                                                presetName: 'custom',
+                                            });
+                                        }}
+                                    />
+                                    <Button
+                                        size="small"
+                                        onClick={() => props.setWorkOrigin(null)}
+                                    >
+                                        リセット
+                                    </Button>
+                                </Box>
+                            </Box>
                         </Paper>
                         <Paper sx={{ p: 2, mb: 2 }}>
                             <Typography variant="h6" gutterBottom>2.5D 加工 (DXF/SVG)</Typography>

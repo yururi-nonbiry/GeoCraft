@@ -2,7 +2,7 @@ import React, { useRef, useEffect } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader';
-import { ToolpathSegment, Geometry, StlBaseTransform } from '../types';
+import { ToolpathSegment, Geometry, StlBaseTransform, WorkOrigin } from '../types';
 import {
     SimulationConfig,
     Heightmap,
@@ -43,6 +43,10 @@ interface ThreeViewerProps {
     // 'stock'/'target' の間、3Dビュー上でクリックされた面をそのモデルの底面(-Z)にする。null なら通常操作。
     pickFaceMode: 'stock' | 'target' | null;
     onFacePicked: (mode: 'stock' | 'target', baseTransform: StlBaseTransform) => void;
+    // 加工開始原点(ワーク原点 G54)の設定・選択モード
+    workOrigin?: WorkOrigin | null;
+    pickOriginMode?: boolean;
+    onOriginPicked?: (origin: { x: number; y: number; z: number }) => void;
     // 選択中の加工機の加工可能範囲(mm)。原点(0,0,0)を作業エリアの手前角(テーブル面)とし、
     // X: 0〜x, Y: 0〜y, Z: 0〜z (原点から上方向、ストックが載る向き) の範囲として描画する。
     machineWorkArea: { x: number; y: number; z: number };
@@ -109,7 +113,7 @@ const createWorkVolumeBox = (width: number, depth: number, height: number): THRE
     return box;
 };
 
-const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targetStlData, pickFaceMode, onFacePicked, machineWorkArea, stockOffset, targetOffset, onStockOffsetChange, onTargetOffsetChange, previewMode, simulation, showStock = true, showTarget = true, showToolpaths = true, stockBaseTransform = null, targetBaseTransform = null }: ThreeViewerProps) => {
+const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targetStlData, pickFaceMode, onFacePicked, workOrigin = null, pickOriginMode = false, onOriginPicked, machineWorkArea, stockOffset, targetOffset, onStockOffsetChange, onTargetOffsetChange, previewMode, simulation, showStock = true, showTarget = true, showToolpaths = true, stockBaseTransform = null, targetBaseTransform = null }: ThreeViewerProps) => {
     const mountRef = useRef<HTMLDivElement>(null);
     const sceneRef = useRef<THREE.Scene | null>(null);
     const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
@@ -121,6 +125,11 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
     const targetBasePositionRef = useRef(new THREE.Vector3());
     const pickFaceModeRef = useRef(pickFaceMode);
     const onFacePickedRef = useRef(onFacePicked);
+    const workOriginRef = useRef(workOrigin);
+    const pickOriginModeRef = useRef(pickOriginMode);
+    const onOriginPickedRef = useRef(onOriginPicked);
+    const originGizmoRef = useRef<THREE.Group | null>(null);
+    const hoverVertexMarkerRef = useRef<THREE.Mesh | null>(null);
     // プレビューモード中は材料/加工後形状のドラッグ移動・底面選択を禁止する
     const previewModeRef = useRef(previewMode);
     // ドラッグ操作の間、常に最新のオフセット値/コールバックを参照するための ref
@@ -239,9 +248,32 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
     useEffect(() => {
         pickFaceModeRef.current = pickFaceMode;
         if (mountRef.current) {
-            mountRef.current.style.cursor = pickFaceMode ? 'crosshair' : 'default';
+            mountRef.current.style.cursor = pickFaceMode || pickOriginMode ? 'crosshair' : 'default';
         }
-    }, [pickFaceMode]);
+    }, [pickFaceMode, pickOriginMode]);
+
+    useEffect(() => {
+        pickOriginModeRef.current = pickOriginMode;
+        if (!pickOriginMode && hoverVertexMarkerRef.current) {
+            hoverVertexMarkerRef.current.visible = false;
+        }
+    }, [pickOriginMode]);
+
+    useEffect(() => {
+        onOriginPickedRef.current = onOriginPicked;
+    }, [onOriginPicked]);
+
+    useEffect(() => {
+        workOriginRef.current = workOrigin;
+        if (originGizmoRef.current) {
+            if (workOrigin) {
+                originGizmoRef.current.position.set(workOrigin.x, workOrigin.y, workOrigin.z);
+                originGizmoRef.current.visible = true;
+            } else {
+                originGizmoRef.current.visible = false;
+            }
+        }
+    }, [workOrigin]);
 
     useEffect(() => {
         onFacePickedRef.current = onFacePicked;
@@ -323,6 +355,33 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
 
         const axesHelper = new THREE.AxesHelper(5);
         scene.add(axesHelper);
+
+        // 加工開始原点(G54)視覚用ギズモ
+        const originGizmoGroup = new THREE.Group();
+        const originAxes = new THREE.AxesHelper(15);
+        originGizmoGroup.add(originAxes);
+        const originSphereGeo = new THREE.SphereGeometry(1.5, 16, 16);
+        const originSphereMat = new THREE.MeshBasicMaterial({ color: 0xff0055, depthTest: false });
+        const originSphere = new THREE.Mesh(originSphereGeo, originSphereMat);
+        originSphere.renderOrder = 999;
+        originGizmoGroup.add(originSphere);
+        if (workOriginRef.current) {
+            originGizmoGroup.position.set(workOriginRef.current.x, workOriginRef.current.y, workOriginRef.current.z);
+            originGizmoGroup.visible = true;
+        } else {
+            originGizmoGroup.visible = false;
+        }
+        scene.add(originGizmoGroup);
+        originGizmoRef.current = originGizmoGroup;
+
+        // 頂点ピック時スナップマーカー
+        const hoverGeo = new THREE.SphereGeometry(1.2, 16, 16);
+        const hoverMat = new THREE.MeshBasicMaterial({ color: 0xffaa00, wireframe: true, depthTest: false });
+        const hoverMarker = new THREE.Mesh(hoverGeo, hoverMat);
+        hoverMarker.renderOrder = 999;
+        hoverMarker.visible = false;
+        scene.add(hoverMarker);
+        hoverVertexMarkerRef.current = hoverMarker;
 
         const stepSimulation = (now: number) => {
             const map = heightmapRef.current;
@@ -450,11 +509,66 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
             );
         };
 
+        const findNearestVertex = (e: PointerEvent): THREE.Vector3 | null => {
+            if (!cameraRef.current) return null;
+            const candidates: THREE.Object3D[] = [];
+            if (stockModelRef.current) candidates.push(stockModelRef.current);
+            if (targetModelRef.current) candidates.push(targetModelRef.current);
+            if (candidates.length === 0) return null;
+
+            raycaster.setFromCamera(getMouseNDC(e), cameraRef.current);
+            const intersects = raycaster.intersectObjects(candidates, true);
+            if (intersects.length === 0) return null;
+
+            const hit = intersects[0];
+            const mesh = hit.object as THREE.Mesh;
+            if (!mesh || !mesh.geometry) return hit.point;
+
+            let bestPoint: THREE.Vector3 = hit.point.clone();
+            let minDistSq = Infinity;
+
+            const posAttr = mesh.geometry.attributes.position;
+            if (hit.face && posAttr) {
+                const localHit = mesh.worldToLocal(hit.point.clone());
+                const tempVec = new THREE.Vector3();
+                const faceIndices = [hit.face.a, hit.face.b, hit.face.c];
+                for (const idx of faceIndices) {
+                    tempVec.fromBufferAttribute(posAttr, idx);
+                    const distSq = tempVec.distanceToSquared(localHit);
+                    if (distSq < minDistSq) {
+                        minDistSq = distSq;
+                        bestPoint = tempVec.clone().applyMatrix4(mesh.matrixWorld);
+                    }
+                }
+            }
+
+            const box = new THREE.Box3().setFromObject(mesh);
+            const corners = [
+                new THREE.Vector3(box.min.x, box.min.y, box.min.z),
+                new THREE.Vector3(box.min.x, box.min.y, box.max.z),
+                new THREE.Vector3(box.min.x, box.max.y, box.min.z),
+                new THREE.Vector3(box.min.x, box.max.y, box.max.z),
+                new THREE.Vector3(box.max.x, box.min.y, box.min.z),
+                new THREE.Vector3(box.max.x, box.min.y, box.max.z),
+                new THREE.Vector3(box.max.x, box.max.y, box.min.z),
+                new THREE.Vector3(box.max.x, box.max.y, box.max.z),
+            ];
+            for (const corner of corners) {
+                const distSq = corner.distanceToSquared(hit.point);
+                if (distSq < minDistSq && distSq < 100) { // 10mm以内
+                    minDistSq = distSq;
+                    bestPoint = corner;
+                }
+            }
+
+            return bestPoint;
+        };
+
         // 通常操作中(底面選択モードでない)にストック/ターゲットをクリックしたら、
         // X/Y平面上のドラッグでモデルを移動できるようにする(Zは維持)。
         const onPointerDown = (e: PointerEvent) => {
             pointerDownPos = { x: e.clientX, y: e.clientY };
-            if (pickFaceModeRef.current || previewModeRef.current || !cameraRef.current) return;
+            if (pickFaceModeRef.current || pickOriginModeRef.current || previewModeRef.current || !cameraRef.current) return;
 
             const candidates: { mesh: THREE.Object3D; which: 'stock' | 'target' }[] = [];
             if (stockModelRef.current) candidates.push({ mesh: stockModelRef.current, which: 'stock' });
@@ -479,6 +593,19 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
         };
 
         const onPointerMove = (e: PointerEvent) => {
+            if (pickOriginModeRef.current) {
+                const v = findNearestVertex(e);
+                if (v && hoverVertexMarkerRef.current) {
+                    hoverVertexMarkerRef.current.position.copy(v);
+                    hoverVertexMarkerRef.current.visible = true;
+                } else if (hoverVertexMarkerRef.current) {
+                    hoverVertexMarkerRef.current.visible = false;
+                }
+                return;
+            } else if (hoverVertexMarkerRef.current) {
+                hoverVertexMarkerRef.current.visible = false;
+            }
+
             const drag = dragStateRef.current;
             if (!drag || !cameraRef.current) return;
 
@@ -512,7 +639,7 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
             const wasDragging = dragStateRef.current !== null;
             dragStateRef.current = null;
             controls.enabled = true;
-            renderer.domElement.style.cursor = pickFaceModeRef.current ? 'crosshair' : 'default';
+            renderer.domElement.style.cursor = (pickFaceModeRef.current || pickOriginModeRef.current) ? 'crosshair' : 'default';
             if (renderer.domElement.hasPointerCapture(e.pointerId)) {
                 renderer.domElement.releasePointerCapture(e.pointerId);
             }
@@ -520,6 +647,15 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
             const downPos = pointerDownPos;
             pointerDownPos = null;
             if (wasDragging) return;
+
+            if (pickOriginModeRef.current) {
+                if (!downPos || Math.hypot(e.clientX - downPos.x, e.clientY - downPos.y) > 5) return;
+                const v = findNearestVertex(e);
+                if (v) {
+                    onOriginPickedRef.current?.({ x: Math.round(v.x * 1000) / 1000, y: Math.round(v.y * 1000) / 1000, z: Math.round(v.z * 1000) / 1000 });
+                }
+                return;
+            }
 
             const mode = pickFaceModeRef.current;
             if (!mode || !downPos || previewModeRef.current) return;

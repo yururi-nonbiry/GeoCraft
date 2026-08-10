@@ -12,6 +12,14 @@ export type ToolpathSegment =
     | { type: 'line'; points: number[][] }
     | { type: 'arc'; start: number[]; end: number[]; center: number[]; direction: 'cw' | 'ccw' };
 
+export type WorkOrigin = {
+    x: number;
+    y: number;
+    z: number;
+    type: 'vertex' | 'preset' | 'custom';
+    presetName?: string;
+};
+
 export interface SerialPortInfo {
   path: string;
 }
