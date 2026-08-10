@@ -16,6 +16,12 @@ import {
     Grid,
     Checkbox,
     FormControlLabel,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogActions,
+    IconButton,
+    Tooltip,
 } from '@mui/material';
 import { Refresh, Link, LinkOff, PlayArrow, Pause, Stop, SkipNext, Settings } from '@mui/icons-material';
 import { MachineSetting, ToolSetting } from '../types';
@@ -139,6 +145,7 @@ const TabPanel = (props: { children?: React.ReactNode; index: number; value: num
 
 const ControlPanel = (props: ControlPanelProps) => {
     const [activeTab, setActiveTab] = useState(0);
+    const [isMachineSettingsOpen, setIsMachineSettingsOpen] = useState(false);
 
     return (
         <Grid
@@ -385,7 +392,14 @@ const ControlPanel = (props: ControlPanelProps) => {
                 </TabPanel>
                 <TabPanel value={activeTab} index={1}>
                     <Paper sx={{ p: 2, mb: 2 }}>
-                        <Typography variant="h6" gutterBottom>マシン設定</Typography>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                            <Typography variant="h6">マシン設定</Typography>
+                            <Tooltip title="詳細設定">
+                                <IconButton size="small" onClick={() => setIsMachineSettingsOpen(true)}>
+                                    <Settings />
+                                </IconButton>
+                            </Tooltip>
+                        </Box>
                         <FormControl fullWidth margin="normal" size="small">
                             <InputLabel>加工機</InputLabel>
                             <Select
@@ -398,10 +412,6 @@ const ControlPanel = (props: ControlPanelProps) => {
                                 ))}
                             </Select>
                         </FormControl>
-                        <TextField label="安全高さ (mm)" type="number" value={props.safeZ} onChange={(e) => props.setSafeZ(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
-                        <TextField label="切り込み深さ (mm)" type="number" value={props.stepDown} onChange={(e) => props.setStepDown(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
-                        <TextField label="リトラクト高さ (mm)" type="number" value={props.retractZ} onChange={(e) => props.setRetractZ(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
-                        <TextField label="ペック量 (Q)" type="number" value={props.peckQ} onChange={(e) => props.setPeckQ(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
                     </Paper>
                     {props.isConnected && (
                         <Paper sx={{ p: 2, mb: 2 }}>
@@ -653,6 +663,57 @@ const ControlPanel = (props: ControlPanelProps) => {
                     </Paper>
                 </TabPanel>
             </Box>
+            <Dialog
+                open={isMachineSettingsOpen}
+                onClose={() => setIsMachineSettingsOpen(false)}
+                maxWidth="xs"
+                fullWidth
+            >
+                <DialogTitle>マシン詳細設定</DialogTitle>
+                <DialogContent dividers>
+                    <TextField
+                        label="安全高さ (mm)"
+                        type="number"
+                        value={props.safeZ}
+                        onChange={(e) => props.setSafeZ(parseFloat(e.target.value) || 0)}
+                        fullWidth
+                        margin="normal"
+                        size="small"
+                    />
+                    <TextField
+                        label="切り込み深さ (mm)"
+                        type="number"
+                        value={props.stepDown}
+                        onChange={(e) => props.setStepDown(parseFloat(e.target.value) || 0)}
+                        fullWidth
+                        margin="normal"
+                        size="small"
+                    />
+                    <TextField
+                        label="リトラクト高さ (mm)"
+                        type="number"
+                        value={props.retractZ}
+                        onChange={(e) => props.setRetractZ(parseFloat(e.target.value) || 0)}
+                        fullWidth
+                        margin="normal"
+                        size="small"
+                    />
+                    <TextField
+                        label="ペック量 (Q)"
+                        type="number"
+                        value={props.peckQ}
+                        onChange={(e) => props.setPeckQ(parseFloat(e.target.value) || 0)}
+                        fullWidth
+                        margin="normal"
+                        size="small"
+                    />
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setIsMachineSettingsOpen(false)} variant="contained">
+                        閉じる
+                    </Button>
+                </DialogActions>
+            </Dialog>
         </Grid>
     );
 };
