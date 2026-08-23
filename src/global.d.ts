@@ -89,6 +89,7 @@ export interface ElectronAPI {
     resetMachineOrigin: () => void;
     spindleOn: (speed: number) => void;
     spindleOff: () => void;
+    onSpindleStatus: (callback: (status: { on: boolean }) => void) => () => void;
     onStatus: (callback: (status: any) => void) => () => void;
     requestGrblSettings: () => void;
     saveGrblSettings: (stepsX: number, stepsY: number, stepsZ: number, invertX: boolean, invertY: boolean, invertZ: boolean) => void;

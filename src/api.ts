@@ -126,6 +126,7 @@ class WebView2API implements ElectronAPI {
     resetMachineOrigin() { this.callBridge('ResetMachineOrigin'); }
     spindleOn(speed: number) { this.callBridge('SpindleOn', speed); }
     spindleOff() { this.callBridge('SpindleOff'); }
+    onSpindleStatus(callback: (status: { on: boolean }) => void) { return this.on('spindle-status', callback); }
     onStatus(callback: (status: any) => void) { return this.on('serial-status', callback); }
     requestGrblSettings() { this.callBridge('RequestGrblSettings'); }
     saveGrblSettings(stepsX: number, stepsY: number, stepsZ: number, invertX: boolean, invertY: boolean, invertZ: boolean) {

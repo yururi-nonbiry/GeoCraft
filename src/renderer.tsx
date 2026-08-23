@@ -41,8 +41,9 @@ import { api } from './api';
 
 import ThreeViewer from './components/ThreeViewer';
 import ControlPanel from './components/ControlPanel';
-import { Geometry, ToolpathSegment, Toolpath, SerialPortInfo, MachineSetting, EditableMachineSetting, ToolSetting, EditableToolSetting, StlBaseTransform, WorkOrigin } from './types';
+import { Geometry, ToolpathSegment, Toolpath, MachineSetting, EditableMachineSetting, ToolSetting, EditableToolSetting, StlBaseTransform, WorkOrigin } from './types';
 import { createBoxStlData, translateStlData, getStlMinZ } from './stlUtils';
+import { useCncConnection } from './hooks/useCncConnection';
 
 const theme = createTheme({
   palette: {
@@ -351,36 +352,12 @@ const App = () => {
   const [isToolDialogOpen, setIsToolDialogOpen] = useState(false);
   const [editingTool, setEditingTool] = useState<EditableToolSetting>({ ...EMPTY_TOOL });
 
-  // CNC Connection State
-  const [serialPorts, setSerialPorts] = useState<SerialPortInfo[]>([]);
-  const [selectedPort, setSelectedPort] = useState<string>('');
-  const [isConnected, setIsConnected] = useState(false);
-  const [baudRate, setBaudRate] = useState(115200);
-  const [consoleLog, setConsoleLog] = useState<string[]>([]);
-
-  // G-code Sending State
-  const [gcode, setGcode] = useState('');
-  const [gcodeStatus, setGcodeStatus] = useState<'idle' | 'sending' | 'paused' | 'finished' | 'error'>('idle');
-  const [gcodeProgress, setGcodeProgress] = useState({ sent: 0, total: 0 });
-
   // 3D Path Generation State
   const [isGenerating3dPath, setIsGenerating3dPath] = useState(false);
   const [path3dProgress, setPath3dProgress] = useState({ current: 0, total: 0 });
 
-  // Jog & Status State
-  const [jogStep, setJogStep] = useState(10);
-  const [spindleSpeed, setSpindleSpeed] = useState(1000);
-  const [spindleOn, setSpindleOn] = useState(false);
-  const [enableMachineOriginReset, setEnableMachineOriginReset] = useState(false);
-  const [machinePosition, setMachinePosition] = useState({ wpos: { x: 0, y: 0, z: 0 }, mpos: { x: 0, y: 0, z: 0 }, status: 'Unknown' });
-  const [grblSettings, setGrblSettings] = useState({
-    stepsX: 250,
-    stepsY: 250,
-    stepsZ: 250,
-    invertX: false,
-    invertY: false,
-    invertZ: false,
-  });
+  // シリアル接続/ジョグ/主軸/Grbl設定/G-code送信制御など、CNC機械との通信に関するstateとhandlerはここに集約
+  const cnc = useCncConnection();
 
   const currentMachine = machineSettings.find((m) => m.id === selectedMachineId) || machineSettings[0] || DEFAULT_MACHINES[0];
 
@@ -473,39 +450,7 @@ const App = () => {
     });
   };
 
-  // --- CNC Connection Logic ---
-  const handleRefreshPorts = () => {
-    api.listSerialPorts().then(result => {
-      if (result.status === 'success') {
-        setSerialPorts(result.ports);
-        if (result.ports.length > 0 && !selectedPort) {
-          setSelectedPort(result.ports[0].path);
-        }
-      } else {
-        alert(`ポートの取得に失敗しました: ${result.message}`);
-      }
-    });
-  };
-
   useEffect(() => {
-    handleRefreshPorts();
-    const removeDataListener = api.onSerialData((data) => setConsoleLog(prev => [...prev, `> ${data}`]));
-    const removeClosedListener = api.onSerialClosed(() => {
-      setIsConnected(false);
-      setConsoleLog(prev => [...prev, '--- 接続が切断されました ---']);
-    });
-    const removeGcodeProgressListener = api.onGcodeProgress(progress => {
-      setGcodeProgress({ sent: progress.sent, total: progress.total });
-      setGcodeStatus(progress.status);
-      if (progress.status === 'finished') {
-        setConsoleLog(prev => [...prev, '--- G-code送信完了 ---']);
-        setGcodeStatus('idle');
-      } else if (progress.status === 'error') {
-        setConsoleLog(prev => [...prev, '--- G-code送信エラー ---']);
-        setGcodeStatus('idle');
-      }
-    });
-    const removeStatusListener = api.onStatus(status => setMachinePosition(status));
     const removeFileOpenListener = api.onFileOpen((filePath) => {
       setToolpaths(null);
       setGeometry(null);
@@ -534,30 +479,10 @@ const App = () => {
     const removePathProgressListener = api.onPathProgress((progress) => {
       setPath3dProgress({ current: progress.current, total: progress.total });
     });
-    const removeGrblSettingListener = api.onGrblSetting((setting) => {
-      setGrblSettings(prev => {
-        const next = { ...prev };
-        if (setting.id === 100) next.stepsX = setting.value;
-        if (setting.id === 101) next.stepsY = setting.value;
-        if (setting.id === 102) next.stepsZ = setting.value;
-        if (setting.id === 3) {
-          const val = Math.round(setting.value);
-          next.invertX = (val & 1) !== 0;
-          next.invertY = (val & 2) !== 0;
-          next.invertZ = (val & 4) !== 0;
-        }
-        return next;
-      });
-    });
 
     return () => {
-      removeDataListener();
-      removeClosedListener();
-      removeGcodeProgressListener();
-      removeStatusListener();
       removeFileOpenListener();
       removePathProgressListener();
-      removeGrblSettingListener();
     };
   }, []);
 
@@ -642,101 +567,6 @@ const App = () => {
 
     loadSettings();
   }, []);
-
-  const handleConnect = async () => {
-    if (!selectedPort) return alert('ポートを選択してください。');
-    const result = await api.connectSerial(selectedPort, baudRate);
-    if (result.status === 'success') {
-      setIsConnected(true);
-      setConsoleLog(prev => [...prev, `--- ${selectedPort}に接続しました ---`]);
-      setTimeout(() => {
-        api.requestGrblSettings();
-      }, 500);
-    } else {
-      alert(`接続エラー: ${result.message}`);
-    }
-  };
-
-  const handleDisconnect = async () => {
-    const result = await api.disconnectSerial();
-    if (result.status !== 'success') alert(`切断エラー: ${result.message}`);
-  };
-
-  const handleJog = (axis: 'X' | 'Y' | 'Z', direction: number) => {
-    if (isConnected) api.jog(axis, direction, jogStep);
-  };
-
-  const handleSetZero = () => {
-    if (isConnected && confirm('現在のワーク座標をすべて0に設定します。よろしいですか？')) {
-      api.setZero();
-    }
-  };
-
-  const handleResetMachineOrigin = () => {
-    if (isConnected) {
-      api.resetMachineOrigin();
-    }
-  };
-
-  const handleSpindleOn = () => {
-    if (isConnected) {
-      api.spindleOn(spindleSpeed);
-      setSpindleOn(true);
-    }
-  };
-
-  const handleSpindleOff = () => {
-    if (isConnected) {
-      api.spindleOff();
-      setSpindleOn(false);
-    }
-  };
-
-  const handleRequestGrblSettings = () => {
-    if (isConnected) {
-      api.requestGrblSettings();
-    }
-  };
-
-  const handleSaveGrblSettings = () => {
-    if (isConnected) {
-      api.saveGrblSettings(
-        grblSettings.stepsX,
-        grblSettings.stepsY,
-        grblSettings.stepsZ,
-        grblSettings.invertX,
-        grblSettings.invertY,
-        grblSettings.invertZ
-      );
-      alert('設定書き込みコマンドを送信しました。');
-    }
-  };
-
-  const handleSendGcode = () => {
-    if (gcode.trim() === '') return alert('送信するG-codeがありません。');
-    api.sendGcode(gcode);
-    setGcodeStatus('sending');
-  };
-
-  const handlePauseGcode = () => api.pauseGcode();
-  const handleResumeGcode = () => api.resumeGcode();
-  const handleStopGcode = () => api.stopGcode();
-
-  const handleEmergencyStop = () => {
-    if (!isConnected) return;
-    api.emergencyStop();
-    setSpindleOn(false);
-    setGcodeStatus('idle');
-  };
-
-  // Escape キーをどこにフォーカスがあっても緊急停止として扱う（ダイアログ/入力欄内でも動作させるため window に登録）
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') handleEmergencyStop();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isConnected]);
 
   // 完全な円（DXFのCIRCLEエンティティ等）はセグメントを持たずarcsのみに格納されるため、
   // 他の形状と線分共有していない（＝隣接していない）円は別途ループとして追加する
@@ -1072,8 +902,8 @@ const App = () => {
       'Gコードの生成に失敗しました'
     );
     if (result?.status === 'success') {
-      setGcode(result.gcode);
-      setGcodeStatus('idle');
+      cnc.setGcode(result.gcode);
+      cnc.setGcodeStatus('idle');
       return true;
     }
     return false;
@@ -1223,8 +1053,8 @@ const App = () => {
               variant="contained"
               color="error"
               startIcon={<Stop />}
-              onClick={handleEmergencyStop}
-              disabled={!isConnected}
+              onClick={cnc.handleEmergencyStop}
+              disabled={!cnc.isConnected}
               title="機械の動作を即座に停止します"
               sx={{ mr: 2, fontWeight: 'bold' }}
             >
@@ -1422,44 +1252,10 @@ const App = () => {
             setSafeZ={(val) => updateMachineSetting('safeZ', val)}
             stepDown={currentMachine.stepDown}
             setStepDown={(val) => updateMachineSetting('stepDown', val)}
-            isConnected={isConnected}
-            selectedPort={selectedPort}
-            setSelectedPort={setSelectedPort}
-            serialPorts={serialPorts}
-            baudRate={baudRate}
-            setBaudRate={setBaudRate}
-            handleRefreshPorts={handleRefreshPorts}
-            handleConnect={handleConnect}
-            handleDisconnect={handleDisconnect}
-            consoleLog={consoleLog}
-            gcode={gcode}
-            setGcode={setGcode}
-            handleSendGcode={handleSendGcode}
-            gcodeStatus={gcodeStatus}
-            handlePauseGcode={handlePauseGcode}
-            handleResumeGcode={handleResumeGcode}
-            handleStopGcode={handleStopGcode}
-            gcodeProgress={gcodeProgress}
-            machinePosition={machinePosition}
-            jogStep={jogStep}
-            setJogStep={setJogStep}
-            handleJog={handleJog}
-            handleSetZero={handleSetZero}
-            enableMachineOriginReset={enableMachineOriginReset}
-            setEnableMachineOriginReset={setEnableMachineOriginReset}
-            handleResetMachineOrigin={handleResetMachineOrigin}
-            spindleSpeed={spindleSpeed}
-            setSpindleSpeed={setSpindleSpeed}
-            spindleOn={spindleOn}
-            handleSpindleOn={handleSpindleOn}
-            handleSpindleOff={handleSpindleOff}
+            {...cnc}
             machineSettings={machineSettings}
             selectedMachineId={selectedMachineId}
             setSelectedMachineId={setSelectedMachineId}
-            grblSettings={grblSettings}
-            setGrblSettings={setGrblSettings}
-            handleRequestGrblSettings={handleRequestGrblSettings}
-            handleSaveGrblSettings={handleSaveGrblSettings}
             toolSettings={toolSettings}
             selectedToolId={selectedToolId}
             setSelectedToolId={setSelectedToolId}

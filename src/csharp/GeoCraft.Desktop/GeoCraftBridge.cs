@@ -380,6 +380,9 @@ namespace GeoCraft.Desktop
             _gcodeQueue.Clear();
             _serialService.Write(GrblCommands.SoftReset);
             BroadcastGcodeProgress("idle");
+            // A soft reset halts the spindle unconditionally, so the frontend's
+            // spindle-on indicator must follow even outside an explicit SpindleOff call.
+            Broadcast("spindle-status", new { on = false });
         }
 
         public void Jog(string axis, double direction, double step) {
@@ -403,12 +406,14 @@ namespace GeoCraft.Desktop
         public void SpindleOn(double speed) {
              ExecuteSafeVoid(() => {
                  _serialService.Write(GrblCommands.SpindleOn(speed));
+                 Broadcast("spindle-status", new { on = true });
              });
         }
 
         public void SpindleOff() {
              ExecuteSafeVoid(() => {
                  _serialService.Write(GrblCommands.SpindleOff);
+                 Broadcast("spindle-status", new { on = false });
              });
         }
 
