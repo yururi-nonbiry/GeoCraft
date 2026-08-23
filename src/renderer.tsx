@@ -351,6 +351,7 @@ const App = () => {
   const [editingMaterial, setEditingMaterial] = useState<EditableMaterialSetting>({ ...EMPTY_MATERIAL });
   const [isToolDialogOpen, setIsToolDialogOpen] = useState(false);
   const [editingTool, setEditingTool] = useState<EditableToolSetting>({ ...EMPTY_TOOL });
+  const [projectLoadedPath, setProjectLoadedPath] = useState<string | null>(null);
 
   // 3D Path Generation State
   const [isGenerating3dPath, setIsGenerating3dPath] = useState(false);
@@ -1036,7 +1037,7 @@ const App = () => {
     }
 
     resetSimulation();
-    alert(`プロジェクトを読み込みました: ${result.filePath}`);
+    setProjectLoadedPath(result.filePath);
   };
 
   return (
@@ -1801,6 +1802,16 @@ const App = () => {
               setIsToolDialogOpen(false);
             }}
           >保存</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={projectLoadedPath !== null} onClose={() => setProjectLoadedPath(null)}>
+        <DialogTitle>プロジェクトを読み込みました</DialogTitle>
+        <DialogContent dividers>
+          <Typography>{projectLoadedPath}</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button variant="contained" onClick={() => setProjectLoadedPath(null)}>OK</Button>
         </DialogActions>
       </Dialog>
     </ThemeProvider>
