@@ -1,8 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import { SerialPortInfo } from '../types';
 
 export type GcodeStatus = 'idle' | 'sending' | 'paused' | 'finished' | 'error';
+
+// 文字数カウント方式のストリーミングではGrblから"ok"が非常に高頻度(先読みバッファが
+// 空くたび)に返ってくるため、受信のたびに setState すると再レンダーの嵐になりUI全体
+// (タブ切り替え等)が重くなる。ここで短時間分をまとめてから反映し、件数も上限で切る。
+const CONSOLE_LOG_FLUSH_MS = 100;
+const CONSOLE_LOG_MAX_LINES = 500;
 
 type MachinePosition = {
   wpos: { x: number; y: number; z: number };
@@ -54,6 +60,11 @@ export const useCncConnection = () => {
     invertZ: false,
   });
 
+  const pendingConsoleLinesRef = useRef<string[]>([]);
+  const consoleFlushTimerRef = useRef<number | null>(null);
+  const pendingGcodeProgressRef = useRef<{ sent: number; total: number } | null>(null);
+  const gcodeProgressFlushTimerRef = useRef<number | null>(null);
+
   const handleRefreshPorts = () => {
     api.listSerialPorts().then(result => {
       if (result.status === 'success') {
@@ -69,12 +80,51 @@ export const useCncConnection = () => {
 
   useEffect(() => {
     handleRefreshPorts();
-    const removeDataListener = api.onSerialData((data) => setConsoleLog(prev => [...prev, `> ${data}`]));
+    const removeDataListener = api.onSerialData((data) => {
+      pendingConsoleLinesRef.current.push(`> ${data}`);
+      if (consoleFlushTimerRef.current == null) {
+        consoleFlushTimerRef.current = window.setTimeout(() => {
+          consoleFlushTimerRef.current = null;
+          const batch = pendingConsoleLinesRef.current;
+          pendingConsoleLinesRef.current = [];
+          if (batch.length === 0) return;
+          setConsoleLog(prev => {
+            const next = prev.length + batch.length > CONSOLE_LOG_MAX_LINES
+              ? [...prev, ...batch].slice(-CONSOLE_LOG_MAX_LINES)
+              : [...prev, ...batch];
+            return next;
+          });
+        }, CONSOLE_LOG_FLUSH_MS);
+      }
+    });
     const removeClosedListener = api.onSerialClosed(() => {
       setIsConnected(false);
       setConsoleLog(prev => [...prev, '--- 接続が切断されました ---']);
     });
     const removeGcodeProgressListener = api.onGcodeProgress(progress => {
+      // "sending"中の進捗(sent/total)更新は文字数カウント方式のバッファリング送信で
+      // 高頻度に届くため、数値の反映も他の再レンダーと同じ間隔にまとめて間引く。
+      // finished/error等の状態遷移は稀なイベントなので即時に反映する。
+      if (progress.status === 'sending') {
+        pendingGcodeProgressRef.current = { sent: progress.sent, total: progress.total };
+        setGcodeStatus('sending');
+        if (gcodeProgressFlushTimerRef.current == null) {
+          gcodeProgressFlushTimerRef.current = window.setTimeout(() => {
+            gcodeProgressFlushTimerRef.current = null;
+            if (pendingGcodeProgressRef.current) {
+              setGcodeProgress(pendingGcodeProgressRef.current);
+              pendingGcodeProgressRef.current = null;
+            }
+          }, CONSOLE_LOG_FLUSH_MS);
+        }
+        return;
+      }
+
+      if (gcodeProgressFlushTimerRef.current != null) {
+        window.clearTimeout(gcodeProgressFlushTimerRef.current);
+        gcodeProgressFlushTimerRef.current = null;
+      }
+      pendingGcodeProgressRef.current = null;
       setGcodeProgress({ sent: progress.sent, total: progress.total });
       setGcodeStatus(progress.status);
       if (progress.status === 'finished') {
@@ -104,6 +154,14 @@ export const useCncConnection = () => {
     });
 
     return () => {
+      if (consoleFlushTimerRef.current != null) {
+        window.clearTimeout(consoleFlushTimerRef.current);
+        consoleFlushTimerRef.current = null;
+      }
+      if (gcodeProgressFlushTimerRef.current != null) {
+        window.clearTimeout(gcodeProgressFlushTimerRef.current);
+        gcodeProgressFlushTimerRef.current = null;
+      }
       removeDataListener();
       removeClosedListener();
       removeGcodeProgressListener();
