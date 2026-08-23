@@ -83,6 +83,8 @@ interface ControlPanelProps {
     handleRefreshPorts: () => void;
     handleConnect: () => void;
     handleDisconnect: () => void;
+    connectionError: string | null;
+    clearConnectionError: () => void;
     consoleLog: string[];
     gcode: string;
     setGcode: (val: string) => void;
@@ -977,6 +979,22 @@ const ControlPanel = (props: ControlPanelProps) => {
                         color="secondary"
                     >
                         実行
+                    </Button>
+                </DialogActions>
+            </Dialog>
+            <Dialog
+                open={!!props.connectionError}
+                onClose={props.clearConnectionError}
+                maxWidth="xs"
+                fullWidth
+            >
+                <DialogTitle>エラー</DialogTitle>
+                <DialogContent dividers>
+                    <Typography>{props.connectionError}</Typography>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={props.clearConnectionError} variant="contained">
+                        閉じる
                     </Button>
                 </DialogActions>
             </Dialog>

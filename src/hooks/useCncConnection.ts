@@ -28,6 +28,7 @@ export const useCncConnection = () => {
   const [isConnected, setIsConnected] = useState(false);
   const [baudRate, setBaudRate] = useState(115200);
   const [consoleLog, setConsoleLog] = useState<string[]>([]);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
 
   const [gcode, setGcode] = useState('');
   const [gcodeStatus, setGcodeStatus] = useState<GcodeStatus>('idle');
@@ -120,14 +121,16 @@ export const useCncConnection = () => {
         api.requestGrblSettings();
       }, 500);
     } else {
-      alert(`接続エラー: ${result.message}`);
+      setConnectionError(`接続エラー: ${result.message}`);
     }
   };
 
   const handleDisconnect = async () => {
     const result = await api.disconnectSerial();
-    if (result.status !== 'success') alert(`切断エラー: ${result.message}`);
+    if (result.status !== 'success') setConnectionError(`切断エラー: ${result.message}`);
   };
+
+  const clearConnectionError = () => setConnectionError(null);
 
   const handleJog = (axis: 'X' | 'Y' | 'Z', direction: number) => {
     if (isConnected) api.jog(axis, direction, jogStep);
@@ -212,6 +215,8 @@ export const useCncConnection = () => {
     baudRate,
     setBaudRate,
     consoleLog,
+    connectionError,
+    clearConnectionError,
 
     gcode,
     setGcode,
