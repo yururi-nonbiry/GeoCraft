@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Microsoft.Web.WebView2.Core;
@@ -31,6 +32,15 @@ namespace GeoCraft.Desktop
         private bool _isPaused = false;
         private string _receivedBuffer = "";
         private readonly object _stateLock = new object();
+
+        // Grbl doesn't push status reports on its own; it only replies to the
+        // real-time '?' query. Poll periodically while connected so WPos/MPos/
+        // machine state keep updating in the UI.
+        private System.Timers.Timer? _statusPollTimer;
+        // WCO (work coordinate offset) is only included in some status reports,
+        // so remember the last one seen to reconstruct whichever of MPos/WPos
+        // a given report omitted.
+        private double[] _lastWco = new double[3];
 
         public GeoCraftBridge(MainWindow mainWindow)
         {
@@ -91,7 +101,11 @@ namespace GeoCraft.Desktop
 
         private void ProcessReceivedLine(string line)
         {
-            if (line == "ok" || line.StartsWith("error"))
+            if (line.StartsWith("<") && line.EndsWith(">"))
+            {
+                ProcessStatusReport(line);
+            }
+            else if (line == "ok" || line.StartsWith("error"))
             {
                 if (_isSending && !_isPaused)
                 {
@@ -113,6 +127,88 @@ namespace GeoCraft.Desktop
                     LogService.Log($"Error parsing Grbl setting line '{line}': {ex.Message}");
                 }
             }
+        }
+
+        // Parses a Grbl real-time status report, e.g.
+        // "<Idle|MPos:0.000,0.000,0.000|FS:0,0|WCO:0.000,0.000,0.000>"
+        private void ProcessStatusReport(string line)
+        {
+            try
+            {
+                string inner = line.Substring(1, line.Length - 2);
+                var fields = inner.Split('|');
+                if (fields.Length == 0) return;
+
+                string state = fields[0];
+                double[]? mpos = null;
+                double[]? wpos = null;
+
+                for (int i = 1; i < fields.Length; i++)
+                {
+                    var kv = fields[i].Split(new[] { ':' }, 2);
+                    if (kv.Length != 2) continue;
+
+                    switch (kv[0])
+                    {
+                        case "MPos":
+                            mpos = ParseTriple(kv[1]);
+                            break;
+                        case "WPos":
+                            wpos = ParseTriple(kv[1]);
+                            break;
+                        case "WCO":
+                            _lastWco = ParseTriple(kv[1]) ?? _lastWco;
+                            break;
+                    }
+                }
+
+                if (mpos == null && wpos == null) return;
+
+                if (mpos == null)
+                    mpos = new[] { wpos![0] + _lastWco[0], wpos[1] + _lastWco[1], wpos[2] + _lastWco[2] };
+                if (wpos == null)
+                    wpos = new[] { mpos[0] - _lastWco[0], mpos[1] - _lastWco[1], mpos[2] - _lastWco[2] };
+
+                Broadcast("serial-status", new
+                {
+                    status = state,
+                    mpos = new { x = mpos[0], y = mpos[1], z = mpos[2] },
+                    wpos = new { x = wpos[0], y = wpos[1], z = wpos[2] }
+                });
+            }
+            catch (Exception ex)
+            {
+                LogService.Log($"Error parsing status report '{line}': {ex.Message}");
+            }
+        }
+
+        private static double[]? ParseTriple(string s)
+        {
+            var parts = s.Split(',');
+            if (parts.Length < 3) return null;
+            if (double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out double x) &&
+                double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out double y) &&
+                double.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out double z))
+            {
+                return new[] { x, y, z };
+            }
+            return null;
+        }
+
+        private void StartStatusPolling()
+        {
+            StopStatusPolling();
+            _statusPollTimer = new System.Timers.Timer(250);
+            _statusPollTimer.Elapsed += (s, e) => _serialService.Write("?");
+            _statusPollTimer.AutoReset = true;
+            _statusPollTimer.Start();
+        }
+
+        private void StopStatusPolling()
+        {
+            _statusPollTimer?.Stop();
+            _statusPollTimer?.Dispose();
+            _statusPollTimer = null;
         }
 
         private void SendNextLine()
@@ -282,12 +378,23 @@ namespace GeoCraft.Desktop
              return ExecuteSafe(() => _serialService.ListPorts());
         }
         
-        public string ConnectSerial(string path, int baudRate) { 
-            return ExecuteSafe(() => _serialService.Connect(path, baudRate));
+        public string ConnectSerial(string path, int baudRate) {
+            return ExecuteSafe(() => {
+                var result = _serialService.Connect(path, baudRate);
+                dynamic r = result;
+                if (r != null && r!.status == "success")
+                {
+                    StartStatusPolling();
+                }
+                return result;
+            });
         }
 
-        public string DisconnectSerial() { 
-            return ExecuteSafe(() => _serialService.Disconnect());
+        public string DisconnectSerial() {
+            return ExecuteSafe(() => {
+                StopStatusPolling();
+                return _serialService.Disconnect();
+            });
         }
 
         public void SendGcode(string gcode) { 
