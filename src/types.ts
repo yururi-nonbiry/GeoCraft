@@ -12,6 +12,14 @@ export type ToolpathSegment =
     | { type: 'line'; points: number[][] }
     | { type: 'arc'; start: number[]; end: number[]; center: number[]; direction: 'cw' | 'ccw' };
 
+export type WorkOrigin = {
+    x: number;
+    y: number;
+    z: number;
+    type: 'vertex' | 'preset' | 'custom';
+    presetName?: string;
+};
+
 export interface SerialPortInfo {
   path: string;
 }
@@ -29,6 +37,8 @@ export type MachineSetting = {
   workAreaX: number;
   workAreaY: number;
   workAreaZ: number;
+  // 機械原点リセットを有効にするフラグ
+  enableMachineOriginReset?: boolean;
 };
 
 export type EditableMachineSetting = Omit<MachineSetting, 'id'> & { id: number | null };

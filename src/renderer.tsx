@@ -41,7 +41,7 @@ import { api } from './api';
 
 import ThreeViewer from './components/ThreeViewer';
 import ControlPanel from './components/ControlPanel';
-import { Geometry, ToolpathSegment, Toolpath, SerialPortInfo, MachineSetting, EditableMachineSetting, ToolSetting, EditableToolSetting, StlBaseTransform } from './types';
+import { Geometry, ToolpathSegment, Toolpath, SerialPortInfo, MachineSetting, EditableMachineSetting, ToolSetting, EditableToolSetting, StlBaseTransform, WorkOrigin } from './types';
 import { createBoxStlData, translateStlData, getStlMinZ } from './stlUtils';
 
 const theme = createTheme({
@@ -92,6 +92,7 @@ type ProjectData = {
   target: StlPlacement;
   geometry: Geometry | null;
   toolpaths: ToolpathSegment[] | null;
+  workOrigin?: WorkOrigin | null;
   toolDiameter: number;
   stepover: number;
   sliceHeight: number;
@@ -203,6 +204,113 @@ const App = () => {
   const [stockStlData, setStockStlData] = useState<ArrayBuffer | null>(null);
   const [targetStlData, setTargetStlData] = useState<ArrayBuffer | null>(null);
   const [pickFaceMode, setPickFaceMode] = useState<'stock' | 'target' | null>(null);
+  // --- 加工開始原点 (ワーク原点 G54) state ---
+  const [workOrigin, setWorkOrigin] = useState<WorkOrigin | null>(null);
+  const [pickOriginMode, setPickOriginMode] = useState<boolean>(false);
+
+  const handleOriginPicked = (origin: { x: number; y: number; z: number }) => {
+    setWorkOrigin({
+      x: origin.x,
+      y: origin.y,
+      z: origin.z,
+      type: 'vertex',
+      presetName: 'custom',
+    });
+    setPickOriginMode(false);
+  };
+
+  const handleSelectOriginPreset = (preset: 'left-front-top' | 'left-front-bottom' | 'center-top' | 'center-bottom' | 'right-back-top' | 'table-origin') => {
+    setPickOriginMode(false);
+    if (preset === 'table-origin') {
+      setWorkOrigin({ x: 0, y: 0, z: 0, type: 'preset', presetName: 'table-origin' });
+      return;
+    }
+
+    let bounds = { minX: 0, maxX: 100, minY: 0, maxY: 100, minZ: 0, maxZ: 20 };
+    if (stockStlData) {
+      const basePos = stockBaseTransform?.position ?? { x: 0, y: 0, z: 0 };
+      const totalX = basePos.x + stockOffset.x;
+      const totalY = basePos.y + stockOffset.y;
+      const totalZ = basePos.z + stockOffset.z;
+
+      const view = new DataView(stockStlData);
+      const numTriangles = view.getUint32(80, true);
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZVal = Infinity, maxZVal = -Infinity;
+      let offset = 84;
+      for (let i = 0; i < numTriangles; i++) {
+        offset += 12; // skip normal
+        for (let v = 0; v < 3; v++) {
+          const vx = view.getFloat32(offset, true) + totalX;
+          const vy = view.getFloat32(offset + 4, true) + totalY;
+          const vz = view.getFloat32(offset + 8, true) + totalZ;
+          if (vx < minX) minX = vx;
+          if (vx > maxX) maxX = vx;
+          if (vy < minY) minY = vy;
+          if (vy > maxY) maxY = vy;
+          if (vz < minZVal) minZVal = vz;
+          if (vz > maxZVal) maxZVal = vz;
+          offset += 12;
+        }
+        offset += 2;
+      }
+      if (minX !== Infinity) {
+        bounds = { minX, maxX, minY, maxY, minZ: minZVal, maxZ: maxZVal };
+      }
+    }
+
+    let newOrigin = { x: 0, y: 0, z: 0 };
+    if (preset === 'left-front-top') {
+      newOrigin = { x: bounds.minX, y: bounds.minY, z: bounds.maxZ };
+    } else if (preset === 'left-front-bottom') {
+      newOrigin = { x: bounds.minX, y: bounds.minY, z: bounds.minZ };
+    } else if (preset === 'center-top') {
+      newOrigin = { x: (bounds.minX + bounds.maxX) / 2, y: (bounds.minY + bounds.maxY) / 2, z: bounds.maxZ };
+    } else if (preset === 'center-bottom') {
+      newOrigin = { x: (bounds.minX + bounds.maxX) / 2, y: (bounds.minY + bounds.maxY) / 2, z: bounds.minZ };
+    } else if (preset === 'right-back-top') {
+      newOrigin = { x: bounds.maxX, y: bounds.maxY, z: bounds.maxZ };
+    }
+
+    setWorkOrigin({
+      x: Math.round(newOrigin.x * 1000) / 1000,
+      y: Math.round(newOrigin.y * 1000) / 1000,
+      z: Math.round(newOrigin.z * 1000) / 1000,
+      type: 'preset',
+      presetName: preset,
+    });
+  };
+
+  const getEffectiveToolpaths = (paths: ToolpathSegment[] | null): ToolpathSegment[] | null => {
+    if (!paths) return null;
+    if (!workOrigin || (workOrigin.x === 0 && workOrigin.y === 0 && workOrigin.z === 0)) {
+      return paths;
+    }
+    const ox = workOrigin.x;
+    const oy = workOrigin.y;
+    const oz = workOrigin.z;
+
+    return paths.map((seg) => {
+      if (seg.type === 'line') {
+        return {
+          type: 'line',
+          points: seg.points.map((pt) => [
+            pt[0] - ox,
+            pt[1] - oy,
+            pt.length > 2 ? pt[2] - oz : pt[2],
+          ]),
+        };
+      } else {
+        return {
+          type: 'arc',
+          start: [seg.start[0] - ox, seg.start[1] - oy, seg.start.length > 2 ? seg.start[2] - oz : seg.start[2]],
+          end: [seg.end[0] - ox, seg.end[1] - oy, seg.end.length > 2 ? seg.end[2] - oz : seg.end[2]],
+          center: [seg.center[0] - ox, seg.center[1] - oy, seg.center.length > 2 ? seg.center[2] - oz : seg.center[2]],
+          direction: seg.direction,
+        };
+      }
+    });
+  };
+
   // 3Dパス生成後のプレビューモード。true の間は材料/加工後形状の位置調整を禁止する
   const [previewMode, setPreviewMode] = useState(false);
   const [stockOffset, setStockOffset] = useState({ x: 0, y: 0, z: 0 });
@@ -263,6 +371,7 @@ const App = () => {
   const [jogStep, setJogStep] = useState(10);
   const [spindleSpeed, setSpindleSpeed] = useState(1000);
   const [spindleOn, setSpindleOn] = useState(false);
+  const [enableMachineOriginReset, setEnableMachineOriginReset] = useState(false);
   const [machinePosition, setMachinePosition] = useState({ wpos: { x: 0, y: 0, z: 0 }, mpos: { x: 0, y: 0, z: 0 }, status: 'Unknown' });
   const [grblSettings, setGrblSettings] = useState({
     stepsX: 250,
@@ -560,6 +669,12 @@ const App = () => {
   const handleSetZero = () => {
     if (isConnected && confirm('現在のワーク座標をすべて0に設定します。よろしいですか？')) {
       api.setZero();
+    }
+  };
+
+  const handleResetMachineOrigin = () => {
+    if (isConnected) {
+      api.resetMachineOrigin();
     }
   };
 
@@ -941,7 +1056,7 @@ const App = () => {
   const handleSaveGcode = async () => {
     if (!toolpaths || toolpaths.length === 0) return alert('保存するツールパスがありません。');
     const result = await runGcodeAction(
-      () => api.generateGcode({ toolpaths, ...buildGcodeParams() }),
+      () => api.generateGcode({ toolpaths: getEffectiveToolpaths(toolpaths), ...buildGcodeParams() }),
       'Gコードの保存に失敗しました'
     );
     if (result?.status === 'success') alert(`Gコードを保存しました: ${result.filePath}`);
@@ -953,7 +1068,7 @@ const App = () => {
       return false;
     }
     const result = await runGcodeAction(
-      () => api.generateGcodeForTransfer({ toolpaths, ...buildGcodeParams() }),
+      () => api.generateGcodeForTransfer({ toolpaths: getEffectiveToolpaths(toolpaths), ...buildGcodeParams() }),
       'Gコードの生成に失敗しました'
     );
     if (result?.status === 'success') {
@@ -983,6 +1098,7 @@ const App = () => {
         },
         geometry,
         toolpaths,
+        workOrigin,
         toolDiameter,
         stepover,
         sliceHeight,
@@ -1048,12 +1164,14 @@ const App = () => {
 
     setPickFaceMode(null);
     setPreviewMode(false);
+    setPickOriginMode(false);
     await restorePlacement(project.stock, setStockStlFile, setStockStlData, setStockOffset, setStockBaseTransform, setStockStlPath);
     await restorePlacement(project.target, setTargetStlFile, setTargetStlData, setTargetOffset, setTargetBaseTransform);
     if (project.stock?.boxSize) setStockBoxSize(project.stock.boxSize);
 
     setGeometry(project.geometry ?? null);
     setToolpaths(project.toolpaths ?? null);
+    setWorkOrigin(project.workOrigin ?? null);
     if (typeof project.toolDiameter === 'number') setToolDiameter(project.toolDiameter);
     if (typeof project.stepover === 'number') setStepover(project.stepover);
     if (typeof project.sliceHeight === 'number') setSliceHeight(project.sliceHeight);
@@ -1142,6 +1260,9 @@ const App = () => {
                   setTargetBaseTransform(baseTransform);
                 }
               }}
+              workOrigin={workOrigin}
+              pickOriginMode={pickOriginMode}
+              onOriginPicked={handleOriginPicked}
               machineWorkArea={{ x: currentMachine.workAreaX, y: currentMachine.workAreaY, z: currentMachine.workAreaZ }}
               stockOffset={stockOffset}
               targetOffset={targetOffset}
@@ -1255,6 +1376,11 @@ const App = () => {
             )}
           </Grid>
           <ControlPanel
+            workOrigin={workOrigin}
+            setWorkOrigin={setWorkOrigin}
+            pickOriginMode={pickOriginMode}
+            setPickOriginMode={setPickOriginMode}
+            handleSelectOriginPreset={handleSelectOriginPreset}
             toolDiameter={toolDiameter}
             setToolDiameter={setToolDiameter}
             stepover={stepover}
@@ -1319,6 +1445,9 @@ const App = () => {
             setJogStep={setJogStep}
             handleJog={handleJog}
             handleSetZero={handleSetZero}
+            enableMachineOriginReset={enableMachineOriginReset}
+            setEnableMachineOriginReset={setEnableMachineOriginReset}
+            handleResetMachineOrigin={handleResetMachineOrigin}
             spindleSpeed={spindleSpeed}
             setSpindleSpeed={setSpindleSpeed}
             spindleOn={spindleOn}

@@ -394,6 +394,12 @@ namespace GeoCraft.Desktop
              });
         }
 
+        public void ResetMachineOrigin() {
+             ExecuteSafeVoid(() => {
+                 _serialService.Write("$H\n");
+             });
+        }
+
         public void SpindleOn(double speed) {
              ExecuteSafeVoid(() => {
                  _serialService.Write(GrblCommands.SpindleOn(speed));

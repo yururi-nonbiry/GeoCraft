@@ -86,6 +86,7 @@ export interface ElectronAPI {
     // --- Jogging ---
     jog: (axis: 'X' | 'Y' | 'Z', direction: number, step: number) => void;
     setZero: () => void;
+    resetMachineOrigin: () => void;
     spindleOn: (speed: number) => void;
     spindleOff: () => void;
     onStatus: (callback: (status: any) => void) => () => void;
