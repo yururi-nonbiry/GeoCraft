@@ -352,6 +352,7 @@ const App = () => {
   const [isToolDialogOpen, setIsToolDialogOpen] = useState(false);
   const [editingTool, setEditingTool] = useState<EditableToolSetting>({ ...EMPTY_TOOL });
   const [projectLoadedPath, setProjectLoadedPath] = useState<string | null>(null);
+  const [isNoTransferToolpathDialogOpen, setIsNoTransferToolpathDialogOpen] = useState(false);
 
   // 3D Path Generation State
   const [isGenerating3dPath, setIsGenerating3dPath] = useState(false);
@@ -895,7 +896,7 @@ const App = () => {
 
   const handleTransferGcodeToCnc = async (): Promise<boolean> => {
     if (!toolpaths || toolpaths.length === 0) {
-      alert('転送するツールパスがありません。');
+      setIsNoTransferToolpathDialogOpen(true);
       return false;
     }
     const result = await runGcodeAction(
@@ -1812,6 +1813,16 @@ const App = () => {
         </DialogContent>
         <DialogActions>
           <Button variant="contained" onClick={() => setProjectLoadedPath(null)}>OK</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={isNoTransferToolpathDialogOpen} onClose={() => setIsNoTransferToolpathDialogOpen(false)}>
+        <DialogTitle>転送するツールパスがありません</DialogTitle>
+        <DialogContent dividers>
+          <Typography>転送するツールパスがありません。</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button variant="contained" onClick={() => setIsNoTransferToolpathDialogOpen(false)}>OK</Button>
         </DialogActions>
       </Dialog>
     </ThemeProvider>
