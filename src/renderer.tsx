@@ -899,13 +899,29 @@ const App = () => {
       setIsNoTransferToolpathDialogOpen(true);
       return false;
     }
+    // どの区間が固まりの原因か切り分けるための一時的な計測ログ。
+    const tEffective0 = performance.now();
+    const effectiveToolpaths = getEffectiveToolpaths(toolpaths);
+    const tEffective1 = performance.now();
+    console.log(`[transfer] getEffectiveToolpaths: ${(tEffective1 - tEffective0).toFixed(1)}ms, segments=${effectiveToolpaths?.length ?? 0}`);
+
+    const tCall0 = performance.now();
     const result = await runGcodeAction(
-      () => api.generateGcodeForTransfer({ toolpaths: getEffectiveToolpaths(toolpaths), ...buildGcodeParams() }),
+      () => api.generateGcodeForTransfer({ toolpaths: effectiveToolpaths, ...buildGcodeParams() }),
       'Gコードの生成に失敗しました'
     );
+    const tCall1 = performance.now();
+    console.log(`[transfer] bridge call (JSON.stringify + C#生成 + JSON.parse往復): ${(tCall1 - tCall0).toFixed(1)}ms, gcode length=${result?.gcode?.length ?? 0}`);
+
     if (result?.status === 'success') {
+      const tSet0 = performance.now();
       cnc.setGcode(result.gcode);
       cnc.setGcodeStatus('idle');
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          console.log(`[transfer] setGcode -> 再描画完了まで: ${(performance.now() - tSet0).toFixed(1)}ms`);
+        });
+      });
       return true;
     }
     return false;

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using Newtonsoft.Json;
 
 namespace GeoCraft.Desktop.Services
@@ -26,12 +27,14 @@ namespace GeoCraft.Desktop.Services
 
         public object GenerateGcode(string paramsJson)
         {
+            var sw = Stopwatch.StartNew();
             try
             {
                 // toolpathsは3Dラフィングだと数万点規模になり得るため、dynamic/JObjectでの
                 // 逐点アクセスは遅くUIスレッドを長時間ブロックしてしまう。型付きデシリアライズで
                 // 高速化する(挙動はdynamic版と同一に保つ)。
                 var p = JsonConvert.DeserializeObject<GcodeGenerateParams>(paramsJson) ?? new GcodeGenerateParams();
+                LogService.Log($"GenerateGcode: deserialize done at {sw.ElapsedMilliseconds}ms, toolpaths={p.toolpaths.Count}, jsonLen={paramsJson.Length}");
                 var toolpaths = p.toolpaths;
                 double feedRate = p.feedRate;
                 double safeZ = p.safeZ;
@@ -104,11 +107,16 @@ namespace GeoCraft.Desktop.Services
 
                 writer.WriteFooter(null);
 
-                return new { status = "success", gcode = writer.ToString() };
+                LogService.Log($"GenerateGcode: segments built at {sw.ElapsedMilliseconds}ms, calling writer.ToString()");
+                string gcode = writer.ToString();
+                LogService.Log($"GenerateGcode: done at {sw.ElapsedMilliseconds}ms, gcodeLen={gcode.Length}");
+
+                return new { status = "success", gcode };
 
             }
             catch (Exception ex)
             {
+                LogService.Log($"GenerateGcode: failed at {sw.ElapsedMilliseconds}ms: {ex.Message}");
                 return new { status = "error", message = ex.Message };
             }
         }

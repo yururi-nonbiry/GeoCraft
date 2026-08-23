@@ -425,7 +425,11 @@ namespace GeoCraft.Desktop
         }
 
         public string GenerateGcodeForTransfer(string paramsJson) {
-             return ExecuteSafe(() => _gcodeService.GenerateGcode(paramsJson));
+             var sw = System.Diagnostics.Stopwatch.StartNew();
+             LogService.Log("GenerateGcodeForTransfer: entered (COM call landed on UI thread)");
+             var result = ExecuteSafe(() => _gcodeService.GenerateGcode(paramsJson));
+             LogService.Log($"GenerateGcodeForTransfer: returning at {sw.ElapsedMilliseconds}ms, resultJsonLen={result.Length}");
+             return result;
         }
 
         public string GenerateDrillGcode(string paramsJson) {

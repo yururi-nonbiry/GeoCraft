@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
     Typography,
     Paper,
@@ -253,10 +253,27 @@ const LongPressButton = (props: {
     );
 };
 
+const GCODE_DISPLAY_LINE_LIMIT = 2000;
+
 const ControlPanel = (props: ControlPanelProps) => {
     const [activeTab, setActiveTab] = useState(0);
     const [isMachineSettingsOpen, setIsMachineSettingsOpen] = useState(false);
     const [isSetZeroConfirmOpen, setIsSetZeroConfirmOpen] = useState(false);
+
+    // 3Dラフィング等から転送された巨大なG-code(数万行)をそのまま折り返し付きtextareaに
+    // 流し込むと、ブラウザ側の行レイアウト計算が仮想化されず数秒〜数十秒単位で固まる。
+    // 表示だけ先頭N行に切り詰め、送信自体は props.gcode の全文に対して行う。
+    const { displayedGcode, isGcodeTruncated } = useMemo(() => {
+        const lines = props.gcode.split('\n');
+        if (lines.length <= GCODE_DISPLAY_LINE_LIMIT) {
+            return { displayedGcode: props.gcode, isGcodeTruncated: false };
+        }
+        const preview = lines.slice(0, GCODE_DISPLAY_LINE_LIMIT).join('\n');
+        return {
+            displayedGcode: `${preview}\n... (残り${lines.length - GCODE_DISPLAY_LINE_LIMIT}行を省略して表示。送信/保存は全文に対して行われます)`,
+            isGcodeTruncated: true,
+        };
+    }, [props.gcode]);
 
     return (
         <Grid
@@ -725,10 +742,12 @@ const ControlPanel = (props: ControlPanelProps) => {
                                 rows={8}
                                 fullWidth
                                 variant="outlined"
-                                value={props.gcode}
-                                onChange={(e) => props.setGcode(e.target.value)}
+                                value={displayedGcode}
+                                onChange={(e) => { if (!isGcodeTruncated) props.setGcode(e.target.value); }}
                                 placeholder="ここにG-codeを貼り付け..."
                                 sx={{ mb: 1, fontFamily: 'monospace' }}
+                                InputProps={{ readOnly: isGcodeTruncated }}
+                                helperText={isGcodeTruncated ? `G-codeが大きいため先頭${GCODE_DISPLAY_LINE_LIMIT}行のみ表示しています(編集不可)。送信・保存は全文に対して行われます。` : undefined}
                             />
                             <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 1 }}>
                                 <Button variant="contained" onClick={props.handleSendGcode} disabled={!props.isConnected || props.gcodeStatus !== 'idle'} startIcon={<PlayArrow />}>送信</Button>
