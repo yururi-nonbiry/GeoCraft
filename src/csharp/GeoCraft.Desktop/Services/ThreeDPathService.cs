@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using g3;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.Operation.Buffer;
@@ -55,51 +57,67 @@ namespace GeoCraft.Desktop.Services
             }
 
             double stepover = toolDiameter * stepoverRatio;
-            var toolpaths = new List<object>();
 
-            int totalSlices = Math.Max(1, (int)Math.Ceiling((zTop - zBottom) / sliceHeight));
-            int sliceIndex = 0;
-
-            double z = zTop - sliceHeight;
-            while (z > zBottom + 1e-6)
+            var zLevels = new List<double>();
+            for (double zLevel = zTop - sliceHeight; zLevel > zBottom + 1e-6; zLevel -= sliceHeight)
             {
-                sliceIndex++;
-                onProgress?.Invoke(sliceIndex, totalSlices);
+                zLevels.Add(zLevel);
+            }
 
+            int totalSlices = zLevels.Count;
+            var sliceResults = new List<object>?[totalSlices];
+            int completedSlices = 0;
+
+            // 各スライスは独立して計算できるため並列化する。SliceToUnionは呼び出しのたびに
+            // メッシュを複製してからカットするため元のメッシュを変更せず、スレッド間で
+            // stockMesh/targetMeshを安全に共有できる。
+            Parallel.For(0, totalSlices, i =>
+            {
+                double z = zLevels[i];
                 var stockArea = SliceToUnion(stockMesh, stockBounds, z);
-                if (stockArea == null || stockArea.IsEmpty)
+                if (stockArea != null && !stockArea.IsEmpty)
                 {
-                    z -= sliceHeight;
-                    continue;
-                }
+                    var targetArea = SliceToUnion(targetMesh, targetBounds, z);
+                    Geometry removalArea = (targetArea != null && !targetArea.IsEmpty)
+                        ? stockArea.Difference(targetArea)
+                        : stockArea;
 
-                var targetArea = SliceToUnion(targetMesh, targetBounds, z);
-                Geometry removalArea = (targetArea != null && !targetArea.IsEmpty)
-                    ? stockArea.Difference(targetArea)
-                    : stockArea;
-
-                if (!removalArea.IsEmpty)
-                {
-                    foreach (var path in OffsetInward(removalArea, toolDiameter, stepover))
+                    if (!removalArea.IsEmpty)
                     {
-                        toolpaths.Add(new
+                        var slicePaths = new List<object>();
+                        foreach (var path in OffsetInward(removalArea, toolDiameter, stepover))
                         {
-                            type = "line",
-                            points = path.Select(p => new[] { p[0], p[1], z }).ToList()
-                        });
+                            slicePaths.Add(new
+                            {
+                                type = "line",
+                                points = path.Select(p => new[] { p[0], p[1], z }).ToList()
+                            });
+                        }
+                        sliceResults[i] = slicePaths;
                     }
                 }
 
-                z -= sliceHeight;
+                int done = Interlocked.Increment(ref completedSlices);
+                onProgress?.Invoke(done, totalSlices);
+            });
+
+            var toolpaths = new List<object>();
+            foreach (var slice in sliceResults)
+            {
+                if (slice != null) toolpaths.AddRange(slice);
             }
 
             return new { status = "success", toolpaths };
         }
 
-        private Geometry? SliceToUnion(DMesh3 mesh, AxisAlignedBox3d bounds, double z)
+        private Geometry? SliceToUnion(DMesh3 sourceMesh, AxisAlignedBox3d bounds, double z)
         {
             if (z <= bounds.Min.z || z >= bounds.Max.z) return null;
 
+            // MeshPlaneCutは渡されたメッシュを直接カットして変更するため、呼び出しごとに
+            // 複製してから使う。元メッシュ(stockMesh/targetMesh)を変更しないことで、
+            // 他のスライスの計算結果に影響を与えず、並列実行でも安全になる。
+            var mesh = new DMesh3(sourceMesh, false, true, true, true);
             var cut = new MeshPlaneCut(mesh, new Vector3d(0, 0, z), new Vector3d(0, 0, 1));
             if (!cut.Cut()) return null;
 
