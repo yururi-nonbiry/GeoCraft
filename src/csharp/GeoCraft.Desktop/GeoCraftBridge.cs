@@ -125,12 +125,12 @@ namespace GeoCraft.Desktop
                 if (_gcodeQueue.Count == 0)
                 {
                     _isSending = false;
-                    Broadcast("gcode-progress", new { sent = _sentLines, total = _totalLines, status = "finished" });
+                    BroadcastGcodeProgress("finished");
                     return;
                 }
 
                 string line = _gcodeQueue.Dequeue();
-                
+
                 // Skip empty lines or comments to speed up, but count them as sent
                 while (string.IsNullOrWhiteSpace(line) || line.StartsWith(";"))
                 {
@@ -138,7 +138,7 @@ namespace GeoCraft.Desktop
                     if (_gcodeQueue.Count == 0)
                     {
                         _isSending = false;
-                        Broadcast("gcode-progress", new { sent = _sentLines, total = _totalLines, status = "finished" });
+                        BroadcastGcodeProgress("finished");
                         return;
                     }
                     line = _gcodeQueue.Dequeue();
@@ -147,7 +147,7 @@ namespace GeoCraft.Desktop
                 _serialService.Write(line + "\n");
                 _sentLines++;
 
-                Broadcast("gcode-progress", new { sent = _sentLines, total = _totalLines, status = "sending" });
+                BroadcastGcodeProgress("sending");
             }
         }
 
@@ -313,54 +313,47 @@ namespace GeoCraft.Desktop
                      else
                      {
                          _isSending = false;
-                         Broadcast("gcode-progress", new { sent = 0, total = 0, status = "finished" });
+                         BroadcastGcodeProgress("finished");
                      }
                  }
              });
         }
         
-        public void PauseGcode() { 
+        public void PauseGcode() {
             ExecuteSafeVoid(() => {
                 lock (_stateLock)
                 {
                     if (_isSending && !_isPaused)
                     {
                         _isPaused = true;
-                        // Grbl feed hold command '!'
-                        _serialService.Write("!\n");
-                        Broadcast("gcode-progress", new { sent = _sentLines, total = _totalLines, status = "paused" });
+                        _serialService.Write(GrblCommands.FeedHold);
+                        BroadcastGcodeProgress("paused");
                     }
                 }
             });
         }
 
-        public void ResumeGcode() { 
+        public void ResumeGcode() {
             ExecuteSafeVoid(() => {
                 lock (_stateLock)
                 {
                     if (_isSending && _isPaused)
                     {
                         _isPaused = false;
-                        // Grbl cycle start command '~'
-                        _serialService.Write("~\n");
+                        _serialService.Write(GrblCommands.CycleStart);
                         SendNextLine();
                     }
                 }
             });
         }
 
-        public void StopGcode() { 
+        public void StopGcode() {
             ExecuteSafeVoid(() => {
                 lock (_stateLock)
                 {
                     if (_isSending)
                     {
-                        _isSending = false;
-                        _isPaused = false;
-                        _gcodeQueue.Clear();
-                        // Grbl reset command (ctrl-x)
-                        _serialService.Write("\x18");
-                        Broadcast("gcode-progress", new { sent = _sentLines, total = _totalLines, status = "idle" });
+                        ResetAndClearQueue();
                     }
                 }
             });
@@ -370,59 +363,71 @@ namespace GeoCraft.Desktop
             ExecuteSafeVoid(() => {
                 lock (_stateLock)
                 {
-                    _isSending = false;
-                    _isPaused = false;
-                    _gcodeQueue.Clear();
-                    // Grbl reset command (ctrl-x): immediately halts all motion and turns off spindle/coolant,
-                    // regardless of whether a G-code job is currently streaming (jogging, spindle-only, etc.)
-                    _serialService.Write("\x18");
-                    Broadcast("gcode-progress", new { sent = _sentLines, total = _totalLines, status = "idle" });
+                    // Always reset, regardless of whether a G-code job is currently streaming
+                    // (jogging, spindle-only, etc.) — the soft reset halts motion and turns off
+                    // the spindle/coolant unconditionally.
+                    ResetAndClearQueue();
                 }
             });
         }
 
+        // Grbl soft-reset (ctrl-x): clears the pending queue and halts all motion.
+        // Shared by StopGcode (only while a job is streaming) and EmergencyStop (always).
+        private void ResetAndClearQueue()
+        {
+            _isSending = false;
+            _isPaused = false;
+            _gcodeQueue.Clear();
+            _serialService.Write(GrblCommands.SoftReset);
+            BroadcastGcodeProgress("idle");
+        }
+
         public void Jog(string axis, double direction, double step) {
              ExecuteSafeVoid(() => {
-                 string cmd = $"$J=G91 {axis}{step * direction} F1000\n";
-                 _serialService.Write(cmd);
+                 _serialService.Write(GrblCommands.Jog(axis, direction, step));
              });
         }
 
         public void SetZero() {
              ExecuteSafeVoid(() => {
-                 _serialService.Write("G10 L20 P1 X0 Y0 Z0\n");
+                 _serialService.Write(GrblCommands.SetZero());
              });
         }
 
         public void SpindleOn(double speed) {
              ExecuteSafeVoid(() => {
-                 _serialService.Write($"M03 S{speed}\n");
+                 _serialService.Write(GrblCommands.SpindleOn(speed));
              });
         }
 
         public void SpindleOff() {
              ExecuteSafeVoid(() => {
-                 _serialService.Write("M05\n");
+                 _serialService.Write(GrblCommands.SpindleOff);
              });
         }
 
         public void RequestGrblSettings() {
              ExecuteSafeVoid(() => {
-                 _serialService.Write("$$\n");
+                 _serialService.Write(GrblCommands.RequestSettings);
              });
         }
 
         public void SaveGrblSettings(double stepsX, double stepsY, double stepsZ, bool invertX, bool invertY, bool invertZ) {
              ExecuteSafeVoid(() => {
                  int mask = (invertX ? 1 : 0) | (invertY ? 2 : 0) | (invertZ ? 4 : 0);
-                 _serialService.Write($"$100={stepsX}\n");
-                 _serialService.Write($"$101={stepsY}\n");
-                 _serialService.Write($"$102={stepsZ}\n");
-                 _serialService.Write($"$3={mask}\n");
+                 _serialService.Write(GrblCommands.SetStepsPerMm(100, stepsX));
+                 _serialService.Write(GrblCommands.SetStepsPerMm(101, stepsY));
+                 _serialService.Write(GrblCommands.SetStepsPerMm(102, stepsZ));
+                 _serialService.Write(GrblCommands.SetDirectionInvertMask(mask));
              });
         }
 
         // --- Helper to Emit Events ---
+        private void BroadcastGcodeProgress(string status)
+        {
+            Broadcast("gcode-progress", new { sent = _sentLines, total = _totalLines, status });
+        }
+
         private void Broadcast(string type, object payload)
         {
             var json = JsonConvert.SerializeObject(new { type, payload });

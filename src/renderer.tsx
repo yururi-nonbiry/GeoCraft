@@ -906,41 +906,45 @@ const App = () => {
     }
   };
 
+  // Shared machine-derived fields every G-code generation call needs.
+  const buildGcodeParams = () => ({
+    feedRate,
+    safeZ: currentMachine.safeZ,
+    stepDown: currentMachine.stepDown,
+    retractZ: currentMachine.retractZ,
+  });
+
+  // Runs a bridge call that returns { status, message, ... }, alerting on any
+  // outcome other than success/canceled (including a thrown/rejected call).
+  const runGcodeAction = async (action: () => Promise<any>, failureMessage: string): Promise<any | null> => {
+    try {
+      const result = await action();
+      if (result.status !== 'success' && result.status !== 'canceled') {
+        alert(`${failureMessage}: ${result.message}`);
+      }
+      return result;
+    } catch (error) {
+      alert(`${failureMessage}: ${error}`);
+      return null;
+    }
+  };
+
   const handleGenerateDrillGcode = async () => {
     if (!geometry || !geometry.drill_points || geometry.drill_points.length === 0) return alert('Gコードを生成するためのドリル点がありません。');
-    try {
-      const params = {
-        drillPoints: geometry.drill_points,
-        feedRate,
-        safeZ: currentMachine.safeZ,
-        retractZ: currentMachine.retractZ,
-        stepDown: currentMachine.stepDown,
-        peckQ: currentMachine.peckQ,
-      };
-      const result = await api.generateDrillGcode(params);
-      if (result.status === 'success') alert(`ドリルGコードを保存しました: ${result.filePath}`);
-      else if (result.status !== 'canceled') alert(`Gコードの保存に失敗しました: ${result.message}`);
-    } catch (error) {
-      alert(`Gコードの保存に失敗しました: ${error}`);
-    }
+    const result = await runGcodeAction(
+      () => api.generateDrillGcode({ drillPoints: geometry.drill_points, ...buildGcodeParams(), peckQ: currentMachine.peckQ }),
+      'Gコードの保存に失敗しました'
+    );
+    if (result?.status === 'success') alert(`ドリルGコードを保存しました: ${result.filePath}`);
   };
 
   const handleSaveGcode = async () => {
     if (!toolpaths || toolpaths.length === 0) return alert('保存するツールパスがありません。');
-    try {
-      const params = {
-        toolpaths: toolpaths,
-        feedRate,
-        safeZ: currentMachine.safeZ,
-        stepDown: currentMachine.stepDown,
-        retractZ: currentMachine.retractZ,
-      };
-      const result = await api.generateGcode(params);
-      if (result.status === 'success') alert(`Gコードを保存しました: ${result.filePath}`);
-      else if (result.status !== 'canceled') alert(`Gコードの保存に失敗しました: ${result.message}`);
-    } catch (error) {
-      alert(`Gコードの保存に失敗しました: ${error}`);
-    }
+    const result = await runGcodeAction(
+      () => api.generateGcode({ toolpaths, ...buildGcodeParams() }),
+      'Gコードの保存に失敗しました'
+    );
+    if (result?.status === 'success') alert(`Gコードを保存しました: ${result.filePath}`);
   };
 
   const handleTransferGcodeToCnc = async (): Promise<boolean> => {
@@ -948,26 +952,16 @@ const App = () => {
       alert('転送するツールパスがありません。');
       return false;
     }
-    try {
-      const params = {
-        toolpaths: toolpaths,
-        feedRate,
-        safeZ: currentMachine.safeZ,
-        stepDown: currentMachine.stepDown,
-        retractZ: currentMachine.retractZ,
-      };
-      const result = await api.generateGcodeForTransfer(params);
-      if (result.status === 'success') {
-        setGcode(result.gcode);
-        setGcodeStatus('idle');
-        return true;
-      }
-      alert(`Gコードの生成に失敗しました: ${result.message}`);
-      return false;
-    } catch (error) {
-      alert(`Gコードの生成に失敗しました: ${error}`);
-      return false;
+    const result = await runGcodeAction(
+      () => api.generateGcodeForTransfer({ toolpaths, ...buildGcodeParams() }),
+      'Gコードの生成に失敗しました'
+    );
+    if (result?.status === 'success') {
+      setGcode(result.gcode);
+      setGcodeStatus('idle');
+      return true;
     }
+    return false;
   };
 
   const handleSaveProject = async () => {
