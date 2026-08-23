@@ -177,6 +177,7 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
     const simPlayingRef = useRef(simulation?.playing ?? false);
     const simSpeedRef = useRef(simulation?.speed ?? 1);
     const simCutZRef = useRef(simCutZ);
+    const simToolRadiusRef = useRef(simToolRadius);
     const onSimProgressRef = useRef(simulation?.onProgress);
     const onSimFinishedRef = useRef(simulation?.onFinished);
 
@@ -184,9 +185,10 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
         simPlayingRef.current = simulation?.playing ?? false;
         simSpeedRef.current = simulation?.speed ?? 1;
         simCutZRef.current = simCutZ;
+        simToolRadiusRef.current = simToolRadius;
         onSimProgressRef.current = simulation?.onProgress;
         onSimFinishedRef.current = simulation?.onFinished;
-    }, [simulation?.playing, simulation?.speed, simCutZ, simulation?.onProgress, simulation?.onFinished]);
+    }, [simulation?.playing, simulation?.speed, simCutZ, simToolRadius, simulation?.onProgress, simulation?.onFinished]);
 
     // シミュレーションを最後まで即座に進める(残りのツールパスを一括で適用する)。
     useEffect(() => {
@@ -322,7 +324,107 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
         controlsRef.current.update();
     };
 
-    // 初期セットアップ
+    // 加工シミュレーションを1フレーム分進める。参照する値はすべて ref 経由(上の同期用
+    // useEffectで最新化される)なので、この関数自体は再生成せず animate() ループから毎フレーム呼び出せる。
+    const stepSimulation = (now: number) => {
+        const map = heightmapRef.current;
+        const topMesh = simTopMeshRef.current;
+        const samples = samplesRef.current;
+        if (!map || !topMesh || samples.length === 0) return;
+
+        if (lastFrameTimeRef.current === null) lastFrameTimeRef.current = now;
+        const elapsedSeconds = (now - lastFrameTimeRef.current) / 1000;
+        lastFrameTimeRef.current = now;
+
+        if (!simPlayingRef.current || finishedRef.current) return;
+
+        const totalDistance = samples[samples.length - 1].distance;
+        const targetDistance = Math.min(totalDistance, traveledRef.current + elapsedSeconds * SIM_BASE_SPEED_MM_PER_SEC * simSpeedRef.current);
+
+        let minCol = Infinity, maxCol = -Infinity, minRow = Infinity, maxRow = -Infinity;
+        let touched = false;
+        while (sampleCursorRef.current < samples.length && samples[sampleCursorRef.current].distance <= targetDistance) {
+            const p = samples[sampleCursorRef.current];
+            const cutZ = p.z ?? simCutZRef.current;
+            const dirty = stampCircle(map, p.x, p.y, simToolRadiusRef.current, cutZ, targetHeightsRef.current);
+            if (dirty) {
+                touched = true;
+                minCol = Math.min(minCol, dirty.minCol);
+                maxCol = Math.max(maxCol, dirty.maxCol);
+                minRow = Math.min(minRow, dirty.minRow);
+                maxRow = Math.max(maxRow, dirty.maxRow);
+            }
+            sampleCursorRef.current++;
+        }
+        traveledRef.current = targetDistance;
+
+        if (touched) {
+            const dirtyRegion = { minCol, maxCol, minRow, maxRow };
+
+            const posAttr = topMesh.geometry.getAttribute('position') as THREE.BufferAttribute;
+            const topVertexMap = simTopVertexMapRef.current;
+            if (topVertexMap) {
+                updateTopTilePositions(map, posAttr, topVertexMap, dirtyRegion);
+                posAttr.needsUpdate = true;
+            }
+            frameCounterRef.current++;
+            if (frameCounterRef.current % SIM_NORMAL_RECOMPUTE_INTERVAL === 0) {
+                topMesh.geometry.computeVertexNormals();
+            }
+
+            const skirtMesh = simSkirtMeshRef.current;
+            const skirtVertexMap = simSkirtVertexMapRef.current;
+            if (skirtMesh && skirtVertexMap) {
+                const skirtPosAttr = skirtMesh.geometry.getAttribute('position') as THREE.BufferAttribute;
+                const touchedBoundary = updateSkirtPositions(map, skirtPosAttr, skirtVertexMap, dirtyRegion);
+                if (touchedBoundary) {
+                    skirtPosAttr.needsUpdate = true;
+                    if (frameCounterRef.current % SIM_NORMAL_RECOMPUTE_INTERVAL === 0) {
+                        skirtMesh.geometry.computeVertexNormals();
+                    }
+                }
+            }
+
+            const wallMesh = simWallMeshRef.current;
+            const wallSegments = simWallSegmentsRef.current;
+            if (wallMesh && wallSegments) {
+                const wallPosAttr = wallMesh.geometry.getAttribute('position') as THREE.BufferAttribute;
+                updateInteriorWallPositions(map, wallPosAttr, wallSegments, dirtyRegion);
+                wallPosAttr.needsUpdate = true;
+                if (frameCounterRef.current % SIM_NORMAL_RECOMPUTE_INTERVAL === 0) {
+                    wallMesh.geometry.computeVertexNormals();
+                }
+            }
+
+            const chamferMesh = simChamferMeshRef.current;
+            if (chamferMesh) {
+                const chamferPosAttr = chamferMesh.geometry.getAttribute('position') as THREE.BufferAttribute;
+                updateChamferPositions(map, chamferPosAttr, dirtyRegion);
+                chamferPosAttr.needsUpdate = true;
+                if (frameCounterRef.current % SIM_NORMAL_RECOMPUTE_INTERVAL === 0) {
+                    chamferMesh.geometry.computeVertexNormals();
+                }
+            }
+        }
+
+        const reachedEnd = targetDistance >= totalDistance;
+        if (reachedEnd && !finishedRef.current) {
+            finishedRef.current = true;
+            topMesh.geometry.computeVertexNormals();
+            simSkirtMeshRef.current?.geometry.computeVertexNormals();
+            simWallMeshRef.current?.geometry.computeVertexNormals();
+            simChamferMeshRef.current?.geometry.computeVertexNormals();
+            onSimProgressRef.current?.(1);
+            onSimFinishedRef.current?.();
+        } else if (now - lastProgressReportRef.current > SIM_PROGRESS_REPORT_INTERVAL_MS) {
+            lastProgressReportRef.current = now;
+            onSimProgressRef.current?.(totalDistance > 0 ? traveledRef.current / totalDistance : 0);
+        }
+    };
+
+    // 初期セットアップ(シーン/カメラ/レンダラー/ライト/操作系の構築とレンダーループの起動)。
+    // シミュレーションの進行処理自体は stepSimulation に分離しており、ここでは animate() から
+    // 毎フレーム呼び出すだけ。
     useEffect(() => {
         if (!mountRef.current) return;
         const currentMount = mountRef.current;
@@ -382,102 +484,6 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
         hoverMarker.visible = false;
         scene.add(hoverMarker);
         hoverVertexMarkerRef.current = hoverMarker;
-
-        const stepSimulation = (now: number) => {
-            const map = heightmapRef.current;
-            const topMesh = simTopMeshRef.current;
-            const samples = samplesRef.current;
-            if (!map || !topMesh || samples.length === 0) return;
-
-            if (lastFrameTimeRef.current === null) lastFrameTimeRef.current = now;
-            const elapsedSeconds = (now - lastFrameTimeRef.current) / 1000;
-            lastFrameTimeRef.current = now;
-
-            if (!simPlayingRef.current || finishedRef.current) return;
-
-            const totalDistance = samples[samples.length - 1].distance;
-            const targetDistance = Math.min(totalDistance, traveledRef.current + elapsedSeconds * SIM_BASE_SPEED_MM_PER_SEC * simSpeedRef.current);
-
-            let minCol = Infinity, maxCol = -Infinity, minRow = Infinity, maxRow = -Infinity;
-            let touched = false;
-            while (sampleCursorRef.current < samples.length && samples[sampleCursorRef.current].distance <= targetDistance) {
-                const p = samples[sampleCursorRef.current];
-                const cutZ = p.z ?? simCutZRef.current;
-                const dirty = stampCircle(map, p.x, p.y, simToolRadius, cutZ, targetHeightsRef.current);
-                if (dirty) {
-                    touched = true;
-                    minCol = Math.min(minCol, dirty.minCol);
-                    maxCol = Math.max(maxCol, dirty.maxCol);
-                    minRow = Math.min(minRow, dirty.minRow);
-                    maxRow = Math.max(maxRow, dirty.maxRow);
-                }
-                sampleCursorRef.current++;
-            }
-            traveledRef.current = targetDistance;
-
-            if (touched) {
-                const dirtyRegion = { minCol, maxCol, minRow, maxRow };
-
-                const posAttr = topMesh.geometry.getAttribute('position') as THREE.BufferAttribute;
-                const topVertexMap = simTopVertexMapRef.current;
-                if (topVertexMap) {
-                    updateTopTilePositions(map, posAttr, topVertexMap, dirtyRegion);
-                    posAttr.needsUpdate = true;
-                }
-                frameCounterRef.current++;
-                if (frameCounterRef.current % SIM_NORMAL_RECOMPUTE_INTERVAL === 0) {
-                    topMesh.geometry.computeVertexNormals();
-                }
-
-                const skirtMesh = simSkirtMeshRef.current;
-                const skirtVertexMap = simSkirtVertexMapRef.current;
-                if (skirtMesh && skirtVertexMap) {
-                    const skirtPosAttr = skirtMesh.geometry.getAttribute('position') as THREE.BufferAttribute;
-                    const touchedBoundary = updateSkirtPositions(map, skirtPosAttr, skirtVertexMap, dirtyRegion);
-                    if (touchedBoundary) {
-                        skirtPosAttr.needsUpdate = true;
-                        if (frameCounterRef.current % SIM_NORMAL_RECOMPUTE_INTERVAL === 0) {
-                            skirtMesh.geometry.computeVertexNormals();
-                        }
-                    }
-                }
-
-                const wallMesh = simWallMeshRef.current;
-                const wallSegments = simWallSegmentsRef.current;
-                if (wallMesh && wallSegments) {
-                    const wallPosAttr = wallMesh.geometry.getAttribute('position') as THREE.BufferAttribute;
-                    updateInteriorWallPositions(map, wallPosAttr, wallSegments, dirtyRegion);
-                    wallPosAttr.needsUpdate = true;
-                    if (frameCounterRef.current % SIM_NORMAL_RECOMPUTE_INTERVAL === 0) {
-                        wallMesh.geometry.computeVertexNormals();
-                    }
-                }
-
-                const chamferMesh = simChamferMeshRef.current;
-                if (chamferMesh) {
-                    const chamferPosAttr = chamferMesh.geometry.getAttribute('position') as THREE.BufferAttribute;
-                    updateChamferPositions(map, chamferPosAttr, dirtyRegion);
-                    chamferPosAttr.needsUpdate = true;
-                    if (frameCounterRef.current % SIM_NORMAL_RECOMPUTE_INTERVAL === 0) {
-                        chamferMesh.geometry.computeVertexNormals();
-                    }
-                }
-            }
-
-            const reachedEnd = targetDistance >= totalDistance;
-            if (reachedEnd && !finishedRef.current) {
-                finishedRef.current = true;
-                topMesh.geometry.computeVertexNormals();
-                simSkirtMeshRef.current?.geometry.computeVertexNormals();
-                simWallMeshRef.current?.geometry.computeVertexNormals();
-                simChamferMeshRef.current?.geometry.computeVertexNormals();
-                onSimProgressRef.current?.(1);
-                onSimFinishedRef.current?.();
-            } else if (now - lastProgressReportRef.current > SIM_PROGRESS_REPORT_INTERVAL_MS) {
-                lastProgressReportRef.current = now;
-                onSimProgressRef.current?.(totalDistance > 0 ? traveledRef.current / totalDistance : 0);
-            }
-        };
 
         const animate = (now?: number) => {
             requestAnimationFrame(animate);
