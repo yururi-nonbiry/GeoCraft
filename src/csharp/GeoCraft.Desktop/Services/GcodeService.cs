@@ -1,19 +1,37 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
-using System.Linq;
-using System.Text;
-using Newtonsoft.Json.Linq;
+using Newtonsoft.Json;
 
 namespace GeoCraft.Desktop.Services
 {
     public class GcodeService
     {
+        private class GcodeGenerateParams
+        {
+            public List<ToolpathSegmentDto> toolpaths = new List<ToolpathSegmentDto>();
+            public double feedRate;
+            public double safeZ;
+            public double stepDown;
+            public double? retractZ;
+        }
+
+        private class ToolpathSegmentDto
+        {
+            public string? type;
+            public List<double[]>? points;
+            public double[]? end;
+            public double[]? center;
+            public string? direction;
+        }
+
         public object GenerateGcode(string paramsJson)
         {
             try
             {
-                dynamic p = JObject.Parse(paramsJson);
+                // toolpathsは3Dラフィングだと数万点規模になり得るため、dynamic/JObjectでの
+                // 逐点アクセスは遅くUIスレッドを長時間ブロックしてしまう。型付きデシリアライズで
+                // 高速化する(挙動はdynamic版と同一に保つ)。
+                var p = JsonConvert.DeserializeObject<GcodeGenerateParams>(paramsJson) ?? new GcodeGenerateParams();
                 var toolpaths = p.toolpaths;
                 double feedRate = p.feedRate;
                 double safeZ = p.safeZ;
@@ -30,13 +48,8 @@ namespace GeoCraft.Desktop.Services
 
                 foreach (var segment in toolpaths)
                 {
-                    string? type = (string?)segment.type;
-                    var pointsToken = segment.points as JArray;
-                    if (pointsToken == null) continue;
-
-                    var points = pointsToken.Select(pt => pt.ToObject<double[]>()).Where(p => p != null).Select(p => p!).ToList();
-                    
-                    if (points.Count == 0) continue;
+                    var points = segment.points;
+                    if (points == null || points.Count == 0) continue;
 
                     var start = points[0];
                     // 3Dラフィングパスの点は[x, y, z]でスライスごとの実際の深さを持つ。
@@ -59,15 +72,15 @@ namespace GeoCraft.Desktop.Services
                         isCutting = true;
                     }
 
-                    if (type == "arc")
+                    if (segment.type == "arc")
                     {
-                         var end = segment.end.ToObject<double[]>();
-                         var center = segment.center.ToObject<double[]>();
-                         string direction = segment.direction;
+                         var end = segment.end;
+                         var center = segment.center;
+                         if (end == null || center == null) continue;
 
                          double i = center[0] - start[0];
                          double j = center[1] - start[1];
-                         string code = direction == "cw" ? "G02" : "G03";
+                         string code = segment.direction == "cw" ? "G02" : "G03";
 
                          writer.ArcMove(code, end[0], end[1], i, j, feedRate);
                          currentXy = end;
