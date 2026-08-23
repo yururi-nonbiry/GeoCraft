@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -68,44 +69,60 @@ namespace GeoCraft.Desktop.Services
             var sliceResults = new List<object>?[totalSlices];
             int completedSlices = 0;
 
+            var stopwatch = Stopwatch.StartNew();
+            LogService.Log($"GenerateToolpath: start, {totalSlices} slices");
+
             // 各スライスは独立して計算できるため並列化する。SliceToUnionは呼び出しのたびに
             // メッシュを複製してからカットするため元のメッシュを変更せず、スレッド間で
             // stockMesh/targetMeshを安全に共有できる。
             Parallel.For(0, totalSlices, i =>
             {
-                double z = zLevels[i];
-                var stockArea = SliceToUnion(stockMesh, stockBounds, z);
-                if (stockArea != null && !stockArea.IsEmpty)
+                try
                 {
-                    var targetArea = SliceToUnion(targetMesh, targetBounds, z);
-                    Geometry removalArea = (targetArea != null && !targetArea.IsEmpty)
-                        ? stockArea.Difference(targetArea)
-                        : stockArea;
-
-                    if (!removalArea.IsEmpty)
+                    double z = zLevels[i];
+                    var stockArea = SliceToUnion(stockMesh, stockBounds, z);
+                    if (stockArea != null && !stockArea.IsEmpty)
                     {
-                        var slicePaths = new List<object>();
-                        foreach (var path in OffsetInward(removalArea, toolDiameter, stepover))
+                        var targetArea = SliceToUnion(targetMesh, targetBounds, z);
+                        Geometry removalArea = (targetArea != null && !targetArea.IsEmpty)
+                            ? stockArea.Difference(targetArea)
+                            : stockArea;
+
+                        if (!removalArea.IsEmpty)
                         {
-                            slicePaths.Add(new
+                            var slicePaths = new List<object>();
+                            foreach (var path in OffsetInward(removalArea, toolDiameter, stepover))
                             {
-                                type = "line",
-                                points = path.Select(p => new[] { p[0], p[1], z }).ToList()
-                            });
+                                slicePaths.Add(new
+                                {
+                                    type = "line",
+                                    points = path.Select(p => new[] { p[0], p[1], z }).ToList()
+                                });
+                            }
+                            sliceResults[i] = slicePaths;
                         }
-                        sliceResults[i] = slicePaths;
                     }
+                }
+                catch (Exception ex)
+                {
+                    // 1スライスの幾何演算(NTSのBuffer/Difference等)が失敗しても、他の正常なスライスの
+                    // 結果やGenerateToolpath全体の完了を妨げないよう、このスライスだけ空扱いにして続行する。
+                    LogService.Log($"GenerateToolpath: slice {i} failed: {ex.Message}");
                 }
 
                 int done = Interlocked.Increment(ref completedSlices);
                 onProgress?.Invoke(done, totalSlices);
             });
 
+            LogService.Log($"GenerateToolpath: all slices done in {stopwatch.ElapsedMilliseconds}ms, building result");
+
             var toolpaths = new List<object>();
             foreach (var slice in sliceResults)
             {
                 if (slice != null) toolpaths.AddRange(slice);
             }
+
+            LogService.Log($"GenerateToolpath: returning {toolpaths.Count} toolpath segments, total {stopwatch.ElapsedMilliseconds}ms");
 
             return new { status = "success", toolpaths };
         }

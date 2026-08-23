@@ -560,12 +560,16 @@ const ControlPanel = (props: ControlPanelProps) => {
                             </Box>
                             <TextField label="スライス厚 (mm)" type="number" value={props.sliceHeight} onChange={(e) => props.setSliceHeight(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
                             <Button variant="contained" onClick={props.handleGenerate3dPath} disabled={props.isGenerating3dPath} fullWidth>
-                                {props.isGenerating3dPath ? '3Dパス生成中...' : '3D加工パス生成'}
+                                {props.isGenerating3dPath
+                                    ? (props.path3dProgress.total > 0 && props.path3dProgress.current >= props.path3dProgress.total
+                                        ? '結果を集計中...'
+                                        : '3Dパス生成中...')
+                                    : '3D加工パス生成'}
                             </Button>
                             {props.isGenerating3dPath && (
                                 <Box sx={{ mt: 1 }}>
                                     <LinearProgress
-                                        variant={props.path3dProgress.total > 0 ? 'determinate' : 'indeterminate'}
+                                        variant={props.path3dProgress.total > 0 && props.path3dProgress.current < props.path3dProgress.total ? 'determinate' : 'indeterminate'}
                                         value={props.path3dProgress.total > 0 ? (props.path3dProgress.current / props.path3dProgress.total) * 100 : 0}
                                     />
                                     {props.path3dProgress.total > 0 && (

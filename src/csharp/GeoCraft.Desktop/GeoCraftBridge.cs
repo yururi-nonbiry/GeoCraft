@@ -674,7 +674,11 @@ namespace GeoCraft.Desktop
         private void Broadcast(string type, object payload)
         {
             var json = JsonConvert.SerializeObject(new { type, payload });
-            _mainWindow.Dispatcher.Invoke(() => {
+            // BeginInvoke (non-blocking): Broadcast is called from Parallel.For worker threads
+            // (e.g. path-progress). A blocking Invoke here would make each worker wait for the
+            // UI thread's dispatcher queue, and since the host-object call itself may be running
+            // on that same UI thread, a blocking Invoke risks a cross-thread deadlock.
+            _mainWindow.Dispatcher.BeginInvoke(() => {
                  // WebView2 PostWebMessage
                  if (_mainWindow.webView?.CoreWebView2 != null)
                  {
