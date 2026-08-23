@@ -94,7 +94,7 @@ interface ControlPanelProps {
     handleResumeGcode: () => void;
     handleStopGcode: () => void;
     gcodeProgress: { sent: number; total: number };
-    machinePosition: { wpos: { x: number; y: number; z: number }; mpos: { x: number; y: number; z: number }; status: string };
+    machinePosition: { wpos: { x: number; y: number; z: number }; mpos: { x: number; y: number; z: number }; status: string; homed: boolean };
     jogStep: number;
     setJogStep: (val: number) => void;
     handleJog: (axis: 'X' | 'Y' | 'Z', direction: number) => void;
@@ -745,6 +745,9 @@ const ControlPanel = (props: ControlPanelProps) => {
                             <Typography variant="body2">マシン状態: {props.machinePosition.status}</Typography>
                             <Typography variant="body2">WPos: X:{props.machinePosition.wpos.x.toFixed(3)} Y:{props.machinePosition.wpos.y.toFixed(3)} Z:{props.machinePosition.wpos.z.toFixed(3)}</Typography>
                             <Typography variant="body2">MPos: X:{props.machinePosition.mpos.x.toFixed(3)} Y:{props.machinePosition.mpos.y.toFixed(3)} Z:{props.machinePosition.mpos.z.toFixed(3)}</Typography>
+                            <Typography variant="caption" color={props.machinePosition.homed ? 'success.main' : 'text.secondary'}>
+                                {props.machinePosition.homed ? '原点設定済み: MPos<0への移動を制限中' : '原点未設定: 移動制限なし'}
+                            </Typography>
                         </Box>
                         <FormControl fullWidth margin="dense" size="small" sx={{ mb: 2 }}>
                             <InputLabel id="jog-step-select-label">移動量 (mm)</InputLabel>

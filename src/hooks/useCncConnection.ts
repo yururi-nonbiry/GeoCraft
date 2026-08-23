@@ -8,6 +8,7 @@ type MachinePosition = {
   wpos: { x: number; y: number; z: number };
   mpos: { x: number; y: number; z: number };
   status: string;
+  homed: boolean;
 };
 
 type GrblSettings = {
@@ -42,6 +43,7 @@ export const useCncConnection = () => {
     wpos: { x: 0, y: 0, z: 0 },
     mpos: { x: 0, y: 0, z: 0 },
     status: 'Unknown',
+    homed: false,
   });
   const [grblSettings, setGrblSettings] = useState<GrblSettings>({
     stepsX: 250,

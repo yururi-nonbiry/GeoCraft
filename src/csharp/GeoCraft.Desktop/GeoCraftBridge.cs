@@ -1,6 +1,7 @@
 using System;
 using System.Globalization;
 using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Microsoft.Web.WebView2.Core;
 using Newtonsoft.Json;
@@ -41,6 +42,15 @@ namespace GeoCraft.Desktop
         // so remember the last one seen to reconstruct whichever of MPos/WPos
         // a given report omitted.
         private double[] _lastWco = new double[3];
+        // Last known machine position, used to preflight-check jog/G-code moves
+        // against the soft limit (MPos must not go below 0 on any axis) below.
+        private double[] _lastMpos = new double[3];
+        // The soft limit is only meaningful once the machine origin (MPos zero)
+        // has actually been established via a successful $H homing cycle, so
+        // jog/G-code moves are only restricted while this is true. Cleared on
+        // alarm, disconnect, or soft-reset since position trust is lost then.
+        private bool _homed = false;
+        private bool _awaitingHomeConfirm = false;
 
         public GeoCraftBridge(MainWindow mainWindow)
         {
@@ -107,10 +117,29 @@ namespace GeoCraft.Desktop
             }
             else if (line == "ok" || line.StartsWith("error"))
             {
+                if (_awaitingHomeConfirm)
+                {
+                    _awaitingHomeConfirm = false;
+                    if (line == "ok")
+                    {
+                        _homed = true;
+                        Broadcast("serial-data", "[安全] 機械原点を設定しました。MPos<0への移動を制限します。");
+                    }
+                    else
+                    {
+                        Broadcast("serial-data", "[安全] 機械原点の設定に失敗しました。安全制限は無効のままです。");
+                    }
+                }
                 if (_isSending && !_isPaused)
                 {
                     SendNextLine();
                 }
+            }
+            else if (line.StartsWith("ALARM"))
+            {
+                _homed = false;
+                _awaitingHomeConfirm = false;
+                Broadcast("serial-data", "[安全] アラームにより原点情報が無効になりました。再度「機械原点リセット」を行ってください。");
             }
             else if (line.StartsWith("$") && line.Contains("="))
             {
@@ -169,11 +198,14 @@ namespace GeoCraft.Desktop
                 if (wpos == null)
                     wpos = new[] { mpos[0] - _lastWco[0], mpos[1] - _lastWco[1], mpos[2] - _lastWco[2] };
 
+                _lastMpos = mpos;
+
                 Broadcast("serial-status", new
                 {
                     status = state,
                     mpos = new { x = mpos[0], y = mpos[1], z = mpos[2] },
-                    wpos = new { x = wpos[0], y = wpos[1], z = wpos[2] }
+                    wpos = new { x = wpos[0], y = wpos[1], z = wpos[2] },
+                    homed = _homed
                 });
             }
             catch (Exception ex)
@@ -393,16 +425,30 @@ namespace GeoCraft.Desktop
         public string DisconnectSerial() {
             return ExecuteSafe(() => {
                 StopStatusPolling();
+                _homed = false;
+                _awaitingHomeConfirm = false;
                 return _serialService.Disconnect();
             });
         }
 
-        public void SendGcode(string gcode) { 
+        public void SendGcode(string gcode) {
              ExecuteSafeVoid(() => {
                  lock (_stateLock)
                  {
-                     _gcodeQueue.Clear();
                      var lines = gcode.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+
+                     if (_homed)
+                     {
+                         var (ok, message) = ValidateSoftLimits(lines);
+                         if (!ok)
+                         {
+                             Broadcast("serial-data", $"[安全] {message}");
+                             BroadcastGcodeProgress("error");
+                             return;
+                         }
+                     }
+
+                     _gcodeQueue.Clear();
                      foreach (var line in lines)
                      {
                          _gcodeQueue.Enqueue(line.Trim());
@@ -485,6 +531,10 @@ namespace GeoCraft.Desktop
             _isSending = false;
             _isPaused = false;
             _gcodeQueue.Clear();
+            // A soft reset discards Grbl's motion plan; re-homing is required
+            // before the soft limit can trust MPos again.
+            _homed = false;
+            _awaitingHomeConfirm = false;
             _serialService.Write(GrblCommands.SoftReset);
             BroadcastGcodeProgress("idle");
             // A soft reset halts the spindle unconditionally, so the frontend's
@@ -494,6 +544,19 @@ namespace GeoCraft.Desktop
 
         public void Jog(string axis, double direction, double step) {
              ExecuteSafeVoid(() => {
+                 if (_homed)
+                 {
+                     int axisIndex = AxisIndex(axis);
+                     if (axisIndex >= 0)
+                     {
+                         double predicted = _lastMpos[axisIndex] + step * direction;
+                         if (predicted < -1e-3)
+                         {
+                             Broadcast("serial-data", $"[安全] {axis}軸が原点(MPos=0)を下回るためジョグを中止しました。");
+                             return;
+                         }
+                     }
+                 }
                  _serialService.Write(GrblCommands.Jog(axis, direction, step));
              });
         }
@@ -506,8 +569,70 @@ namespace GeoCraft.Desktop
 
         public void ResetMachineOrigin() {
              ExecuteSafeVoid(() => {
+                 _homed = false;
+                 _awaitingHomeConfirm = true;
                  _serialService.Write("$H\n");
              });
+        }
+
+        private static int AxisIndex(string axis) => axis?.ToUpperInvariant() switch
+        {
+            "X" => 0,
+            "Y" => 1,
+            "Z" => 2,
+            _ => -1
+        };
+
+        // Scans a full G-code program before it's queued, tracking the running
+        // (work-coordinate) tool position through modal G90/G91 and X/Y/Z words,
+        // and rejects the job if any move would drive MPos below 0 on any axis.
+        // This mirrors the app's own G-code output (always G90, explicit arc
+        // endpoints) closely enough to be a useful safety net; it does not
+        // interpret G92 or unit changes, so those are skipped rather than
+        // mis-tracked.
+        private (bool ok, string? message) ValidateSoftLimits(string[] lines)
+        {
+            double[] pos = new[] { _lastMpos[0] - _lastWco[0], _lastMpos[1] - _lastWco[1], _lastMpos[2] - _lastWco[2] };
+            bool absolute = true;
+
+            for (int lineNo = 0; lineNo < lines.Length; lineNo++)
+            {
+                string line = StripComment(lines[lineNo]).ToUpperInvariant();
+                if (string.IsNullOrWhiteSpace(line)) continue;
+                if (line.Contains("G91")) absolute = false;
+                if (line.Contains("G90")) absolute = true;
+                if (line.Contains("G92")) continue;
+
+                double[] target = (double[])pos.Clone();
+                bool moved = false;
+                foreach (Match m in Regex.Matches(line, @"([XYZ])(-?\d*\.?\d+)"))
+                {
+                    int axisIndex = AxisIndex(m.Groups[1].Value);
+                    double val = double.Parse(m.Groups[2].Value, NumberStyles.Float, CultureInfo.InvariantCulture);
+                    target[axisIndex] = absolute ? val : pos[axisIndex] + val;
+                    moved = true;
+                }
+                if (!moved) continue;
+
+                for (int axisIndex = 0; axisIndex < 3; axisIndex++)
+                {
+                    double predictedMpos = target[axisIndex] + _lastWco[axisIndex];
+                    if (predictedMpos < -1e-3)
+                    {
+                        string axisName = axisIndex == 0 ? "X" : axisIndex == 1 ? "Y" : "Z";
+                        return (false, $"{lineNo + 1}行目: {axisName}軸が原点(MPos=0)を下回ります(予測値 {predictedMpos:F3})。安全のため送信を中止しました。");
+                    }
+                }
+                pos = target;
+            }
+            return (true, null);
+        }
+
+        private static string StripComment(string line)
+        {
+            int semi = line.IndexOf(';');
+            if (semi >= 0) line = line.Substring(0, semi);
+            return Regex.Replace(line, @"\([^)]*\)", "");
         }
 
         public void SpindleOn(double speed) {
