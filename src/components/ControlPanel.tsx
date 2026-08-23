@@ -254,6 +254,7 @@ const LongPressButton = (props: {
 const ControlPanel = (props: ControlPanelProps) => {
     const [activeTab, setActiveTab] = useState(0);
     const [isMachineSettingsOpen, setIsMachineSettingsOpen] = useState(false);
+    const [isSetZeroConfirmOpen, setIsSetZeroConfirmOpen] = useState(false);
 
     return (
         <Grid
@@ -763,7 +764,7 @@ const ControlPanel = (props: ControlPanelProps) => {
                             <Grid item xs={4}><Button fullWidth variant="outlined" onClick={() => props.handleJog('Y', 1)}>Y+</Button></Grid>
                             <Grid item xs={4}><Button fullWidth variant="outlined" onClick={() => props.handleJog('Z', 1)}>Z+</Button></Grid>
                             <Grid item xs={4}><Button fullWidth variant="outlined" onClick={() => props.handleJog('X', -1)}>X-</Button></Grid>
-                            <Grid item xs={4}><Button fullWidth variant="contained" color="secondary" onClick={props.handleSetZero} startIcon={<Settings />}>原点(G54)</Button></Grid>
+                            <Grid item xs={4}><Button fullWidth variant="contained" color="secondary" onClick={() => setIsSetZeroConfirmOpen(true)} startIcon={<Settings />}>原点(G54)</Button></Grid>
                             <Grid item xs={4}><Button fullWidth variant="outlined" onClick={() => props.handleJog('X', 1)}>X+</Button></Grid>
                             <Grid item xs={4} />
                             <Grid item xs={4}><Button fullWidth variant="outlined" onClick={() => props.handleJog('Y', -1)}>Y-</Button></Grid>
@@ -950,6 +951,32 @@ const ControlPanel = (props: ControlPanelProps) => {
                 <DialogActions>
                     <Button onClick={() => setIsMachineSettingsOpen(false)} variant="contained">
                         閉じる
+                    </Button>
+                </DialogActions>
+            </Dialog>
+            <Dialog
+                open={isSetZeroConfirmOpen}
+                onClose={() => setIsSetZeroConfirmOpen(false)}
+                maxWidth="xs"
+                fullWidth
+            >
+                <DialogTitle>原点(G54)設定の確認</DialogTitle>
+                <DialogContent dividers>
+                    <Typography>現在のワーク座標をすべて0に設定します。よろしいですか？</Typography>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setIsSetZeroConfirmOpen(false)}>
+                        キャンセル
+                    </Button>
+                    <Button
+                        onClick={() => {
+                            props.handleSetZero();
+                            setIsSetZeroConfirmOpen(false);
+                        }}
+                        variant="contained"
+                        color="secondary"
+                    >
+                        実行
                     </Button>
                 </DialogActions>
             </Dialog>

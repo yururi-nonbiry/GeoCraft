@@ -134,7 +134,7 @@ export const useCncConnection = () => {
   };
 
   const handleSetZero = () => {
-    if (isConnected && confirm('現在のワーク座標をすべて0に設定します。よろしいですか？')) {
+    if (isConnected) {
       api.setZero();
     }
   };
