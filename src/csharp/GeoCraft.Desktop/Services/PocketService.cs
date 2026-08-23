@@ -21,7 +21,7 @@ namespace GeoCraft.Desktop.Services
             return _factory.CreateLinearRing(coordinates);
         }
 
-        public object GeneratePocket(List<double[]> geometryData, double toolDiameter, double stepover, double stockToLeave = 0.0, List<List<double[]>> holes = null)
+        public object GeneratePocket(List<double[]> geometryData, double toolDiameter, double stepover, double stockToLeave = 0.0, List<List<double[]>>? holes = null)
         {
              if (stepover <= 0)
              {

@@ -12,7 +12,7 @@ namespace GeoCraft.Desktop.Services
     {
         private GeometryFactory _factory = new GeometryFactory();
 
-        public object GenerateToolpath(string stockPath, string targetPath, double sliceHeight, double toolDiameter, double stepoverRatio, Action<int, int> onProgress = null)
+        public object GenerateToolpath(string stockPath, string targetPath, double sliceHeight, double toolDiameter, double stepoverRatio, Action<int, int>? onProgress = null)
         {
             if (string.IsNullOrEmpty(stockPath) || string.IsNullOrEmpty(targetPath))
             {
@@ -96,7 +96,7 @@ namespace GeoCraft.Desktop.Services
             return new { status = "success", toolpaths };
         }
 
-        private Geometry SliceToUnion(DMesh3 mesh, AxisAlignedBox3d bounds, double z)
+        private Geometry? SliceToUnion(DMesh3 mesh, AxisAlignedBox3d bounds, double z)
         {
             if (z <= bounds.Min.z || z >= bounds.Max.z) return null;
 

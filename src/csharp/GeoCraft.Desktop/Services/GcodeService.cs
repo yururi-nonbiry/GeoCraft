@@ -25,7 +25,7 @@ namespace GeoCraft.Desktop.Services
                 writer.SpindleOn(1000);
                 writer.RapidMove(z: safeZ);
 
-                double[] currentXy = null;
+                double[]? currentXy = null;
                 bool isCutting = false;
 
                 foreach (var segment in toolpaths)

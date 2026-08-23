@@ -192,14 +192,14 @@ namespace GeoCraft.Desktop
 
         public string GenerateContourPath(double toolDiameter, string geometryJson, string side, double stockToLeave = 0.0) {
              return ExecuteSafe(() => {
-                  var geometry = JsonConvert.DeserializeObject<List<double[]>>(geometryJson);
+                  var geometry = JsonConvert.DeserializeObject<List<double[]>>(geometryJson) ?? new List<double[]>();
                   return _contourService.GenerateContour(toolDiameter, geometry, side, stockToLeave);
              });
         }
 
         public string GeneratePocketPath(string paramsJson) {
              return ExecuteSafe(() => {
-                 dynamic p = JsonConvert.DeserializeObject(paramsJson);
+                 dynamic p = JsonConvert.DeserializeObject(paramsJson)!;
                  List<double[]> geometry = p.geometry.ToObject<List<double[]>>();
                  double toolDiameter = p.toolDiameter;
                  double stepover = p.stepover;
@@ -231,7 +231,7 @@ namespace GeoCraft.Desktop
 
         public string Generate3dRoughingPath(string paramsJson) {
             return ExecuteSafe(() => {
-                dynamic p = JsonConvert.DeserializeObject(paramsJson);
+                dynamic p = JsonConvert.DeserializeObject(paramsJson)!;
                 string stockPath = p.stockPath;
                 string targetPath = p.targetPath;
                 double sliceHeight = p.sliceHeight;
@@ -250,7 +250,7 @@ namespace GeoCraft.Desktop
              return ExecuteSafe(() => {
                  object result = _gcodeService.GenerateGcode(paramsJson);
                  dynamic r = result;
-                 if (r != null && r.status == "success")
+                 if (r != null && r!.status == "success")
                  {
                      // Show Save Dialog
                      return _mainWindow.Dispatcher.Invoke<object>(() => {
@@ -258,7 +258,7 @@ namespace GeoCraft.Desktop
                          dialog.Filter = "G-Code|*.nc;*.gcode|All Files|*.*";
                          if (dialog.ShowDialog() == true)
                          {
-                             System.IO.File.WriteAllText(dialog.FileName, (string)r.gcode);
+                             System.IO.File.WriteAllText(dialog.FileName, (string)r!.gcode);
                              return new { status = "success", filePath = dialog.FileName };
                          }
                          return new { status = "canceled" };

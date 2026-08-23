@@ -18,7 +18,7 @@ namespace GeoCraft.Desktop.Services
             }
         }
 
-        public void WriteFooter(string footer)
+        public void WriteFooter(string? footer)
         {
             _sb.AppendLine("M05");
             if (!string.IsNullOrWhiteSpace(footer))
