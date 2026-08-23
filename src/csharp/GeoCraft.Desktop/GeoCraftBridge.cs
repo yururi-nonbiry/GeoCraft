@@ -34,6 +34,15 @@ namespace GeoCraft.Desktop
         private string _receivedBuffer = "";
         private readonly object _stateLock = new object();
 
+        // Grbl's serial RX buffer is 128 bytes; streaming one line at a time and waiting
+        // for each "ok" before sending the next leaves Grbl's motion planner with only a
+        // single move queued, forcing it to decelerate to a stop between every line. Using
+        // Grbl's character-counting protocol (keep the RX buffer topped up with several
+        // lines in flight) lets Grbl plan ahead and run moves without stalling.
+        private const int GrblRxBufferSize = 127;
+        private Queue<int> _sentLineLengths = new Queue<int>();
+        private int _unacknowledgedBytes = 0;
+
         // Grbl doesn't push status reports on its own; it only replies to the
         // real-time '?' query. Poll periodically while connected so WPos/MPos/
         // machine state keep updating in the UI.
@@ -129,6 +138,13 @@ namespace GeoCraft.Desktop
                     {
                         Broadcast("serial-data", "[安全] 機械原点の設定に失敗しました。安全制限は無効のままです。");
                     }
+                }
+                // An "ok"/"error" acknowledges the oldest line still in Grbl's RX buffer,
+                // regardless of whether streaming is currently paused — the buffer accounting
+                // must stay accurate so a subsequent Resume knows how much room is really free.
+                if (_sentLineLengths.Count > 0)
+                {
+                    _unacknowledgedBytes -= _sentLineLengths.Dequeue();
                 }
                 if (_isSending && !_isPaused)
                 {
@@ -250,32 +266,44 @@ namespace GeoCraft.Desktop
                 if (!_isSending) return;
                 if (_isPaused) return;
 
-                if (_gcodeQueue.Count == 0)
+                // Keep pushing lines into Grbl's RX buffer as long as there's room, instead of
+                // sending one line and waiting for its "ok" — see _sentLineLengths comment.
+                while (_gcodeQueue.Count > 0)
+                {
+                    string line = _gcodeQueue.Peek();
+
+                    // Skip empty lines or comments to speed up; they were never sent to Grbl,
+                    // so they don't consume buffer space or wait for an acknowledgment.
+                    if (string.IsNullOrWhiteSpace(line) || line.StartsWith(";"))
+                    {
+                        _gcodeQueue.Dequeue();
+                        _sentLines++;
+                        continue;
+                    }
+
+                    int lineBytes = line.Length + 1; // +1 for the newline Grbl counts toward its buffer
+                    if (_sentLineLengths.Count > 0 && _unacknowledgedBytes + lineBytes > GrblRxBufferSize)
+                    {
+                        // Buffer would overflow; stop and wait for pending "ok"s to free space.
+                        break;
+                    }
+
+                    _gcodeQueue.Dequeue();
+                    _serialService.Write(line + "\n");
+                    _sentLineLengths.Enqueue(lineBytes);
+                    _unacknowledgedBytes += lineBytes;
+                    _sentLines++;
+                }
+
+                if (_gcodeQueue.Count == 0 && _sentLineLengths.Count == 0)
                 {
                     _isSending = false;
                     BroadcastGcodeProgress("finished");
-                    return;
                 }
-
-                string line = _gcodeQueue.Dequeue();
-
-                // Skip empty lines or comments to speed up, but count them as sent
-                while (string.IsNullOrWhiteSpace(line) || line.StartsWith(";"))
+                else
                 {
-                    _sentLines++;
-                    if (_gcodeQueue.Count == 0)
-                    {
-                        _isSending = false;
-                        BroadcastGcodeProgress("finished");
-                        return;
-                    }
-                    line = _gcodeQueue.Dequeue();
+                    BroadcastGcodeProgress("sending");
                 }
-
-                _serialService.Write(line + "\n");
-                _sentLines++;
-
-                BroadcastGcodeProgress("sending");
             }
         }
 
@@ -458,6 +486,8 @@ namespace GeoCraft.Desktop
                      _sentLines = 0;
                      _isSending = true;
                      _isPaused = false;
+                     _sentLineLengths.Clear();
+                     _unacknowledgedBytes = 0;
 
                      if (_totalLines > 0)
                      {
@@ -531,6 +561,8 @@ namespace GeoCraft.Desktop
             _isSending = false;
             _isPaused = false;
             _gcodeQueue.Clear();
+            _sentLineLengths.Clear();
+            _unacknowledgedBytes = 0;
             // A soft reset discards Grbl's motion plan; re-homing is required
             // before the soft limit can trust MPos again.
             _homed = false;
