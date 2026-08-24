@@ -636,11 +636,18 @@ const ControlPanel = (props: ControlPanelProps) => {
                         <Paper sx={{ p: 2, mb: 2 }}>
                             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
                                 <Typography variant="h6">マシン設定</Typography>
-                                <Tooltip title="詳細設定">
-                                    <IconButton size="small" onClick={() => setIsMachineSettingsOpen(true)}>
-                                        <Settings />
-                                    </IconButton>
-                                </Tooltip>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    {!props.isConnected ? (
+                                        <Button variant="contained" size="small" onClick={props.handleConnect} startIcon={<Link />}>接続</Button>
+                                    ) : (
+                                        <Button variant="contained" color="secondary" size="small" onClick={props.handleDisconnect} startIcon={<LinkOff />}>切断</Button>
+                                    )}
+                                    <Tooltip title="詳細設定">
+                                        <IconButton size="small" onClick={() => setIsMachineSettingsOpen(true)}>
+                                            <Settings />
+                                        </IconButton>
+                                    </Tooltip>
+                                </Box>
                             </Box>
                             <FormControl fullWidth margin="normal" size="small">
                                 <InputLabel>加工機</InputLabel>
