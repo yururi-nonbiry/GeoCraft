@@ -258,6 +258,11 @@ export const useCncConnection = () => {
     // state write here — this avoids drifting from reality if the reset fails.
   };
 
+  const handleUnlockAlarm = () => {
+    if (!isConnected) return;
+    api.unlockAlarm();
+  };
+
   // Escape キーをどこにフォーカスがあっても緊急停止として扱う（ダイアログ/入力欄内でも動作させるため window に登録）
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -310,5 +315,6 @@ export const useCncConnection = () => {
     handleResumeGcode,
     handleStopGcode,
     handleEmergencyStop,
+    handleUnlockAlarm,
   };
 };

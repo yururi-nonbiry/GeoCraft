@@ -23,7 +23,7 @@ import {
     IconButton,
     Tooltip,
 } from '@mui/material';
-import { Refresh, Link, LinkOff, PlayArrow, Pause, Stop, SkipNext, Settings } from '@mui/icons-material';
+import { Refresh, Link, LinkOff, PlayArrow, Pause, Stop, SkipNext, Settings, LockOpen } from '@mui/icons-material';
 import { MachineSetting, ToolSetting, WorkOrigin } from '../types';
 
 interface ControlPanelProps {
@@ -102,6 +102,7 @@ interface ControlPanelProps {
     enableMachineOriginReset: boolean;
     setEnableMachineOriginReset: (val: boolean) => void;
     handleResetMachineOrigin: () => void;
+    handleUnlockAlarm: () => void;
     spindleSpeed: number;
     setSpindleSpeed: (val: number) => void;
     spindleOn: boolean;
@@ -809,6 +810,22 @@ const ControlPanel = (props: ControlPanelProps) => {
                             >
                                 機械原点リセット (長押し)
                             </LongPressButton>
+                        </Box>
+                        <Box sx={{ mt: 1 }}>
+                            <Tooltip title="緊急停止後に機械が動かない場合、Grblのアラーム状態($X)を解除します。解除後は位置情報が未確定になるため、機械原点リセットを行ってください。">
+                                <span>
+                                    <Button
+                                        fullWidth
+                                        variant={props.machinePosition.status === 'Alarm' ? 'contained' : 'outlined'}
+                                        color="error"
+                                        disabled={!props.isConnected}
+                                        onClick={props.handleUnlockAlarm}
+                                        startIcon={<LockOpen />}
+                                    >
+                                        アラーム解除 ($X){props.machinePosition.status === 'Alarm' ? '  ※Alarm状態' : ''}
+                                    </Button>
+                                </span>
+                            </Tooltip>
                         </Box>
                         <Box sx={{ mt: 3, pt: 2, borderTop: '1px solid rgba(255,255,255,0.12)' }}>
                             <Typography variant="subtitle2" gutterBottom>スピンドル</Typography>

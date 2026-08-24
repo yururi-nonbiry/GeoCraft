@@ -118,6 +118,7 @@ class WebView2API implements ElectronAPI {
     resumeGcode() { this.callBridge('ResumeGcode'); }
     stopGcode() { this.callBridge('StopGcode'); }
     emergencyStop() { this.callBridge('EmergencyStop'); }
+    unlockAlarm() { this.callBridge('UnlockAlarm'); }
 
     onGcodeProgress(callback: (progress: any) => void) { return this.on('gcode-progress', callback); }
 

@@ -9,6 +9,7 @@ namespace GeoCraft.Desktop.Services
         public const string CycleStart = "~\n";
         public const string RequestSettings = "$$\n";
         public const string SpindleOff = "M05\n";
+        public const string Unlock = "$X\n";
 
         public static string SetZero() => "G10 L20 P1 X0 Y0 Z0\n";
 

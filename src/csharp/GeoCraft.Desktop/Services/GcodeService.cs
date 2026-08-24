@@ -58,7 +58,7 @@ namespace GeoCraft.Desktop.Services
                     // 3Dラフィングパスの点は[x, y, z]でスライスごとの実際の深さを持つ。
                     // 2D輪郭/ポケットパスは[x, y]のみのため、その場合はマシン設定のstepDownを深さとして使う。
                     double startZ = start.Length > 2 ? start[2] : stepDown;
-                    if (currentXy == null || !IsClose(currentXy, start))
+                    if (currentXy == null || !IsClose(currentXy, start) || !IsSameZ(currentXy, start))
                     {
                         if (isCutting)
                         {
@@ -131,6 +131,15 @@ namespace GeoCraft.Desktop.Services
         {
             if (p2 == null) return false;
             return Math.Abs(p1[0] - p2[0]) < 1e-4 && Math.Abs(p1[1] - p2[1]) < 1e-4;
+        }
+
+        // 3Dラフィングは複数のZレイヤーを別セグメントとして生成するため、XYが一致していても
+        // Zが異なる場合は連続パスとみなさず退避させる必要がある。座標に深さ情報を持たない
+        // 2D輪郭/ポケットパス(要素数2)は従来通りXYのみで判定する。
+        private bool IsSameZ(double[] p1, double[]? p2)
+        {
+            if (p1.Length <= 2 || p2 == null || p2.Length <= 2) return true;
+            return Math.Abs(p1[2] - p2[2]) < 1e-4;
         }
     }
 }

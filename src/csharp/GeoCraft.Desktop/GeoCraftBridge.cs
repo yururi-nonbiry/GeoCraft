@@ -611,6 +611,22 @@ namespace GeoCraft.Desktop
              });
         }
 
+        // Clears Grbl's Alarm lock (e.g. after a soft-reset with homing/hard-limits
+        // enabled, or a limit-switch trip) so subsequent jog/G-code commands are
+        // accepted again. Position trust is not restored by this alone — homing is
+        // still required, so _homed is left false.
+        public void UnlockAlarm() {
+             ExecuteSafeVoid(() => {
+                 lock (_stateLock)
+                 {
+                     _homed = false;
+                     _awaitingHomeConfirm = false;
+                     _serialService.Write(GrblCommands.Unlock);
+                     Broadcast("serial-data", "[安全] アラーム解除($X)を送信しました。位置情報は未確定のため、再度「機械原点リセット」を行ってください。");
+                 }
+             });
+        }
+
         private static int AxisIndex(string axis) => axis?.ToUpperInvariant() switch
         {
             "X" => 0,
