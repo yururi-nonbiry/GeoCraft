@@ -704,42 +704,54 @@ const ControlPanel = (props: ControlPanelProps) => {
                                 現在CAMに読み込まれている材料・加工後形状・図形・ツールパスの表示/非表示切り替えや削除ができます。
                             </Typography>
                             <TableContainer component={Paper} variant="outlined">
-                                <Table size="small">
+                                <Table size="small" sx={{ tableLayout: 'fixed' }}>
                                     <TableHead>
                                         <TableRow>
-                                            <TableCell>種類</TableCell>
-                                            <TableCell>詳細</TableCell>
-                                            <TableCell align="center">表示</TableCell>
-                                            <TableCell align="center">操作</TableCell>
+                                            <TableCell>ファイル名</TableCell>
+                                            <TableCell align="center" sx={{ width: 64 }}>表示</TableCell>
+                                            <TableCell align="center" sx={{ width: 72 }}>操作</TableCell>
                                         </TableRow>
                                     </TableHead>
                                     <TableBody>
-                                        {objectRows.map((row) => (
-                                            <TableRow key={row.key} hover>
-                                                <TableCell>{row.label}</TableCell>
-                                                <TableCell>{row.detail}</TableCell>
-                                                <TableCell align="center">
-                                                    <Checkbox
-                                                        size="small"
-                                                        checked={row.visible}
-                                                        onChange={(e) => row.onToggleVisible(e.target.checked)}
-                                                        disabled={!row.loaded}
-                                                    />
-                                                </TableCell>
-                                                <TableCell align="center">
-                                                    <Button
-                                                        size="small"
-                                                        color="secondary"
-                                                        disabled={!row.loaded}
-                                                        onClick={() => {
-                                                            if (confirm(row.confirmMessage)) row.onDelete();
+                                        {objectRows.map((row) => {
+                                            const fullText = `${row.label}: ${row.detail}`;
+                                            return (
+                                                <TableRow key={row.key} hover>
+                                                    <TableCell
+                                                        sx={{
+                                                            whiteSpace: 'nowrap',
+                                                            overflow: 'hidden',
+                                                            textOverflow: 'ellipsis',
+                                                            maxWidth: 0,
                                                         }}
                                                     >
-                                                        削除
-                                                    </Button>
-                                                </TableCell>
-                                            </TableRow>
-                                        ))}
+                                                        <Tooltip title={fullText}>
+                                                            <span>{fullText}</span>
+                                                        </Tooltip>
+                                                    </TableCell>
+                                                    <TableCell align="center">
+                                                        <Checkbox
+                                                            size="small"
+                                                            checked={row.visible}
+                                                            onChange={(e) => row.onToggleVisible(e.target.checked)}
+                                                            disabled={!row.loaded}
+                                                        />
+                                                    </TableCell>
+                                                    <TableCell align="center">
+                                                        <Button
+                                                            size="small"
+                                                            color="secondary"
+                                                            disabled={!row.loaded}
+                                                            onClick={() => {
+                                                                if (confirm(row.confirmMessage)) row.onDelete();
+                                                            }}
+                                                        >
+                                                            削除
+                                                        </Button>
+                                                    </TableCell>
+                                                </TableRow>
+                                            );
+                                        })}
                                     </TableBody>
                                 </Table>
                             </TableContainer>
