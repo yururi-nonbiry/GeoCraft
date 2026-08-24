@@ -32,6 +32,11 @@ const SIM_BASE_SPEED_MM_PER_SEC = 40;
 const SIM_NORMAL_RECOMPUTE_INTERVAL = 4; // frames between vertex-normal recalculation
 const SIM_PROGRESS_REPORT_INTERVAL_MS = 100;
 
+// 実加工中のツール軌跡(トレイル)表示用。位置更新のたびに1点ずつ追加すると停止中でも
+// 無駄に頂点が増えるため最小移動量で間引き、上限点数を超えたら古い点から捨てる。
+const TOOL_TRAIL_MIN_DIST_MM = 0.05;
+const TOOL_TRAIL_MAX_POINTS = 4000;
+
 interface ThreeViewerProps {
     toolpaths: ToolpathSegment[] | null;
     // 実際に描画するツールパス(層/送り位置による絞り込み後)。省略時は toolpaths をそのまま描画する。
@@ -67,6 +72,12 @@ interface ThreeViewerProps {
     showStock?: boolean;
     showTarget?: boolean;
     showToolpaths?: boolean;
+    // 実機のCNCから報告される現在のツール位置(toolpathsと同じモデル座標系)。
+    // 加工中はここに実位置を渡すことで3Dビュー上にツールの現在地と軌跡を描画する。
+    // 未接続/位置未取得時はnull(マーカー非表示)。
+    toolPosition?: { x: number; y: number; z: number } | null;
+    // 値が変わるとツール軌跡(トレイル)をクリアする(新しい加工の開始時にインクリメントする想定)。
+    toolTrailResetToken?: number;
 }
 
 // 加工可能範囲を示すテーブル面の格子線と外周の矩形を生成する
@@ -113,7 +124,7 @@ const createWorkVolumeBox = (width: number, depth: number, height: number): THRE
     return box;
 };
 
-const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targetStlData, pickFaceMode, onFacePicked, workOrigin = null, pickOriginMode = false, onOriginPicked, machineWorkArea, stockOffset, targetOffset, onStockOffsetChange, onTargetOffsetChange, previewMode, simulation, showStock = true, showTarget = true, showToolpaths = true, stockBaseTransform = null, targetBaseTransform = null }: ThreeViewerProps) => {
+const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targetStlData, pickFaceMode, onFacePicked, workOrigin = null, pickOriginMode = false, onOriginPicked, machineWorkArea, stockOffset, targetOffset, onStockOffsetChange, onTargetOffsetChange, previewMode, simulation, showStock = true, showTarget = true, showToolpaths = true, stockBaseTransform = null, targetBaseTransform = null, toolPosition = null, toolTrailResetToken = 0 }: ThreeViewerProps) => {
     const mountRef = useRef<HTMLDivElement>(null);
     const sceneRef = useRef<THREE.Scene | null>(null);
     const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
@@ -140,6 +151,10 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
     // 3Dモデルをマウスドラッグで移動中の状態(X/Y平面上のみ移動)
     const dragStateRef = useRef<{ which: 'stock' | 'target'; plane: THREE.Plane; lastPoint: THREE.Vector3 } | null>(null);
     const toolpathGroupRef = useRef<THREE.Group | null>(null);
+    // 実加工中の現在ツール位置マーカー・軌跡(トレイル)
+    const toolMarkerRef = useRef<THREE.Object3D | null>(null);
+    const toolTrailLineRef = useRef<THREE.Line | null>(null);
+    const toolTrailPointsRef = useRef<THREE.Vector3[]>([]);
     const dxfObjectRef = useRef<THREE.Group | null>(null);
     const dxfArcsRef = useRef<THREE.Group | null>(null);
     const drillPointsRef = useRef<THREE.Points | null>(null);
@@ -484,6 +499,27 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
         hoverMarker.visible = false;
         scene.add(hoverMarker);
         hoverVertexMarkerRef.current = hoverMarker;
+
+        // 実加工中の現在ツール位置マーカー(実機のWPosに追従)
+        const toolMarkerGroup = new THREE.Group();
+        const toolMarkerGeo = new THREE.SphereGeometry(1.2, 16, 16);
+        const toolMarkerMat = new THREE.MeshBasicMaterial({ color: 0x00e5ff, depthTest: false });
+        const toolMarkerSphere = new THREE.Mesh(toolMarkerGeo, toolMarkerMat);
+        toolMarkerSphere.renderOrder = 999;
+        toolMarkerGroup.add(toolMarkerSphere);
+        toolMarkerGroup.visible = false;
+        scene.add(toolMarkerGroup);
+        toolMarkerRef.current = toolMarkerGroup;
+
+        // ツール軌跡(トレイル)。頂点バッファは上限点数分を先に確保し、setDrawRangeで
+        // 実際に描画する範囲だけ切り替える(位置更新のたびにジオメトリを作り直さない)。
+        const toolTrailGeometry = new THREE.BufferGeometry();
+        toolTrailGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TOOL_TRAIL_MAX_POINTS * 3), 3));
+        toolTrailGeometry.setDrawRange(0, 0);
+        const toolTrailMaterial = new THREE.LineBasicMaterial({ color: 0x00e5ff, transparent: true, opacity: 0.8 });
+        const toolTrailLine = new THREE.Line(toolTrailGeometry, toolTrailMaterial);
+        scene.add(toolTrailLine);
+        toolTrailLineRef.current = toolTrailLine;
 
         const animate = (now?: number) => {
             requestAnimationFrame(animate);
@@ -1044,6 +1080,49 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
     useEffect(() => {
         if (toolpathGroupRef.current) toolpathGroupRef.current.visible = showToolpaths;
     }, [showToolpaths]);
+
+    // 実加工中のツール現在位置マーカー・軌跡の更新
+    useEffect(() => {
+        const marker = toolMarkerRef.current;
+        const trailLine = toolTrailLineRef.current;
+        if (!marker || !trailLine) return;
+
+        if (!toolPosition) {
+            marker.visible = false;
+            return;
+        }
+
+        marker.position.set(toolPosition.x, toolPosition.y, toolPosition.z);
+        marker.visible = true;
+
+        const points = toolTrailPointsRef.current;
+        const last = points[points.length - 1];
+        const newPoint = new THREE.Vector3(toolPosition.x, toolPosition.y, toolPosition.z);
+        if (last && last.distanceTo(newPoint) < TOOL_TRAIL_MIN_DIST_MM) return;
+
+        points.push(newPoint);
+        if (points.length > TOOL_TRAIL_MAX_POINTS) {
+            points.splice(0, points.length - TOOL_TRAIL_MAX_POINTS);
+        }
+
+        const posAttr = trailLine.geometry.getAttribute('position') as THREE.BufferAttribute;
+        const arr = posAttr.array as Float32Array;
+        for (let idx = 0; idx < points.length; idx++) {
+            arr[idx * 3] = points[idx].x;
+            arr[idx * 3 + 1] = points[idx].y;
+            arr[idx * 3 + 2] = points[idx].z;
+        }
+        trailLine.geometry.setDrawRange(0, points.length);
+        posAttr.needsUpdate = true;
+    }, [toolPosition]);
+
+    // 新しい加工の開始などでトークンが変わったらツール軌跡をクリアする
+    useEffect(() => {
+        toolTrailPointsRef.current = [];
+        if (toolTrailLineRef.current) {
+            toolTrailLineRef.current.geometry.setDrawRange(0, 0);
+        }
+    }, [toolTrailResetToken]);
 
     return <div ref={mountRef} style={{ width: '100%', height: '100%', position: 'relative' }} />;
 };

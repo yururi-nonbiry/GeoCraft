@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   CssBaseline,
@@ -422,6 +422,32 @@ const App = () => {
     }
     return clipped;
   }, [toolpaths, layers, showAllLayers, currentLayerIndex, layerPointCursor]);
+
+  // 実機のCNCが報告するWPosは加工開始原点(G54=workOrigin)基準の座標。3Dビューのモデル座標系
+  // (ツールパスがworkOriginで補正される前の座標系、原点ギズモと同じ空間)に戻すにはworkOriginを
+  // 加算する(getEffectiveToolpathsでworkOriginを引いている操作の逆)。
+  const toolScenePosition = useMemo(() => {
+    if (!cnc.isConnected) return null;
+    const ox = workOrigin?.x ?? 0;
+    const oy = workOrigin?.y ?? 0;
+    const oz = workOrigin?.z ?? 0;
+    return {
+      x: cnc.machinePosition.wpos.x + ox,
+      y: cnc.machinePosition.wpos.y + oy,
+      z: cnc.machinePosition.wpos.z + oz,
+    };
+  }, [cnc.isConnected, cnc.machinePosition.wpos.x, cnc.machinePosition.wpos.y, cnc.machinePosition.wpos.z, workOrigin?.x, workOrigin?.y, workOrigin?.z]);
+
+  // 新しい加工を開始する(idle等からsendingに遷移する)たびにインクリメントし、3Dビューの
+  // ツール軌跡(トレイル)表示を前回のジョブ分から引き継がずリセットさせる。
+  const [toolTrailResetToken, setToolTrailResetToken] = useState(0);
+  const prevGcodeStatusForTrailRef = useRef(cnc.gcodeStatus);
+  useEffect(() => {
+    if (cnc.gcodeStatus === 'sending' && prevGcodeStatusForTrailRef.current !== 'sending') {
+      setToolTrailResetToken((t) => t + 1);
+    }
+    prevGcodeStatusForTrailRef.current = cnc.gcodeStatus;
+  }, [cnc.gcodeStatus]);
 
   const updateMachineSetting = <K extends keyof Omit<MachineSetting, 'id'>>(key: K, value: MachineSetting[K]) => {
     setMachineSettings((prev) =>
@@ -1122,6 +1148,8 @@ const App = () => {
               showStock={showStock}
               showTarget={showTarget}
               showToolpaths={showToolpaths}
+              toolPosition={toolScenePosition}
+              toolTrailResetToken={toolTrailResetToken}
               simulation={{
                 enabled: simEnabled,
                 toolRadius: toolDiameter / 2,
