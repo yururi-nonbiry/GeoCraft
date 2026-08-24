@@ -375,6 +375,16 @@ const ControlPanel = (props: ControlPanelProps) => {
                             >
                                 {props.pickOriginMode ? '3Dビューで頂点を選択中 (クリックで決定)' : '3Dビュー上で頂点を選択'}
                             </Button>
+                            <Box sx={{ display: 'flex', flexWrap: 'wrap', mb: 1 }}>
+                                <FormControlLabel
+                                    control={<Checkbox checked={props.showStock} onChange={(e) => props.setShowStock(e.target.checked)} />}
+                                    label="材料形状STLを表示"
+                                />
+                                <FormControlLabel
+                                    control={<Checkbox checked={props.showTarget} onChange={(e) => props.setShowTarget(e.target.checked)} />}
+                                    label="加工後形状STLを表示"
+                                />
+                            </Box>
                             <FormControl fullWidth size="small" margin="dense">
                                 <InputLabel>プリセット選択</InputLabel>
                                 <Select
