@@ -138,6 +138,8 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
     const onFacePickedRef = useRef(onFacePicked);
     const workOriginRef = useRef(workOrigin);
     const pickOriginModeRef = useRef(pickOriginMode);
+    const showStockRef = useRef(showStock);
+    const showTargetRef = useRef(showTarget);
     const onOriginPickedRef = useRef(onOriginPicked);
     const originGizmoRef = useRef<THREE.Group | null>(null);
     const hoverVertexMarkerRef = useRef<THREE.Mesh | null>(null);
@@ -275,6 +277,14 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
             hoverVertexMarkerRef.current.visible = false;
         }
     }, [pickOriginMode]);
+
+    useEffect(() => {
+        showStockRef.current = showStock;
+    }, [showStock]);
+
+    useEffect(() => {
+        showTargetRef.current = showTarget;
+    }, [showTarget]);
 
     useEffect(() => {
         onOriginPickedRef.current = onOriginPicked;
@@ -554,8 +564,8 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
         const findNearestVertex = (e: PointerEvent): THREE.Vector3 | null => {
             if (!cameraRef.current) return null;
             const candidates: THREE.Object3D[] = [];
-            if (stockModelRef.current) candidates.push(stockModelRef.current);
-            if (targetModelRef.current) candidates.push(targetModelRef.current);
+            if (stockModelRef.current && showStockRef.current) candidates.push(stockModelRef.current);
+            if (targetModelRef.current && showTargetRef.current) candidates.push(targetModelRef.current);
             if (candidates.length === 0) return null;
 
             raycaster.setFromCamera(getMouseNDC(e), cameraRef.current);
