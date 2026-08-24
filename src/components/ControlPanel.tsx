@@ -362,7 +362,6 @@ const ControlPanel = (props: ControlPanelProps) => {
                     <Tab label="CAM" />
                     <Tab label="CNC" />
                     <Tab label="シミュレーション" />
-                    <Tab label="オブジェクト" />
                 </Tabs>
             </Box>
             <Box sx={{ flexGrow: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
@@ -699,6 +698,52 @@ const ControlPanel = (props: ControlPanelProps) => {
                                 </Button>
                             </Box>
                         </Paper>
+                        <Paper sx={{ p: 2, mb: 2 }}>
+                            <Typography variant="h6" gutterBottom>投入済みオブジェクト</Typography>
+                            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+                                現在CAMに読み込まれている材料・加工後形状・図形・ツールパスの表示/非表示切り替えや削除ができます。
+                            </Typography>
+                            <TableContainer component={Paper} variant="outlined">
+                                <Table size="small">
+                                    <TableHead>
+                                        <TableRow>
+                                            <TableCell>種類</TableCell>
+                                            <TableCell>詳細</TableCell>
+                                            <TableCell align="center">表示</TableCell>
+                                            <TableCell align="center">操作</TableCell>
+                                        </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                        {objectRows.map((row) => (
+                                            <TableRow key={row.key} hover>
+                                                <TableCell>{row.label}</TableCell>
+                                                <TableCell>{row.detail}</TableCell>
+                                                <TableCell align="center">
+                                                    <Checkbox
+                                                        size="small"
+                                                        checked={row.visible}
+                                                        onChange={(e) => row.onToggleVisible(e.target.checked)}
+                                                        disabled={!row.loaded}
+                                                    />
+                                                </TableCell>
+                                                <TableCell align="center">
+                                                    <Button
+                                                        size="small"
+                                                        color="secondary"
+                                                        disabled={!row.loaded}
+                                                        onClick={() => {
+                                                            if (confirm(row.confirmMessage)) row.onDelete();
+                                                        }}
+                                                    >
+                                                        削除
+                                                    </Button>
+                                                </TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </TableContainer>
+                        </Paper>
                     </Box>
                 </TabPanel>
                 <TabPanel value={activeTab} index={1}>
@@ -1021,56 +1066,6 @@ const ControlPanel = (props: ControlPanelProps) => {
                             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
                                 現在生成されているツールパスを、選択中の工具径・各点の切込み深さ(3D荒加工パスは層ごとの実際の深さ、2D輪郭/ポケットパスは選択中の切込み深さ設定)で材料除去をシミュレートします（工具はボールエンド/Vビット等の形状を区別せず円柱状の除去として近似しています）。
                             </Typography>
-                        </Paper>
-                    </Box>
-                </TabPanel>
-                <TabPanel value={activeTab} index={3}>
-                    <Box sx={{ flexGrow: 1, overflowY: 'auto', pr: 0.5 }}>
-                        <Paper sx={{ p: 2, mb: 2 }}>
-                            <Typography variant="h6" gutterBottom>投入済みオブジェクト</Typography>
-                            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
-                                現在CAMに読み込まれている材料・加工後形状・図形・ツールパスの表示/非表示切り替えや削除ができます。
-                            </Typography>
-                            <TableContainer component={Paper} variant="outlined">
-                                <Table size="small">
-                                    <TableHead>
-                                        <TableRow>
-                                            <TableCell>種類</TableCell>
-                                            <TableCell>詳細</TableCell>
-                                            <TableCell align="center">表示</TableCell>
-                                            <TableCell align="center">操作</TableCell>
-                                        </TableRow>
-                                    </TableHead>
-                                    <TableBody>
-                                        {objectRows.map((row) => (
-                                            <TableRow key={row.key} hover>
-                                                <TableCell>{row.label}</TableCell>
-                                                <TableCell>{row.detail}</TableCell>
-                                                <TableCell align="center">
-                                                    <Checkbox
-                                                        size="small"
-                                                        checked={row.visible}
-                                                        onChange={(e) => row.onToggleVisible(e.target.checked)}
-                                                        disabled={!row.loaded}
-                                                    />
-                                                </TableCell>
-                                                <TableCell align="center">
-                                                    <Button
-                                                        size="small"
-                                                        color="secondary"
-                                                        disabled={!row.loaded}
-                                                        onClick={() => {
-                                                            if (confirm(row.confirmMessage)) row.onDelete();
-                                                        }}
-                                                    >
-                                                        削除
-                                                    </Button>
-                                                </TableCell>
-                                            </TableRow>
-                                        ))}
-                                    </TableBody>
-                                </Table>
-                            </TableContainer>
                         </Paper>
                     </Box>
                 </TabPanel>
