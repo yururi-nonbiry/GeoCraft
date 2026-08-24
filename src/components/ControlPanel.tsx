@@ -22,9 +22,15 @@ import {
     DialogActions,
     IconButton,
     Tooltip,
+    Table,
+    TableBody,
+    TableCell,
+    TableContainer,
+    TableHead,
+    TableRow,
 } from '@mui/material';
 import { Refresh, Link, LinkOff, PlayArrow, Pause, Stop, SkipNext, Settings, LockOpen } from '@mui/icons-material';
-import { MachineSetting, ToolSetting, WorkOrigin } from '../types';
+import { MachineSetting, ToolSetting, WorkOrigin, Geometry, ToolpathSegment } from '../types';
 
 interface ControlPanelProps {
     workOrigin: WorkOrigin | null;
@@ -122,12 +128,20 @@ interface ControlPanelProps {
     setProcessType: (val: 'roughing' | 'finishing') => void;
     stockToLeave: number;
     setStockToLeave: (val: number) => void;
+    geometry: Geometry | null;
+    toolpaths: ToolpathSegment[] | null;
     showStock: boolean;
     setShowStock: (val: boolean) => void;
     showTarget: boolean;
     setShowTarget: (val: boolean) => void;
+    showGeometry: boolean;
+    setShowGeometry: (val: boolean) => void;
     showToolpaths: boolean;
     setShowToolpaths: (val: boolean) => void;
+    handleDeleteStock: () => void;
+    handleDeleteTarget: () => void;
+    handleDeleteGeometry: () => void;
+    handleDeleteToolpaths: () => void;
     simEnabled: boolean;
     setSimEnabled: (val: boolean) => void;
     simPlaying: boolean;
@@ -276,6 +290,61 @@ const ControlPanel = (props: ControlPanelProps) => {
         };
     }, [props.gcode]);
 
+    // CAMに投入されている(読み込み/生成済みの)オブジェクト一覧。「オブジェクト」タブの表示/非表示・削除操作の元になる。
+    const objectRows: Array<{
+        key: string;
+        label: string;
+        detail: string;
+        loaded: boolean;
+        visible: boolean;
+        onToggleVisible: (val: boolean) => void;
+        onDelete: () => void;
+        confirmMessage: string;
+    }> = [
+        {
+            key: 'stock',
+            label: '材料 (Stock)',
+            detail: props.stockStlFile ? props.stockStlFile.split('\\').pop()! : '未読み込み',
+            loaded: !!props.stockStlFile,
+            visible: props.showStock,
+            onToggleVisible: props.setShowStock,
+            onDelete: props.handleDeleteStock,
+            confirmMessage: '材料形状を削除しますか？',
+        },
+        {
+            key: 'target',
+            label: '加工後形状 (Target)',
+            detail: props.targetStlFile ? props.targetStlFile.split('\\').pop()! : '未読み込み',
+            loaded: !!props.targetStlFile,
+            visible: props.showTarget,
+            onToggleVisible: props.setShowTarget,
+            onDelete: props.handleDeleteTarget,
+            confirmMessage: '加工後形状を削除しますか？',
+        },
+        {
+            key: 'geometry',
+            label: '図形 (DXF/SVG)',
+            detail: props.geometry
+                ? `線分${props.geometry.segments.length} / 円弧${props.geometry.arcs.length} / ドリル点${props.geometry.drill_points.length}`
+                : '未読み込み',
+            loaded: !!props.geometry,
+            visible: props.showGeometry,
+            onToggleVisible: props.setShowGeometry,
+            onDelete: props.handleDeleteGeometry,
+            confirmMessage: '読み込んだ図形(線分・円弧・ドリル点)を削除しますか？',
+        },
+        {
+            key: 'toolpaths',
+            label: 'ツールパス',
+            detail: props.toolpaths && props.toolpaths.length > 0 ? `${props.toolpaths.length} セグメント` : '未生成',
+            loaded: !!props.toolpaths && props.toolpaths.length > 0,
+            visible: props.showToolpaths,
+            onToggleVisible: props.setShowToolpaths,
+            onDelete: props.handleDeleteToolpaths,
+            confirmMessage: '生成済みのツールパスを削除しますか？',
+        },
+    ];
+
     return (
         <Grid
             item
@@ -293,6 +362,7 @@ const ControlPanel = (props: ControlPanelProps) => {
                     <Tab label="CAM" />
                     <Tab label="CNC" />
                     <Tab label="シミュレーション" />
+                    <Tab label="オブジェクト" />
                 </Tabs>
             </Box>
             <Box sx={{ flexGrow: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
@@ -951,6 +1021,56 @@ const ControlPanel = (props: ControlPanelProps) => {
                             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
                                 現在生成されているツールパスを、選択中の工具径・各点の切込み深さ(3D荒加工パスは層ごとの実際の深さ、2D輪郭/ポケットパスは選択中の切込み深さ設定)で材料除去をシミュレートします（工具はボールエンド/Vビット等の形状を区別せず円柱状の除去として近似しています）。
                             </Typography>
+                        </Paper>
+                    </Box>
+                </TabPanel>
+                <TabPanel value={activeTab} index={3}>
+                    <Box sx={{ flexGrow: 1, overflowY: 'auto', pr: 0.5 }}>
+                        <Paper sx={{ p: 2, mb: 2 }}>
+                            <Typography variant="h6" gutterBottom>投入済みオブジェクト</Typography>
+                            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+                                現在CAMに読み込まれている材料・加工後形状・図形・ツールパスの表示/非表示切り替えや削除ができます。
+                            </Typography>
+                            <TableContainer component={Paper} variant="outlined">
+                                <Table size="small">
+                                    <TableHead>
+                                        <TableRow>
+                                            <TableCell>種類</TableCell>
+                                            <TableCell>詳細</TableCell>
+                                            <TableCell align="center">表示</TableCell>
+                                            <TableCell align="center">操作</TableCell>
+                                        </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                        {objectRows.map((row) => (
+                                            <TableRow key={row.key} hover>
+                                                <TableCell>{row.label}</TableCell>
+                                                <TableCell>{row.detail}</TableCell>
+                                                <TableCell align="center">
+                                                    <Checkbox
+                                                        size="small"
+                                                        checked={row.visible}
+                                                        onChange={(e) => row.onToggleVisible(e.target.checked)}
+                                                        disabled={!row.loaded}
+                                                    />
+                                                </TableCell>
+                                                <TableCell align="center">
+                                                    <Button
+                                                        size="small"
+                                                        color="secondary"
+                                                        disabled={!row.loaded}
+                                                        onClick={() => {
+                                                            if (confirm(row.confirmMessage)) row.onDelete();
+                                                        }}
+                                                    >
+                                                        削除
+                                                    </Button>
+                                                </TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </TableContainer>
                         </Paper>
                     </Box>
                 </TabPanel>

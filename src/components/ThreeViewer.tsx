@@ -68,9 +68,10 @@ interface ThreeViewerProps {
     // true の間は材料/加工後形状のドラッグ移動・底面選択を禁止する(3Dパス生成後のプレビュー用)
     previewMode?: boolean;
     simulation?: SimulationConfig | null;
-    // 材料/加工後形状/ツールパスの表示・非表示切り替え(省略時は表示)
+    // 材料/加工後形状/図形/ツールパスの表示・非表示切り替え(省略時は表示)
     showStock?: boolean;
     showTarget?: boolean;
+    showGeometry?: boolean;
     showToolpaths?: boolean;
     // 実機のCNCから報告される現在のツール位置(toolpathsと同じモデル座標系)。
     // 加工中はここに実位置を渡すことで3Dビュー上にツールの現在地と軌跡を描画する。
@@ -113,6 +114,17 @@ const createWorkAreaGrid = (width: number, depth: number): THREE.Group => {
     return group;
 };
 
+// シーンから削除するオブジェクト配下の全メッシュ/ラインのジオメトリ・マテリアルを解放する。
+// これを怠るとオブジェクト一覧からの削除・STL差し替えなどを繰り返すたびにGPUメモリがリークする。
+const disposeObject3D = (obj: THREE.Object3D) => {
+    obj.traverse((child) => {
+        const geom = (child as THREE.Mesh | THREE.Line | THREE.Points).geometry as THREE.BufferGeometry | undefined;
+        geom?.dispose();
+        const material = (child as THREE.Mesh | THREE.Line | THREE.Points).material as THREE.Material | THREE.Material[] | undefined;
+        if (material) (Array.isArray(material) ? material : [material]).forEach((m) => m.dispose());
+    });
+};
+
 // 加工可能な立体範囲(X×Y×Z)をワイヤーフレームの直方体として生成する
 const createWorkVolumeBox = (width: number, depth: number, height: number): THREE.LineSegments => {
     const boxGeometry = new THREE.BoxGeometry(width, depth, height);
@@ -124,7 +136,7 @@ const createWorkVolumeBox = (width: number, depth: number, height: number): THRE
     return box;
 };
 
-const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targetStlData, pickFaceMode, onFacePicked, workOrigin = null, pickOriginMode = false, onOriginPicked, machineWorkArea, stockOffset, targetOffset, onStockOffsetChange, onTargetOffsetChange, previewMode, simulation, showStock = true, showTarget = true, showToolpaths = true, stockBaseTransform = null, targetBaseTransform = null, toolPosition = null, toolTrailResetToken = 0 }: ThreeViewerProps) => {
+const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targetStlData, pickFaceMode, onFacePicked, workOrigin = null, pickOriginMode = false, onOriginPicked, machineWorkArea, stockOffset, targetOffset, onStockOffsetChange, onTargetOffsetChange, previewMode, simulation, showStock = true, showTarget = true, showGeometry = true, showToolpaths = true, stockBaseTransform = null, targetBaseTransform = null, toolPosition = null, toolTrailResetToken = 0 }: ThreeViewerProps) => {
     const mountRef = useRef<HTMLDivElement>(null);
     const sceneRef = useRef<THREE.Scene | null>(null);
     const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
@@ -771,8 +783,8 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
         const scene = sceneRef.current;
 
         // 前のモデルを削除
-        if (stockModelRef.current) scene.remove(stockModelRef.current);
-        if (targetModelRef.current) scene.remove(targetModelRef.current);
+        if (stockModelRef.current) { scene.remove(stockModelRef.current); disposeObject3D(stockModelRef.current); }
+        if (targetModelRef.current) { scene.remove(targetModelRef.current); disposeObject3D(targetModelRef.current); }
         stockBasePositionRef.current.set(0, 0, 0);
         targetBasePositionRef.current.set(0, 0, 0);
 
@@ -990,7 +1002,7 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
 
     // DXF/SVG描画処理
     useEffect(() => {
-        if (dxfObjectRef.current && sceneRef.current) sceneRef.current.remove(dxfObjectRef.current);
+        if (dxfObjectRef.current && sceneRef.current) { sceneRef.current.remove(dxfObjectRef.current); disposeObject3D(dxfObjectRef.current); }
         if (geometry && geometry.segments && sceneRef.current) {
             const group = new THREE.Group();
             for (const segment of geometry.segments) {
@@ -1000,6 +1012,7 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
                 const line = new THREE.Line(geometry, material);
                 group.add(line);
             }
+            group.visible = showGeometry;
             sceneRef.current.add(group);
             dxfObjectRef.current = group;
         }
@@ -1007,13 +1020,14 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
 
     // ドリル点描画処理
     useEffect(() => {
-        if (drillPointsRef.current && sceneRef.current) sceneRef.current.remove(drillPointsRef.current);
+        if (drillPointsRef.current && sceneRef.current) { sceneRef.current.remove(drillPointsRef.current); disposeObject3D(drillPointsRef.current); }
         if (geometry && geometry.drill_points && sceneRef.current) {
             const pointsGeometry = new THREE.BufferGeometry();
             const vertices = new Float32Array(geometry.drill_points.flat());
             pointsGeometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
             const material = new THREE.PointsMaterial({ color: 0x00ff00, size: 0.5, sizeAttenuation: false });
             const points = new THREE.Points(pointsGeometry, material);
+            points.visible = showGeometry;
             sceneRef.current.add(points);
             drillPointsRef.current = points;
         }
@@ -1021,7 +1035,7 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
 
     // 円弧描画処理
     useEffect(() => {
-        if (dxfArcsRef.current && sceneRef.current) sceneRef.current.remove(dxfArcsRef.current);
+        if (dxfArcsRef.current && sceneRef.current) { sceneRef.current.remove(dxfArcsRef.current); disposeObject3D(dxfArcsRef.current); }
         if (geometry && geometry.arcs && sceneRef.current) {
             const group = new THREE.Group();
             const material = new THREE.LineBasicMaterial({ color: 0x3333cc }); // Arc color
@@ -1041,15 +1055,23 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
                 arcLine.position.z = arc.center[2];
                 group.add(arcLine);
             }
+            group.visible = showGeometry;
             sceneRef.current.add(group);
             dxfArcsRef.current = group;
         }
     }, [geometry]);
 
+    // 図形(DXF/SVG)の表示・非表示切り替え
+    useEffect(() => {
+        if (dxfObjectRef.current) dxfObjectRef.current.visible = showGeometry;
+        if (drillPointsRef.current) drillPointsRef.current.visible = showGeometry;
+        if (dxfArcsRef.current) dxfArcsRef.current.visible = showGeometry;
+    }, [showGeometry]);
+
     // ツールパス描画処理(層/送り位置による絞り込み後の displayToolpaths を描画。未指定時は toolpaths 全体)
     useEffect(() => {
         const pathsToDraw = displayToolpaths !== undefined ? displayToolpaths : toolpaths;
-        if (toolpathGroupRef.current && sceneRef.current) sceneRef.current.remove(toolpathGroupRef.current);
+        if (toolpathGroupRef.current && sceneRef.current) { sceneRef.current.remove(toolpathGroupRef.current); disposeObject3D(toolpathGroupRef.current); }
         if (pathsToDraw && sceneRef.current) {
             const group = new THREE.Group();
             const lineMaterial = new THREE.LineBasicMaterial({ color: 0xff0000 });

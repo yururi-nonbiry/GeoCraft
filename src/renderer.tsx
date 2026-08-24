@@ -332,6 +332,7 @@ const App = () => {
   // --- 3Dビューの表示・非表示 state ---
   const [showStock, setShowStock] = useState(true);
   const [showTarget, setShowTarget] = useState(true);
+  const [showGeometry, setShowGeometry] = useState(true);
   const [showToolpaths, setShowToolpaths] = useState(true);
 
   // --- 加工シミュレーション state ---
@@ -815,6 +816,33 @@ const App = () => {
     setToolpaths(null);
   };
 
+  // --- オブジェクト一覧からの削除ハンドラ ---
+  const handleDeleteStock = () => {
+    setStockStlFile(null);
+    setStockStlPath(null);
+    setStockStlData(null);
+    setStockOffset({ x: 0, y: 0, z: 0 });
+    setStockBaseTransform(null);
+    setPickFaceMode((prev) => (prev === 'stock' ? null : prev));
+  };
+
+  const handleDeleteTarget = () => {
+    setTargetStlFile(null);
+    setTargetStlData(null);
+    setTargetOffset({ x: 0, y: 0, z: 0 });
+    setTargetBaseTransform(null);
+    setPickFaceMode((prev) => (prev === 'target' ? null : prev));
+  };
+
+  const handleDeleteGeometry = () => {
+    setGeometry(null);
+  };
+
+  const handleDeleteToolpaths = () => {
+    setToolpaths(null);
+    resetSimulation();
+  };
+
   const handleSelectTargetStl = async () => {
     const result = await api.openFile('stl');
     if (result.status === 'success') {
@@ -1147,6 +1175,7 @@ const App = () => {
               previewMode={previewMode}
               showStock={showStock}
               showTarget={showTarget}
+              showGeometry={showGeometry}
               showToolpaths={showToolpaths}
               toolPosition={toolScenePosition}
               toolTrailResetToken={toolTrailResetToken}
@@ -1309,12 +1338,20 @@ const App = () => {
             setProcessType={setProcessType}
             stockToLeave={stockToLeave}
             setStockToLeave={setStockToLeave}
+            geometry={geometry}
+            toolpaths={toolpaths}
             showStock={showStock}
             setShowStock={setShowStock}
             showTarget={showTarget}
             setShowTarget={setShowTarget}
+            showGeometry={showGeometry}
+            setShowGeometry={setShowGeometry}
             showToolpaths={showToolpaths}
             setShowToolpaths={setShowToolpaths}
+            handleDeleteStock={handleDeleteStock}
+            handleDeleteTarget={handleDeleteTarget}
+            handleDeleteGeometry={handleDeleteGeometry}
+            handleDeleteToolpaths={handleDeleteToolpaths}
             simEnabled={simEnabled}
             setSimEnabled={setSimEnabled}
             simPlaying={simPlaying}
