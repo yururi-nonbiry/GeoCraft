@@ -433,7 +433,25 @@ namespace GeoCraft.Desktop
         }
 
         public string GenerateDrillGcode(string paramsJson) {
-            return ExecuteSafe(() => new { status = "error", message = "Not implemented" }); 
+             return ExecuteSafe(() => {
+                 object result = _gcodeService.GenerateDrillGcode(paramsJson);
+                 dynamic r = result;
+                 if (r != null && r!.status == "success")
+                 {
+                     // Show Save Dialog
+                     return _mainWindow.Dispatcher.Invoke<object>(() => {
+                         var dialog = new Microsoft.Win32.SaveFileDialog();
+                         dialog.Filter = "G-Code|*.nc;*.gcode|All Files|*.*";
+                         if (dialog.ShowDialog() == true)
+                         {
+                             System.IO.File.WriteAllText(dialog.FileName, (string)r!.gcode);
+                             return new { status = "success", filePath = dialog.FileName };
+                         }
+                         return new { status = "canceled" };
+                     });
+                 }
+                 return result;
+             });
         }
         
         // --- Serial Port Stubs ---

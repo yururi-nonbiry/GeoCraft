@@ -121,10 +121,76 @@ namespace GeoCraft.Desktop.Services
             }
         }
 
+        private class DrillGcodeParams
+        {
+            public List<double[]> drillPoints = new List<double[]>();
+            public double feedRate;
+            public double safeZ;
+            public double stepDown;
+            public double? retractZ;
+            public double? peckQ;
+        }
+
         public object GenerateDrillGcode(string paramsJson)
         {
-             // TODO: Implement Drill GCode
-             return new { status = "error", message = "Not implemented yet" };
+            try
+            {
+                var p = JsonConvert.DeserializeObject<DrillGcodeParams>(paramsJson) ?? new DrillGcodeParams();
+                var points = p.drillPoints;
+                if (points.Count == 0)
+                {
+                    return new { status = "error", message = "ドリル点がありません" };
+                }
+
+                double feedRate = p.feedRate;
+                double safeZ = p.safeZ;
+                // stepDownは輪郭/ポケット同様、絶対Z座標として扱う(work Z0=表面、負値が掘り込み深さ)。
+                double targetZ = p.stepDown;
+                double retractZ = p.retractZ ?? 2.0;
+                double peckDepth = Math.Abs(p.peckQ ?? 0.0);
+
+                GcodeWriter writer = new GcodeWriter();
+                writer.WriteHeader("G90 G21 G17");
+                writer.SpindleOn(1000);
+                writer.RapidMove(z: safeZ);
+
+                foreach (var point in points)
+                {
+                    if (point == null || point.Length < 2) continue;
+                    double x = point[0];
+                    double y = point[1];
+                    double surfaceZ = point.Length > 2 ? point[2] : 0.0;
+
+                    writer.RapidMove(x: x, y: y);
+                    writer.RapidMove(z: retractZ);
+
+                    // peckQが未指定/0の場合は1回のみの単純ドリル(増分=全深さ)として扱う。
+                    double increment = peckDepth > 1e-6 ? peckDepth : (surfaceZ - targetZ);
+                    double currentZ = surfaceZ;
+                    while (currentZ - targetZ > 1e-6)
+                    {
+                        double nextZ = Math.Max(currentZ - increment, targetZ);
+                        writer.LinearMove(z: nextZ, feed: feedRate);
+                        currentZ = nextZ;
+                        // 底に到達していなければ切粉排出のため一旦退避してから再度送り込む。
+                        if (currentZ - targetZ > 1e-6)
+                        {
+                            writer.RapidMove(z: retractZ);
+                        }
+                    }
+
+                    writer.RapidMove(z: safeZ);
+                }
+
+                writer.WriteFooter(null);
+                string gcode = writer.ToString();
+                return new { status = "success", gcode };
+            }
+            catch (Exception ex)
+            {
+                LogService.Log($"GenerateDrillGcode: failed: {ex.Message}");
+                return new { status = "error", message = ex.Message };
+            }
         }
 
         private bool IsClose(double[] p1, double[]? p2)
