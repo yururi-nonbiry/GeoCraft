@@ -22,8 +22,9 @@ import {
   Slider,
   ToggleButton,
   ToggleButtonGroup,
+  Tooltip,
 } from '@mui/material';
-import { Refresh, Link, LinkOff, PlayArrow, Pause, Stop, Settings, Memory, Save, FolderOpen } from '@mui/icons-material';
+import { Refresh, Link, LinkOff, PlayArrow, Pause, Stop, Settings, Memory, Save, FolderOpen, ViewInAr, Layers, Route, Timeline, CenterFocusStrong } from '@mui/icons-material';
 
 import { api } from './api';
 
@@ -301,6 +302,7 @@ const App = () => {
   const [showTarget, setShowTarget] = useState(true);
   const [showGeometry, setShowGeometry] = useState(true);
   const [showToolpaths, setShowToolpaths] = useState(true);
+  const [viewFitToken, setViewFitToken] = useState(0);
 
   // --- 加工シミュレーション state ---
   const [simEnabled, setSimEnabled] = useState(false);
@@ -775,6 +777,7 @@ const App = () => {
               showToolpaths={showToolpaths}
               toolPosition={toolScenePosition}
               toolTrailResetToken={toolTrailResetToken}
+              viewFitToken={viewFitToken}
               simulation={{
                 enabled: simEnabled,
                 toolRadius: toolDiameter / 2,
@@ -789,6 +792,46 @@ const App = () => {
                 onFinished: () => setSimPlaying(false),
               }}
             />
+            {/* 3Dビュー表示切り替え・視点リセット(フローティングアイコン) */}
+            <Box
+              sx={{
+                position: 'absolute',
+                top: 12,
+                left: 12,
+                display: 'flex',
+                gap: 0.5,
+                bgcolor: 'background.paper',
+                borderRadius: 1,
+                boxShadow: 1,
+                p: 0.25,
+              }}
+            >
+              <Tooltip title={showStock ? '材料形状を非表示' : '材料形状を表示'}>
+                <IconButton size="small" color={showStock ? 'primary' : 'default'} onClick={() => setShowStock(!showStock)}>
+                  <ViewInAr fontSize="small" />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title={showTarget ? '加工後形状を非表示' : '加工後形状を表示'}>
+                <IconButton size="small" color={showTarget ? 'primary' : 'default'} onClick={() => setShowTarget(!showTarget)}>
+                  <Layers fontSize="small" />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title={showToolpaths ? 'パスを非表示' : 'パスを表示'}>
+                <IconButton size="small" color={showToolpaths ? 'primary' : 'default'} onClick={() => setShowToolpaths(!showToolpaths)}>
+                  <Route fontSize="small" />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title={showGeometry ? '図形を非表示' : '図形を表示'}>
+                <IconButton size="small" color={showGeometry ? 'primary' : 'default'} onClick={() => setShowGeometry(!showGeometry)}>
+                  <Timeline fontSize="small" />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title="視点をリセット">
+                <IconButton size="small" onClick={() => setViewFitToken((t) => t + 1)}>
+                  <CenterFocusStrong fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            </Box>
             {layers.length > 0 && (
               <>
                 {/* 全体表示 / 対象の層のみ表示 切り替え */}

@@ -79,6 +79,8 @@ interface ThreeViewerProps {
     toolPosition?: { x: number; y: number; z: number } | null;
     // 値が変わるとツール軌跡(トレイル)をクリアする(新しい加工の開始時にインクリメントする想定)。
     toolTrailResetToken?: number;
+    // 値が変わるとカメラを表示中のオブジェクトに合わせて再フィットする(視点リセットボタン用)。
+    viewFitToken?: number;
 }
 
 // 加工可能範囲を示すテーブル面の格子線と外周の矩形を生成する
@@ -136,7 +138,7 @@ const createWorkVolumeBox = (width: number, depth: number, height: number): THRE
     return box;
 };
 
-const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targetStlData, pickFaceMode, onFacePicked, workOrigin = null, pickOriginMode = false, onOriginPicked, machineWorkArea, stockOffset, targetOffset, onStockOffsetChange, onTargetOffsetChange, previewMode, simulation, showStock = true, showTarget = true, showGeometry = true, showToolpaths = true, stockBaseTransform = null, targetBaseTransform = null, toolPosition = null, toolTrailResetToken = 0 }: ThreeViewerProps) => {
+const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targetStlData, pickFaceMode, onFacePicked, workOrigin = null, pickOriginMode = false, onOriginPicked, machineWorkArea, stockOffset, targetOffset, onStockOffsetChange, onTargetOffsetChange, previewMode, simulation, showStock = true, showTarget = true, showGeometry = true, showToolpaths = true, stockBaseTransform = null, targetBaseTransform = null, toolPosition = null, toolTrailResetToken = 0, viewFitToken = 0 }: ThreeViewerProps) => {
     const mountRef = useRef<HTMLDivElement>(null);
     const sceneRef = useRef<THREE.Scene | null>(null);
     const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
@@ -1160,6 +1162,29 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
             toolTrailLineRef.current.geometry.setDrawRange(0, 0);
         }
     }, [toolTrailResetToken]);
+
+    // 視点リセットボタン用。表示中のオブジェクトのうち最初に見つかったものにカメラを合わせる
+    // (材料/加工後形状 > ツールパス > 図形(DXF/SVG) > 加工可能範囲 の優先順)。
+    useEffect(() => {
+        if (viewFitToken <= 0) return;
+
+        const box = new THREE.Box3();
+        if (stockModelRef.current && showStockRef.current) box.expandByObject(stockModelRef.current);
+        if (targetModelRef.current && showTargetRef.current) box.expandByObject(targetModelRef.current);
+        if (!box.isEmpty()) {
+            fitCameraToObject(stockModelRef.current && showStockRef.current ? stockModelRef.current : targetModelRef.current!);
+            return;
+        }
+
+        for (const candidate of [toolpathGroupRef.current, dxfObjectRef.current, workAreaGroupRef.current]) {
+            if (!candidate) continue;
+            const candidateBox = new THREE.Box3().setFromObject(candidate);
+            if (!candidateBox.isEmpty()) {
+                fitCameraToObject(candidate);
+                return;
+            }
+        }
+    }, [viewFitToken]);
 
     return <div ref={mountRef} style={{ width: '100%', height: '100%', position: 'relative' }} />;
 };
