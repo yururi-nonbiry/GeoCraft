@@ -908,8 +908,10 @@ const ControlPanel = (props: ControlPanelProps) => {
                                 </Button>
                                 <Button variant="outlined" onClick={props.handlePauseGcode} disabled={props.gcodeStatus !== 'sending'} startIcon={<Pause />}>一時停止</Button>
                                 <Button variant="outlined" color="secondary" onClick={props.handleStopGcode} disabled={props.gcodeStatus === 'idle'} startIcon={<Stop />}>停止</Button>
-                                <Tooltip title="送信状態が固まって操作できない場合に、表示をidleへ強制的に戻します">
-                                    <Button variant="outlined" color="warning" onClick={props.handleResetGcodeState} startIcon={<RestartAlt />}>リセット</Button>
+                                <Tooltip title="リセット: 送信状態が固まって操作できない場合に、表示をidleへ強制的に戻します">
+                                    <IconButton color="warning" onClick={props.handleResetGcodeState}>
+                                        <RestartAlt />
+                                    </IconButton>
                                 </Tooltip>
                             </Box>
                             <Box sx={{ width: '100%' }}>
