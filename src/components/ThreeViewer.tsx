@@ -543,8 +543,9 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
         scene.add(toolTrailLine);
         toolTrailLineRef.current = toolTrailLine;
 
+        let animationFrameId: number;
         const animate = (now?: number) => {
-            requestAnimationFrame(animate);
+            animationFrameId = requestAnimationFrame(animate);
             controls.update();
             stepSimulation(now ?? performance.now());
             renderer.render(scene, camera);
@@ -767,6 +768,7 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
         renderer.domElement.addEventListener('pointerup', onPointerUp);
 
         return () => {
+            cancelAnimationFrame(animationFrameId);
             window.removeEventListener('resize', handleResize);
             renderer.domElement.removeEventListener('pointerdown', onPointerDown);
             renderer.domElement.removeEventListener('pointermove', onPointerMove);
@@ -774,6 +776,14 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
             if (currentMount.contains(renderer.domElement)) {
                 currentMount.removeChild(renderer.domElement);
             }
+            // このeffectで生成した常設オブジェクト(モデル/ツールパスなど他effectが管理するものは除く)を解放する
+            disposeObject3D(axesHelper);
+            disposeObject3D(originGizmoGroup);
+            disposeObject3D(hoverMarker);
+            disposeObject3D(toolMarkerGroup);
+            disposeObject3D(toolTrailLine);
+            controls.dispose();
+            renderer.dispose();
         };
     }, []);
 
@@ -871,12 +881,7 @@ const ThreeViewer = ({ toolpaths, displayToolpaths, geometry, stockStlData, targ
 
         if (simGroupRef.current) {
             scene.remove(simGroupRef.current);
-            simGroupRef.current.traverse((obj) => {
-                if (obj instanceof THREE.Mesh) {
-                    obj.geometry.dispose();
-                    (Array.isArray(obj.material) ? obj.material : [obj.material]).forEach((m) => m.dispose());
-                }
-            });
+            disposeObject3D(simGroupRef.current);
         }
         simGroupRef.current = null;
         simTopMeshRef.current = null;

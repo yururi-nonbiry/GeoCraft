@@ -61,3 +61,14 @@ export type ToolSetting = {
 };
 
 export type EditableToolSetting = Omit<ToolSetting, 'id'> & { id: number | null };
+
+export type MaterialSetting = {
+  id: number;
+  name: string;
+  feedRate: number;
+  plungeRate: number;
+  rpm: number;
+  depthPerPass: number;
+};
+
+export type EditableMaterialSetting = Omit<MaterialSetting, 'id'> & { id: number | null };

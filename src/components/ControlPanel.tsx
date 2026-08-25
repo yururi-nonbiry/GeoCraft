@@ -30,7 +30,7 @@ import {
     TableRow,
 } from '@mui/material';
 import { Refresh, Link, LinkOff, PlayArrow, Pause, Stop, SkipNext, Settings, LockOpen, InfoOutlined, RestartAlt } from '@mui/icons-material';
-import { MachineSetting, ToolSetting, WorkOrigin, Geometry, ToolpathSegment } from '../types';
+import { MachineSetting, ToolSetting, WorkOrigin, Geometry, ToolpathSegment, SerialPortInfo } from '../types';
 
 interface ControlPanelProps {
     workOrigin: WorkOrigin | null;
@@ -83,7 +83,7 @@ interface ControlPanelProps {
     isConnected: boolean;
     selectedPort: string;
     setSelectedPort: (val: string) => void;
-    serialPorts: any[];
+    serialPorts: SerialPortInfo[];
     baudRate: number;
     setBaudRate: (val: number) => void;
     handleRefreshPorts: () => void;
@@ -182,6 +182,22 @@ const TabPanel = (props: { children?: React.ReactNode; index: number; value: num
         </div>
     );
 };
+
+type VisibilityItem = { label: string; checked: boolean; onChange: (checked: boolean) => void };
+
+// 3Dビュー上のオブジェクト(材料/加工後形状/パスなど)の表示・非表示チェックボックス列。
+// CAM/CNC/シミュレーションの各タブで対象は違えど見た目・挙動が同じなので共通化している。
+const VisibilityToggles = ({ items }: { items: VisibilityItem[] }) => (
+    <Box sx={{ display: 'flex', flexWrap: 'wrap', mb: 1 }}>
+        {items.map((item) => (
+            <FormControlLabel
+                key={item.label}
+                control={<Checkbox checked={item.checked} onChange={(e) => item.onChange(e.target.checked)} />}
+                label={item.label}
+            />
+        ))}
+    </Box>
+);
 
 const LongPressButton = (props: {
     disabled?: boolean;
@@ -401,16 +417,12 @@ const ControlPanel = (props: ControlPanelProps) => {
                             >
                                 {props.pickOriginMode ? '3Dビューで頂点を選択中 (クリックで決定)' : '3Dビュー上で頂点を選択'}
                             </Button>
-                            <Box sx={{ display: 'flex', flexWrap: 'wrap', mb: 1 }}>
-                                <FormControlLabel
-                                    control={<Checkbox checked={props.showStock} onChange={(e) => props.setShowStock(e.target.checked)} />}
-                                    label="材料形状STLを表示"
-                                />
-                                <FormControlLabel
-                                    control={<Checkbox checked={props.showTarget} onChange={(e) => props.setShowTarget(e.target.checked)} />}
-                                    label="加工後形状STLを表示"
-                                />
-                            </Box>
+                            <VisibilityToggles
+                                items={[
+                                    { label: '材料形状STLを表示', checked: props.showStock, onChange: props.setShowStock },
+                                    { label: '加工後形状STLを表示', checked: props.showTarget, onChange: props.setShowTarget },
+                                ]}
+                            />
                             <FormControl fullWidth size="small" margin="dense">
                                 <InputLabel>プリセット選択</InputLabel>
                                 <Select
@@ -524,20 +536,13 @@ const ControlPanel = (props: ControlPanelProps) => {
                                     プレビューモード中は材料・加工後形状の位置を変更できません。パラメータ変更とパスの再生成は可能です。プレビューを解除すると生成済みのパスは削除されます。
                                 </Typography>
                             )}
-                            <Box sx={{ display: 'flex', flexWrap: 'wrap', mb: 1 }}>
-                                <FormControlLabel
-                                    control={<Checkbox checked={props.showStock} onChange={(e) => props.setShowStock(e.target.checked)} />}
-                                    label="材料を表示"
-                                />
-                                <FormControlLabel
-                                    control={<Checkbox checked={props.showTarget} onChange={(e) => props.setShowTarget(e.target.checked)} />}
-                                    label="加工後形状を表示"
-                                />
-                                <FormControlLabel
-                                    control={<Checkbox checked={props.showToolpaths} onChange={(e) => props.setShowToolpaths(e.target.checked)} />}
-                                    label="パスを表示"
-                                />
-                            </Box>
+                            <VisibilityToggles
+                                items={[
+                                    { label: '材料を表示', checked: props.showStock, onChange: props.setShowStock },
+                                    { label: '加工後形状を表示', checked: props.showTarget, onChange: props.setShowTarget },
+                                    { label: 'パスを表示', checked: props.showToolpaths, onChange: props.setShowToolpaths },
+                                ]}
+                            />
                             <Box sx={{ mb: 2 }}>
                                 <Button variant="outlined" onClick={props.handleSelectStockStl} fullWidth>材料STLを選択</Button>
                                 <Box sx={{ mt: 1 }}>
@@ -997,20 +1002,13 @@ const ControlPanel = (props: ControlPanelProps) => {
                                 control={<Checkbox checked={props.simEnabled} onChange={(e) => props.setSimEnabled(e.target.checked)} />}
                                 label="シミュレーションを表示"
                             />
-                            <Box sx={{ display: 'flex', flexWrap: 'wrap', mb: 1 }}>
-                                <FormControlLabel
-                                    control={<Checkbox checked={props.showStock} onChange={(e) => props.setShowStock(e.target.checked)} />}
-                                    label="材料を表示"
-                                />
-                                <FormControlLabel
-                                    control={<Checkbox checked={props.showTarget} onChange={(e) => props.setShowTarget(e.target.checked)} />}
-                                    label="加工後形状を表示"
-                                />
-                                <FormControlLabel
-                                    control={<Checkbox checked={props.showToolpaths} onChange={(e) => props.setShowToolpaths(e.target.checked)} />}
-                                    label="パスを表示"
-                                />
-                            </Box>
+                            <VisibilityToggles
+                                items={[
+                                    { label: '材料を表示', checked: props.showStock, onChange: props.setShowStock },
+                                    { label: '加工後形状を表示', checked: props.showTarget, onChange: props.setShowTarget },
+                                    { label: 'パスを表示', checked: props.showToolpaths, onChange: props.setShowToolpaths },
+                                ]}
+                            />
                             <TextField
                                 label="素材マージン (mm)"
                                 type="number"
