@@ -72,3 +72,12 @@ export type MaterialSetting = {
 };
 
 export type EditableMaterialSetting = Omit<MaterialSetting, 'id'> & { id: number | null };
+
+export type StlPlacement = {
+  fileName: string | null;
+  stlDataBase64: string | null;
+  offset: { x: number; y: number; z: number };
+  boxSize?: { x: number; y: number; z: number };
+  // 底面選択(ピックフェース)で決まった基準位置・回転(未選択なら null)
+  baseTransform?: StlBaseTransform | null;
+};
