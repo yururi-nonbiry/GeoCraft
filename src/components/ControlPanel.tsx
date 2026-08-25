@@ -29,7 +29,7 @@ import {
     TableHead,
     TableRow,
 } from '@mui/material';
-import { Refresh, Link, LinkOff, PlayArrow, Pause, Stop, SkipNext, Settings, LockOpen } from '@mui/icons-material';
+import { Refresh, Link, LinkOff, PlayArrow, Pause, Stop, SkipNext, Settings, LockOpen, InfoOutlined } from '@mui/icons-material';
 import { MachineSetting, ToolSetting, WorkOrigin, Geometry, ToolpathSegment } from '../types';
 
 interface ControlPanelProps {
@@ -699,10 +699,12 @@ const ControlPanel = (props: ControlPanelProps) => {
                             </Box>
                         </Paper>
                         <Paper sx={{ p: 2, mb: 2 }}>
-                            <Typography variant="h6" gutterBottom>投入済みオブジェクト</Typography>
-                            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
-                                現在CAMに読み込まれている材料・加工後形状・図形・ツールパスの表示/非表示切り替えや削除ができます。
-                            </Typography>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 1 }}>
+                                <Typography variant="h6">投入済みオブジェクト</Typography>
+                                <Tooltip title="現在CAMに読み込まれている材料・加工後形状・図形・ツールパスの表示/非表示切り替えや削除ができます。">
+                                    <InfoOutlined fontSize="small" sx={{ color: 'text.secondary', cursor: 'help' }} />
+                                </Tooltip>
+                            </Box>
                             <TableContainer component={Paper} variant="outlined">
                                 <Table size="small" sx={{ tableLayout: 'fixed' }}>
                                     <TableHead>
