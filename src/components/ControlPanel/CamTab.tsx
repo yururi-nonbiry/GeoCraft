@@ -22,7 +22,7 @@ import {
 } from '@mui/material';
 import { Settings, InfoOutlined } from '@mui/icons-material';
 import { MachineSetting, ToolSetting, WorkOrigin, Geometry, ToolpathSegment } from '../../types';
-import { VisibilityToggles } from './shared';
+import { VisibilityToggles, NumberField, ConfirmDialog } from './shared';
 
 export interface CamTabProps {
     machineSettings: MachineSetting[];
@@ -92,6 +92,18 @@ export interface CamTabProps {
 }
 
 const CamTab = (props: CamTabProps) => {
+    const [pendingDelete, setPendingDelete] = useState<{ message: string; onDelete: () => void } | null>(null);
+    const [previewOffConfirmOpen, setPreviewOffConfirmOpen] = useState(false);
+
+    const handleTogglePreviewModeClick = () => {
+        const willDeleteToolpaths = props.previewMode && props.toolpaths && props.toolpaths.length > 0;
+        if (willDeleteToolpaths) {
+            setPreviewOffConfirmOpen(true);
+        } else {
+            props.onTogglePreviewMode();
+        }
+    };
+
     // CAMに投入されている(読み込み/生成済みの)オブジェクト一覧。「オブジェクト」タブの表示/非表示・削除操作の元になる。
     const objectRows: Array<{
         key: string;
@@ -270,7 +282,12 @@ const CamTab = (props: CamTabProps) => {
             </Paper>
             <Paper sx={{ p: 2, mb: 2 }}>
                 <Typography variant="h6" gutterBottom>2.5D 加工 (DXF/SVG)</Typography>
-                <TextField label="ステップオーバー (%)" type="number" value={props.stepover * 100} onChange={(e) => props.setStepover(parseFloat(e.target.value) / 100)} fullWidth margin="normal" size="small" />
+                <NumberField
+                    label="ステップオーバー (%)"
+                    value={props.stepover * 100}
+                    onChange={(val) => props.setStepover(val / 100)}
+                    validate={(v) => (v <= 0 || v > 100 ? '1〜100の範囲で入力してください' : undefined)}
+                />
                 <FormControl fullWidth margin="normal" size="small">
                     <InputLabel>輪郭方向</InputLabel>
                     <Select value={props.contourSide} label="輪郭方向" onChange={(e) => props.setContourSide(e.target.value as string)}>
@@ -289,7 +306,7 @@ const CamTab = (props: CamTabProps) => {
                             variant={props.previewMode ? 'contained' : 'outlined'}
                             color={props.previewMode ? 'secondary' : 'primary'}
                             size="small"
-                            onClick={props.onTogglePreviewMode}
+                            onClick={handleTogglePreviewModeClick}
                         >
                             {props.previewMode ? 'プレビュー解除' : 'プレビューモード'}
                         </Button>
@@ -312,12 +329,15 @@ const CamTab = (props: CamTabProps) => {
                     <Box sx={{ mt: 1 }}>
                         <Typography variant="caption" display="block">四角い材料を寸法入力で投入 (mm)</Typography>
                         <Box sx={{ display: 'flex', gap: 1 }}>
-                            <TextField label="幅 X" type="number" size="small" value={props.stockBoxSize.x}
-                                onChange={(e) => props.setStockBoxSize({ ...props.stockBoxSize, x: parseFloat(e.target.value) || 0 })} />
-                            <TextField label="奥行き Y" type="number" size="small" value={props.stockBoxSize.y}
-                                onChange={(e) => props.setStockBoxSize({ ...props.stockBoxSize, y: parseFloat(e.target.value) || 0 })} />
-                            <TextField label="高さ Z" type="number" size="small" value={props.stockBoxSize.z}
-                                onChange={(e) => props.setStockBoxSize({ ...props.stockBoxSize, z: parseFloat(e.target.value) || 0 })} />
+                            <NumberField label="幅 X" fullWidth={false} value={props.stockBoxSize.x}
+                                onChange={(val) => props.setStockBoxSize({ ...props.stockBoxSize, x: val })}
+                                validate={(v) => (v <= 0 ? '0より大きい値' : undefined)} margin="none" />
+                            <NumberField label="奥行き Y" fullWidth={false} value={props.stockBoxSize.y}
+                                onChange={(val) => props.setStockBoxSize({ ...props.stockBoxSize, y: val })}
+                                validate={(v) => (v <= 0 ? '0より大きい値' : undefined)} margin="none" />
+                            <NumberField label="高さ Z" fullWidth={false} value={props.stockBoxSize.z}
+                                onChange={(val) => props.setStockBoxSize({ ...props.stockBoxSize, z: val })}
+                                validate={(v) => (v <= 0 ? '0より大きい値' : undefined)} margin="none" />
                         </Box>
                         <Button variant="outlined" onClick={props.handleCreateBoxStock} fullWidth size="small" sx={{ mt: 1 }}>四角い材料を投入</Button>
                     </Box>
@@ -381,7 +401,12 @@ const CamTab = (props: CamTabProps) => {
                         </Box>
                     )}
                 </Box>
-                <TextField label="スライス厚 (mm)" type="number" value={props.sliceHeight} onChange={(e) => props.setSliceHeight(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
+                <NumberField
+                    label="スライス厚 (mm)"
+                    value={props.sliceHeight}
+                    onChange={props.setSliceHeight}
+                    validate={(v) => (v <= 0 ? '0より大きい値を入力してください' : undefined)}
+                />
                 <Button variant="contained" onClick={props.handleGenerate3dPath} disabled={props.isGenerating3dPath} fullWidth>
                     {props.isGenerating3dPath
                         ? (props.path3dProgress.total > 0 && props.path3dProgress.current >= props.path3dProgress.total
@@ -403,13 +428,23 @@ const CamTab = (props: CamTabProps) => {
             </Paper>
             <Paper sx={{ p: 2, mb: 2 }}>
                 <Typography variant="h6" gutterBottom>ドリル加工</Typography>
-                <TextField label="リトラクト高さ (mm)" type="number" value={props.retractZ} onChange={(e) => props.setRetractZ(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
-                <TextField label="ペック量 (Q)" type="number" value={props.peckQ} onChange={(e) => props.setPeckQ(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
+                <NumberField label="リトラクト高さ (mm)" value={props.retractZ} onChange={props.setRetractZ} min={0} />
+                <NumberField
+                    label="ペック量 (Q)"
+                    value={props.peckQ}
+                    onChange={props.setPeckQ}
+                    validate={(v) => (v <= 0 ? '0より大きい値を入力してください' : undefined)}
+                />
                 <Button variant="contained" onClick={props.handleGenerateDrillGcode}>ドリルGコード生成</Button>
             </Paper>
             <Paper sx={{ p: 2, mb: 2 }}>
                 <Typography variant="h6" gutterBottom>Gコード保存</Typography>
-                <TextField label="送り速度 (mm/min)" type="number" value={props.feedRate} onChange={(e) => props.setFeedRate(parseFloat(e.target.value))} fullWidth margin="normal" size="small" />
+                <NumberField
+                    label="送り速度 (mm/min)"
+                    value={props.feedRate}
+                    onChange={props.setFeedRate}
+                    validate={(v) => (v <= 0 ? '0より大きい値を入力してください' : undefined)}
+                />
                 <Box sx={{ display: 'flex', gap: 1 }}>
                     <Button variant="contained" onClick={props.handleSaveGcode}>Gコード保存</Button>
                     <Button
@@ -470,9 +505,7 @@ const CamTab = (props: CamTabProps) => {
                                                 size="small"
                                                 color="secondary"
                                                 disabled={!row.loaded}
-                                                onClick={() => {
-                                                    if (confirm(row.confirmMessage)) row.onDelete();
-                                                }}
+                                                onClick={() => setPendingDelete({ message: row.confirmMessage, onDelete: row.onDelete })}
                                             >
                                                 削除
                                             </Button>
@@ -484,6 +517,26 @@ const CamTab = (props: CamTabProps) => {
                     </Table>
                 </TableContainer>
             </Paper>
+            <ConfirmDialog
+                open={!!pendingDelete}
+                title="削除の確認"
+                message={pendingDelete?.message || ''}
+                onConfirm={() => {
+                    pendingDelete?.onDelete();
+                    setPendingDelete(null);
+                }}
+                onCancel={() => setPendingDelete(null)}
+            />
+            <ConfirmDialog
+                open={previewOffConfirmOpen}
+                title="プレビュー解除の確認"
+                message="プレビューを解除すると、生成済みの3D加工パスは削除されます。よろしいですか？"
+                onConfirm={() => {
+                    props.onTogglePreviewMode();
+                    setPreviewOffConfirmOpen(false);
+                }}
+                onCancel={() => setPreviewOffConfirmOpen(false)}
+            />
         </Box>
     );
 };

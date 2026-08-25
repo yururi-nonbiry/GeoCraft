@@ -20,6 +20,8 @@ import {
   TableRow,
   Paper,
   Grid,
+  Snackbar,
+  Alert,
 } from '@mui/material';
 import {
   MachineSetting,
@@ -29,6 +31,7 @@ import {
   ToolSetting,
   EditableToolSetting,
 } from '../types';
+import { NumberField, ConfirmDialog } from './ControlPanel/shared';
 
 const EMPTY_MACHINE: EditableMachineSetting = {
   id: null,
@@ -116,18 +119,48 @@ const SettingsDialog = ({
   const [editingMaterial, setEditingMaterial] = useState<EditableMaterialSetting>({ ...EMPTY_MATERIAL });
   const [isToolDialogOpen, setIsToolDialogOpen] = useState(false);
   const [editingTool, setEditingTool] = useState<EditableToolSetting>({ ...EMPTY_TOOL });
+  const [deleteTarget, setDeleteTarget] = useState<
+    | { kind: 'machine'; item: MachineSetting }
+    | { kind: 'material'; item: MaterialSetting }
+    | { kind: 'tool'; item: ToolSetting }
+    | null
+  >(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const isMachineValid = editingMachine.name.trim() !== ''
+    && editingMachine.safeZ >= 0
+    && editingMachine.stepDown < 0
+    && editingMachine.retractZ >= 0
+    && editingMachine.peckQ > 0
+    && editingMachine.workAreaX > 0
+    && editingMachine.workAreaY > 0
+    && editingMachine.workAreaZ > 0;
+
+  const isMaterialValid = editingMaterial.name.trim() !== ''
+    && editingMaterial.feedRate > 0
+    && editingMaterial.plungeRate > 0
+    && editingMaterial.rpm > 0
+    && editingMaterial.depthPerPass > 0;
+
+  const isToolValid = !!editingTool.name && editingTool.name.trim() !== ''
+    && editingTool.diameter > 0
+    && (editingTool.roughing?.depthPerPass ?? 0) > 0
+    && (editingTool.roughing?.feedRate ?? 0) > 0
+    && (editingTool.roughing?.plungeRate ?? 0) > 0
+    && (editingTool.roughing?.rpm ?? 0) > 0
+    && (editingTool.finishing?.depthPerPass ?? 0) > 0
+    && (editingTool.finishing?.feedRate ?? 0) > 0
+    && (editingTool.finishing?.plungeRate ?? 0) > 0
+    && (editingTool.finishing?.rpm ?? 0) > 0
+    && (editingTool.finishing?.stockToLeave ?? 0) >= 0;
 
   const handleSaveMachine = () => {
-    if (!editingMachine.name.trim()) {
-      alert('加工機名を入力してください。');
-      return;
-    }
+    if (!isMachineValid) return;
     setMachineSettings((prev) => upsertById(prev, editingMachine, setSelectedMachineId));
     setIsMachineDialogOpen(false);
   };
 
   const handleDeleteMachine = (machine: MachineSetting) => {
-    if (!confirm('この加工機を削除しますか？')) return;
     setMachineSettings((prev) => {
       const updated = prev.filter((m) => m.id !== machine.id);
       if (machine.id === selectedMachineId) {
@@ -138,16 +171,12 @@ const SettingsDialog = ({
   };
 
   const handleSaveMaterial = () => {
-    if (!editingMaterial.name.trim()) {
-      alert('材料名を入力してください。');
-      return;
-    }
+    if (!isMaterialValid) return;
     setMaterialSettings((prev) => upsertById(prev, editingMaterial, setSelectedMaterialId));
     setIsMaterialDialogOpen(false);
   };
 
   const handleDeleteMaterial = (material: MaterialSetting) => {
-    if (!confirm('この材料を削除しますか？')) return;
     setMaterialSettings((prev) => {
       const updated = prev.filter((m) => m.id !== material.id);
       if (material.id === selectedMaterialId) {
@@ -158,16 +187,12 @@ const SettingsDialog = ({
   };
 
   const handleSaveTool = () => {
-    if (!editingTool.name || !editingTool.name.trim()) {
-      alert('工具名を入力してください。');
-      return;
-    }
+    if (!isToolValid) return;
     setToolSettings((prev) => upsertById(prev, editingTool, setSelectedToolId));
     setIsToolDialogOpen(false);
   };
 
   const handleDeleteTool = (tool: ToolSetting) => {
-    if (!confirm('この工具を削除しますか？')) return;
     setToolSettings((prev) => {
       const updated = prev.filter((t) => t.id !== tool.id);
       if (tool.id === selectedToolId) {
@@ -175,6 +200,14 @@ const SettingsDialog = ({
       }
       return updated;
     });
+  };
+
+  const handleConfirmDelete = () => {
+    if (!deleteTarget) return;
+    if (deleteTarget.kind === 'machine') handleDeleteMachine(deleteTarget.item);
+    else if (deleteTarget.kind === 'material') handleDeleteMaterial(deleteTarget.item);
+    else handleDeleteTool(deleteTarget.item);
+    setDeleteTarget(null);
   };
 
   const handleSaveAll = async () => {
@@ -190,7 +223,7 @@ const SettingsDialog = ({
       onClose();
     } catch (error) {
       console.error('Failed to save settings', error);
-      alert('設定の保存に失敗しました。');
+      setErrorMessage('設定の保存に失敗しました。');
     }
   };
 
@@ -227,7 +260,7 @@ const SettingsDialog = ({
                     <TableCell align="right">{machine.workAreaX}×{machine.workAreaY}×{machine.workAreaZ}</TableCell>
                     <TableCell align="center">
                       <Button size="small" onClick={() => { setEditingMachine({ ...machine }); setIsMachineDialogOpen(true); }} sx={{ mr: 1 }}>編集</Button>
-                      <Button size="small" color="secondary" onClick={() => handleDeleteMachine(machine)}>削除</Button>
+                      <Button size="small" color="secondary" onClick={() => setDeleteTarget({ kind: 'machine', item: machine })}>削除</Button>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -261,7 +294,7 @@ const SettingsDialog = ({
                     <TableCell align="right">{material.depthPerPass}</TableCell>
                     <TableCell align="center">
                       <Button size="small" onClick={() => { setEditingMaterial({ ...material }); setIsMaterialDialogOpen(true); }} sx={{ mr: 1 }}>編集</Button>
-                      <Button size="small" color="secondary" onClick={() => handleDeleteMaterial(material)}>削除</Button>
+                      <Button size="small" color="secondary" onClick={() => setDeleteTarget({ kind: 'material', item: material })}>削除</Button>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -291,7 +324,7 @@ const SettingsDialog = ({
                     <TableCell>{tool.type}</TableCell>
                     <TableCell align="center">
                       <Button size="small" onClick={() => { setEditingTool({ ...tool }); setIsToolDialogOpen(true); }} sx={{ mr: 1 }}>編集</Button>
-                      <Button size="small" color="secondary" onClick={() => handleDeleteTool(tool)}>削除</Button>
+                      <Button size="small" color="secondary" onClick={() => setDeleteTarget({ kind: 'tool', item: tool })}>削除</Button>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -314,63 +347,58 @@ const SettingsDialog = ({
             onChange={(e) => setEditingMachine((prev) => ({ ...prev, name: e.target.value }))}
             fullWidth
             margin="dense"
+            error={editingMachine.name.trim() === ''}
+            helperText={editingMachine.name.trim() === '' ? '名称を入力してください' : undefined}
           />
-          <TextField
+          <NumberField
             label="安全高さ (Z)"
-            type="number"
             value={editingMachine.safeZ}
-            onChange={(e) => setEditingMachine((prev) => ({ ...prev, safeZ: Number(e.target.value) || 0 }))}
-            fullWidth
+            onChange={(val) => setEditingMachine((prev) => ({ ...prev, safeZ: val }))}
+            min={0}
             margin="dense"
           />
-          <TextField
+          <NumberField
             label="切込み深さ (Z)"
-            type="number"
             value={editingMachine.stepDown}
-            onChange={(e) => setEditingMachine((prev) => ({ ...prev, stepDown: Number(e.target.value) || 0 }))}
-            fullWidth
+            onChange={(val) => setEditingMachine((prev) => ({ ...prev, stepDown: val }))}
+            validate={(v) => (v >= 0 ? 'マイナスの値を入力してください（Z方向への切込み量）' : undefined)}
             margin="dense"
           />
-          <TextField
+          <NumberField
             label="R点 (切込み開始高さ)"
-            type="number"
             value={editingMachine.retractZ}
-            onChange={(e) => setEditingMachine((prev) => ({ ...prev, retractZ: Number(e.target.value) || 0 }))}
-            fullWidth
+            onChange={(val) => setEditingMachine((prev) => ({ ...prev, retractZ: val }))}
+            min={0}
             margin="dense"
           />
-          <TextField
+          <NumberField
             label="ペック量 (Q)"
-            type="number"
             value={editingMachine.peckQ}
-            onChange={(e) => setEditingMachine((prev) => ({ ...prev, peckQ: Number(e.target.value) || 0 }))}
-            fullWidth
+            onChange={(val) => setEditingMachine((prev) => ({ ...prev, peckQ: val }))}
+            validate={(v) => (v <= 0 ? '0より大きい値を入力してください' : undefined)}
             margin="dense"
           />
-          <TextField
+          <NumberField
             label="加工範囲 X (幅, mm)"
-            type="number"
             value={editingMachine.workAreaX}
-            onChange={(e) => setEditingMachine((prev) => ({ ...prev, workAreaX: Number(e.target.value) || 0 }))}
-            fullWidth
+            onChange={(val) => setEditingMachine((prev) => ({ ...prev, workAreaX: val }))}
+            validate={(v) => (v <= 0 ? '0より大きい値を入力してください' : undefined)}
             margin="dense"
             helperText="原点(0)からテーブル奥までのX方向可動範囲"
           />
-          <TextField
+          <NumberField
             label="加工範囲 Y (奥行き, mm)"
-            type="number"
             value={editingMachine.workAreaY}
-            onChange={(e) => setEditingMachine((prev) => ({ ...prev, workAreaY: Number(e.target.value) || 0 }))}
-            fullWidth
+            onChange={(val) => setEditingMachine((prev) => ({ ...prev, workAreaY: val }))}
+            validate={(v) => (v <= 0 ? '0より大きい値を入力してください' : undefined)}
             margin="dense"
             helperText="原点(0)からテーブル奥までのY方向可動範囲"
           />
-          <TextField
+          <NumberField
             label="加工範囲 Z (高さ, mm)"
-            type="number"
             value={editingMachine.workAreaZ}
-            onChange={(e) => setEditingMachine((prev) => ({ ...prev, workAreaZ: Number(e.target.value) || 0 }))}
-            fullWidth
+            onChange={(val) => setEditingMachine((prev) => ({ ...prev, workAreaZ: val }))}
+            validate={(v) => (v <= 0 ? '0より大きい値を入力してください' : undefined)}
             margin="dense"
             helperText="原点(Z=0)から下方向への可動範囲"
           />
@@ -395,7 +423,7 @@ const SettingsDialog = ({
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setIsMachineDialogOpen(false)}>キャンセル</Button>
-          <Button variant="contained" onClick={handleSaveMachine}>保存</Button>
+          <Button variant="contained" onClick={handleSaveMachine} disabled={!isMachineValid}>保存</Button>
         </DialogActions>
       </Dialog>
 
@@ -408,43 +436,41 @@ const SettingsDialog = ({
             onChange={(e) => setEditingMaterial((prev) => ({ ...prev, name: e.target.value }))}
             fullWidth
             margin="dense"
+            error={editingMaterial.name.trim() === ''}
+            helperText={editingMaterial.name.trim() === '' ? '名称を入力してください' : undefined}
           />
-          <TextField
+          <NumberField
             label="送り速度 (mm/min)"
-            type="number"
             value={editingMaterial.feedRate}
-            onChange={(e) => setEditingMaterial((prev) => ({ ...prev, feedRate: Number(e.target.value) || 0 }))}
-            fullWidth
+            onChange={(val) => setEditingMaterial((prev) => ({ ...prev, feedRate: val }))}
+            validate={(v) => (v <= 0 ? '0より大きい値を入力してください' : undefined)}
             margin="dense"
           />
-          <TextField
+          <NumberField
             label="突っ込み速度 (mm/min)"
-            type="number"
             value={editingMaterial.plungeRate}
-            onChange={(e) => setEditingMaterial((prev) => ({ ...prev, plungeRate: Number(e.target.value) || 0 }))}
-            fullWidth
+            onChange={(val) => setEditingMaterial((prev) => ({ ...prev, plungeRate: val }))}
+            validate={(v) => (v <= 0 ? '0より大きい値を入力してください' : undefined)}
             margin="dense"
           />
-          <TextField
+          <NumberField
             label="主軸回転数 (RPM)"
-            type="number"
             value={editingMaterial.rpm}
-            onChange={(e) => setEditingMaterial((prev) => ({ ...prev, rpm: Number(e.target.value) || 0 }))}
-            fullWidth
+            onChange={(val) => setEditingMaterial((prev) => ({ ...prev, rpm: val }))}
+            validate={(v) => (v <= 0 ? '0より大きい値を入力してください' : undefined)}
             margin="dense"
           />
-          <TextField
+          <NumberField
             label="切込み深さ (mm)"
-            type="number"
             value={editingMaterial.depthPerPass}
-            onChange={(e) => setEditingMaterial((prev) => ({ ...prev, depthPerPass: Number(e.target.value) || 0 }))}
-            fullWidth
+            onChange={(val) => setEditingMaterial((prev) => ({ ...prev, depthPerPass: val }))}
+            validate={(v) => (v <= 0 ? '0より大きい値を入力してください' : undefined)}
             margin="dense"
           />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setIsMaterialDialogOpen(false)}>キャンセル</Button>
-          <Button variant="contained" onClick={handleSaveMaterial}>保存</Button>
+          <Button variant="contained" onClick={handleSaveMaterial} disabled={!isMaterialValid}>保存</Button>
         </DialogActions>
       </Dialog>
 
@@ -463,15 +489,16 @@ const SettingsDialog = ({
                 fullWidth
                 margin="dense"
                 size="small"
+                error={!editingTool.name || editingTool.name.trim() === ''}
+                helperText={!editingTool.name || editingTool.name.trim() === '' ? '名称を入力してください' : undefined}
               />
             </Grid>
             <Grid item xs={3}>
-              <TextField
+              <NumberField
                 label="径 (mm)"
-                type="number"
                 value={editingTool.diameter || 0}
-                onChange={(e) => setEditingTool((prev) => ({ ...prev, diameter: Number(e.target.value) || 0 }))}
-                fullWidth
+                onChange={(val) => setEditingTool((prev) => ({ ...prev, diameter: val }))}
+                validate={(v) => (v <= 0 ? '0より大きい値' : undefined)}
                 margin="dense"
                 size="small"
               />
@@ -494,51 +521,47 @@ const SettingsDialog = ({
 
             <Grid item xs={6}>
               <Typography variant="subtitle2" color="primary" sx={{ mt: 2 }} gutterBottom>粗削り加工条件</Typography>
-              <TextField
+              <NumberField
                 label="切込み量 (mm)"
-                type="number"
                 value={editingTool.roughing?.depthPerPass ?? 1.0}
-                onChange={(e) => setEditingTool((prev) => ({
+                onChange={(val) => setEditingTool((prev) => ({
                   ...prev,
-                  roughing: { ...prev.roughing!, depthPerPass: Number(e.target.value) || 0 }
+                  roughing: { ...prev.roughing!, depthPerPass: val }
                 }))}
-                fullWidth
+                validate={(v) => (v <= 0 ? '0より大きい値' : undefined)}
                 margin="dense"
                 size="small"
               />
-              <TextField
+              <NumberField
                 label="送り速度 (mm/min)"
-                type="number"
                 value={editingTool.roughing?.feedRate ?? 1000}
-                onChange={(e) => setEditingTool((prev) => ({
+                onChange={(val) => setEditingTool((prev) => ({
                   ...prev,
-                  roughing: { ...prev.roughing!, feedRate: Number(e.target.value) || 0 }
+                  roughing: { ...prev.roughing!, feedRate: val }
                 }))}
-                fullWidth
+                validate={(v) => (v <= 0 ? '0より大きい値' : undefined)}
                 margin="dense"
                 size="small"
               />
-              <TextField
+              <NumberField
                 label="突っ込み速度 (mm/min)"
-                type="number"
                 value={editingTool.roughing?.plungeRate ?? 300}
-                onChange={(e) => setEditingTool((prev) => ({
+                onChange={(val) => setEditingTool((prev) => ({
                   ...prev,
-                  roughing: { ...prev.roughing!, plungeRate: Number(e.target.value) || 0 }
+                  roughing: { ...prev.roughing!, plungeRate: val }
                 }))}
-                fullWidth
+                validate={(v) => (v <= 0 ? '0より大きい値' : undefined)}
                 margin="dense"
                 size="small"
               />
-              <TextField
+              <NumberField
                 label="主軸回転数 (RPM)"
-                type="number"
                 value={editingTool.roughing?.rpm ?? 15000}
-                onChange={(e) => setEditingTool((prev) => ({
+                onChange={(val) => setEditingTool((prev) => ({
                   ...prev,
-                  roughing: { ...prev.roughing!, rpm: Number(e.target.value) || 0 }
+                  roughing: { ...prev.roughing!, rpm: val }
                 }))}
-                fullWidth
+                validate={(v) => (v <= 0 ? '0より大きい値' : undefined)}
                 margin="dense"
                 size="small"
               />
@@ -546,63 +569,58 @@ const SettingsDialog = ({
 
             <Grid item xs={6}>
               <Typography variant="subtitle2" color="primary" sx={{ mt: 2 }} gutterBottom>仕上げ加工条件</Typography>
-              <TextField
+              <NumberField
                 label="切込み量 (mm)"
-                type="number"
                 value={editingTool.finishing?.depthPerPass ?? 0.5}
-                onChange={(e) => setEditingTool((prev) => ({
+                onChange={(val) => setEditingTool((prev) => ({
                   ...prev,
-                  finishing: { ...prev.finishing!, depthPerPass: Number(e.target.value) || 0 }
+                  finishing: { ...prev.finishing!, depthPerPass: val }
                 }))}
-                fullWidth
+                validate={(v) => (v <= 0 ? '0より大きい値' : undefined)}
                 margin="dense"
                 size="small"
               />
-              <TextField
+              <NumberField
                 label="送り速度 (mm/min)"
-                type="number"
                 value={editingTool.finishing?.feedRate ?? 800}
-                onChange={(e) => setEditingTool((prev) => ({
+                onChange={(val) => setEditingTool((prev) => ({
                   ...prev,
-                  finishing: { ...prev.finishing!, feedRate: Number(e.target.value) || 0 }
+                  finishing: { ...prev.finishing!, feedRate: val }
                 }))}
-                fullWidth
+                validate={(v) => (v <= 0 ? '0より大きい値' : undefined)}
                 margin="dense"
                 size="small"
               />
-              <TextField
+              <NumberField
                 label="突っ込み速度 (mm/min)"
-                type="number"
                 value={editingTool.finishing?.plungeRate ?? 200}
-                onChange={(e) => setEditingTool((prev) => ({
+                onChange={(val) => setEditingTool((prev) => ({
                   ...prev,
-                  finishing: { ...prev.finishing!, plungeRate: Number(e.target.value) || 0 }
+                  finishing: { ...prev.finishing!, plungeRate: val }
                 }))}
-                fullWidth
+                validate={(v) => (v <= 0 ? '0より大きい値' : undefined)}
                 margin="dense"
                 size="small"
               />
-              <TextField
+              <NumberField
                 label="主軸回転数 (RPM)"
-                type="number"
                 value={editingTool.finishing?.rpm ?? 15000}
-                onChange={(e) => setEditingTool((prev) => ({
+                onChange={(val) => setEditingTool((prev) => ({
                   ...prev,
-                  finishing: { ...prev.finishing!, rpm: Number(e.target.value) || 0 }
+                  finishing: { ...prev.finishing!, rpm: val }
                 }))}
-                fullWidth
+                validate={(v) => (v <= 0 ? '0より大きい値' : undefined)}
                 margin="dense"
                 size="small"
               />
-              <TextField
+              <NumberField
                 label="仕上げで残す量 (mm)"
-                type="number"
                 value={editingTool.finishing?.stockToLeave ?? 0.0}
-                onChange={(e) => setEditingTool((prev) => ({
+                onChange={(val) => setEditingTool((prev) => ({
                   ...prev,
-                  finishing: { ...prev.finishing!, stockToLeave: Number(e.target.value) || 0 }
+                  finishing: { ...prev.finishing!, stockToLeave: val }
                 }))}
-                fullWidth
+                min={0}
                 margin="dense"
                 size="small"
               />
@@ -611,9 +629,26 @@ const SettingsDialog = ({
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setIsToolDialogOpen(false)}>キャンセル</Button>
-          <Button variant="contained" onClick={handleSaveTool}>保存</Button>
+          <Button variant="contained" onClick={handleSaveTool} disabled={!isToolValid}>保存</Button>
         </DialogActions>
       </Dialog>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="削除の確認"
+        message={
+          deleteTarget?.kind === 'machine' ? `加工機「${deleteTarget.item.name}」を削除しますか？`
+          : deleteTarget?.kind === 'material' ? `材料「${deleteTarget.item.name}」を削除しますか？`
+          : deleteTarget?.kind === 'tool' ? `工具「${deleteTarget.item.name}」を削除しますか？`
+          : ''
+        }
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
+
+      <Snackbar open={!!errorMessage} autoHideDuration={4000} onClose={() => setErrorMessage(null)}>
+        <Alert severity="error" onClose={() => setErrorMessage(null)}>{errorMessage}</Alert>
+      </Snackbar>
     </>
   );
 };

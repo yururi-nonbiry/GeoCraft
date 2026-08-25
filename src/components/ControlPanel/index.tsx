@@ -19,7 +19,7 @@ import {
     Tab,
 } from '@mui/material';
 import { MachineSetting, ToolSetting, WorkOrigin, Geometry, ToolpathSegment, SerialPortInfo } from '../../types';
-import { TabPanel } from './shared';
+import { TabPanel, NumberField } from './shared';
 import CamTab from './CamTab';
 import CncTab from './CncTab';
 import SimTab from './SimTab';
@@ -322,40 +322,35 @@ const ControlPanel = (props: ControlPanelProps) => {
             >
                 <DialogTitle>マシン詳細設定</DialogTitle>
                 <DialogContent dividers>
-                    <TextField
+                    <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+                        名称・加工範囲・G-codeヘッダー/フッターなどその他の設定は、上部メニューの「設定」画面で編集できます。
+                    </Typography>
+                    <NumberField
                         label="安全高さ (mm)"
-                        type="number"
                         value={props.safeZ}
-                        onChange={(e) => props.setSafeZ(parseFloat(e.target.value) || 0)}
-                        fullWidth
-                        margin="normal"
+                        onChange={props.setSafeZ}
+                        min={0}
                         size="small"
                     />
-                    <TextField
+                    <NumberField
                         label="切り込み深さ (mm)"
-                        type="number"
                         value={props.stepDown}
-                        onChange={(e) => props.setStepDown(parseFloat(e.target.value) || 0)}
-                        fullWidth
-                        margin="normal"
+                        onChange={props.setStepDown}
+                        validate={(v) => (v >= 0 ? 'マイナスの値を入力してください（Z方向への切込み量）' : undefined)}
                         size="small"
                     />
-                    <TextField
+                    <NumberField
                         label="リトラクト高さ (mm)"
-                        type="number"
                         value={props.retractZ}
-                        onChange={(e) => props.setRetractZ(parseFloat(e.target.value) || 0)}
-                        fullWidth
-                        margin="normal"
+                        onChange={props.setRetractZ}
+                        min={0}
                         size="small"
                     />
-                    <TextField
+                    <NumberField
                         label="ペック量 (Q)"
-                        type="number"
                         value={props.peckQ}
-                        onChange={(e) => props.setPeckQ(parseFloat(e.target.value) || 0)}
-                        fullWidth
-                        margin="normal"
+                        onChange={props.setPeckQ}
+                        validate={(v) => (v <= 0 ? '0より大きい値を入力してください' : undefined)}
                         size="small"
                     />
                     <FormControlLabel
@@ -432,13 +427,11 @@ const ControlPanel = (props: ControlPanelProps) => {
                         </Select>
                     </FormControl>
                     {props.processType === 'roughing' && (
-                        <TextField
+                        <NumberField
                             label="仕上げのために残す量 (mm)"
-                            type="number"
                             value={props.stockToLeave}
-                            onChange={(e) => props.setStockToLeave(parseFloat(e.target.value) || 0)}
-                            fullWidth
-                            margin="normal"
+                            onChange={props.setStockToLeave}
+                            min={0}
                             size="small"
                         />
                     )}
