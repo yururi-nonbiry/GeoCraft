@@ -205,6 +205,9 @@ const App = () => {
   const [stockStlData, setStockStlData] = useState<ArrayBuffer | null>(null);
   const [targetStlData, setTargetStlData] = useState<ArrayBuffer | null>(null);
   const [pickFaceMode, setPickFaceMode] = useState<'stock' | 'target' | null>(null);
+  // --- STLドラッグ&ドロップ投入時、材料/加工後形状の選択待ちのデータ ---
+  const [pendingStlDrop, setPendingStlDrop] = useState<{ fileLabel: string; filePath: string; data: ArrayBuffer } | null>(null);
+  const [isDragOverViewer, setIsDragOverViewer] = useState(false);
   // --- 加工開始原点 (ワーク原点 G54) state ---
   const [workOrigin, setWorkOrigin] = useState<WorkOrigin | null>(null);
   const [pickOriginMode, setPickOriginMode] = useState<boolean>(false);
@@ -784,19 +787,34 @@ const App = () => {
     return base64ToArrayBuffer(result.data);
   };
 
+  const applyStockStl = (fileLabel: string, filePath: string, data: ArrayBuffer | null) => {
+    setStockStlFile(fileLabel);
+    setStockStlPath(filePath);
+    setStockStlData(data);
+    setPickFaceMode(null);
+    setPreviewMode(false);
+    setStockBaseTransform(null);
+    // STL自体のモデリング原点は底面と一致しているとは限らないため、底面を作業エリアの床(Z=0)に合わせる
+    setStockOffset({ x: 0, y: 0, z: data ? -getStlMinZ(data) : 0 });
+    setToolpaths(null);
+  };
+
+  const applyTargetStl = (fileLabel: string, filePath: string, data: ArrayBuffer | null) => {
+    setTargetStlFile(fileLabel);
+    setTargetStlData(data);
+    setPickFaceMode(null);
+    setPreviewMode(false);
+    setTargetBaseTransform(null);
+    // STL自体のモデリング原点は底面と一致しているとは限らないため、底面を作業エリアの床(Z=0)に合わせる
+    setTargetOffset({ x: 0, y: 0, z: data ? -getStlMinZ(data) : 0 });
+    setToolpaths(null);
+  };
+
   const handleSelectStockStl = async () => {
     const result = await api.openFile('stl');
     if (result.status === 'success') {
       const data = await loadStlData(result.filePath);
-      setStockStlFile(result.filePath);
-      setStockStlPath(result.filePath);
-      setStockStlData(data);
-      setPickFaceMode(null);
-      setPreviewMode(false);
-      setStockBaseTransform(null);
-      // STL自体のモデリング原点は底面と一致しているとは限らないため、底面を作業エリアの床(Z=0)に合わせる
-      setStockOffset({ x: 0, y: 0, z: data ? -getStlMinZ(data) : 0 });
-      setToolpaths(null);
+      applyStockStl(result.filePath, result.filePath, data);
     }
   };
 
@@ -847,15 +865,53 @@ const App = () => {
     const result = await api.openFile('stl');
     if (result.status === 'success') {
       const data = await loadStlData(result.filePath);
-      setTargetStlFile(result.filePath);
-      setTargetStlData(data);
-      setPickFaceMode(null);
-      setPreviewMode(false);
-      setTargetBaseTransform(null);
-      // STL自体のモデリング原点は底面と一致しているとは限らないため、底面を作業エリアの床(Z=0)に合わせる
-      setTargetOffset({ x: 0, y: 0, z: data ? -getStlMinZ(data) : 0 });
-      setToolpaths(null);
+      applyTargetStl(result.filePath, result.filePath, data);
     }
+  };
+
+  // --- STLファイルのドラッグ&ドロップ投入 ---
+  const handleStlFileDrop = async (file: File) => {
+    const data = await file.arrayBuffer();
+    const result = await api.writeTempStlFile(arrayBufferToBase64(data));
+    if (result.status !== 'success') {
+      alert(`STLファイルの読み込みに失敗しました: ${result.message}`);
+      return;
+    }
+    setPendingStlDrop({ fileLabel: file.name, filePath: result.filePath, data });
+  };
+
+  const handleViewerDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    if (!event.dataTransfer.types.includes('Files')) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+    setIsDragOverViewer(true);
+  };
+
+  const handleViewerDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setIsDragOverViewer(false);
+  };
+
+  const handleViewerDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setIsDragOverViewer(false);
+    const file = Array.from(event.dataTransfer.files).find((f) => f.name.toLowerCase().endsWith('.stl'));
+    if (!file) {
+      alert('STLファイル(.stl)をドロップしてください。');
+      return;
+    }
+    void handleStlFileDrop(file);
+  };
+
+  const handlePendingStlRoleSelect = (role: 'stock' | 'target') => {
+    if (!pendingStlDrop) return;
+    const { fileLabel, filePath, data } = pendingStlDrop;
+    if (role === 'stock') {
+      applyStockStl(fileLabel, filePath, data);
+    } else {
+      applyTargetStl(fileLabel, filePath, data);
+    }
+    setPendingStlDrop(null);
   };
 
   // ビューア上のオフセット(stockOffset/targetOffset)・底面選択による基準位置/回転(baseTransform)は
@@ -1144,7 +1200,31 @@ const App = () => {
           </Toolbar>
         </AppBar>
         <Grid container sx={{ flexGrow: 1, overflow: 'hidden' }}>
-          <Grid item sx={{ flex: 1, minWidth: 0, height: '100%', position: 'relative' }}>
+          <Grid
+            item
+            sx={{ flex: 1, minWidth: 0, height: '100%', position: 'relative' }}
+            onDragOver={handleViewerDragOver}
+            onDragLeave={handleViewerDragLeave}
+            onDrop={handleViewerDrop}
+          >
+            {isDragOverViewer && (
+              <Box
+                sx={{
+                  position: 'absolute',
+                  inset: 0,
+                  zIndex: 10,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  bgcolor: 'rgba(25, 118, 210, 0.15)',
+                  border: '3px dashed',
+                  borderColor: 'primary.main',
+                  pointerEvents: 'none',
+                }}
+              >
+                <Typography variant="h6" color="primary.main">STLファイルをドロップして読み込み</Typography>
+              </Box>
+            )}
             <ThreeViewer
               toolpaths={toolpaths}
               displayToolpaths={displayToolpaths}
@@ -1904,6 +1984,23 @@ const App = () => {
         </DialogContent>
         <DialogActions>
           <Button variant="contained" onClick={() => setIsNoTransferToolpathDialogOpen(false)}>OK</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={pendingStlDrop !== null} onClose={() => setPendingStlDrop(null)}>
+        <DialogTitle>STLファイルの種類を選択</DialogTitle>
+        <DialogContent dividers>
+          <Typography sx={{ mb: 1 }}>
+            「{pendingStlDrop?.fileLabel}」をどちらとして読み込みますか?
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            材料: 加工前の素材形状 / 加工後形状: 目標とする完成形状
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPendingStlDrop(null)}>キャンセル</Button>
+          <Button variant="outlined" onClick={() => handlePendingStlRoleSelect('target')}>加工後形状として読み込む</Button>
+          <Button variant="contained" onClick={() => handlePendingStlRoleSelect('stock')}>材料として読み込む</Button>
         </DialogActions>
       </Dialog>
     </ThemeProvider>
