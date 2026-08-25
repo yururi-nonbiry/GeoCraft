@@ -20,6 +20,7 @@ import {
 } from '@mui/material';
 import { Refresh, Link, LinkOff, PlayArrow, Pause, Stop, Settings, LockOpen, RestartAlt } from '@mui/icons-material';
 import { MachineSetting, SerialPortInfo } from '../../types';
+import { NumberField, ConfirmDialog } from './shared';
 
 export interface CncTabProps {
     isConnected: boolean;
@@ -153,6 +154,9 @@ const LongPressButton = (props: {
 };
 
 const CncTab = (props: CncTabProps) => {
+    const [grblWriteConfirmOpen, setGrblWriteConfirmOpen] = useState(false);
+    const isGrblValid = props.grblSettings.stepsX > 0 && props.grblSettings.stepsY > 0 && props.grblSettings.stepsZ > 0;
+
     // 3Dラフィング等から転送された巨大なG-code(数万行)をそのまま折り返し付きtextareaに
     // 流し込むと、ブラウザ側の行レイアウト計算が仮想化されず数秒〜数十秒単位で固まる。
     // 表示だけ先頭N行に切り詰め、送信自体は props.gcode の全文に対して行う。
@@ -207,30 +211,30 @@ const CncTab = (props: CncTabProps) => {
                             <Button variant="outlined" size="small" onClick={props.handleRequestGrblSettings} fullWidth>
                                 設定読み込み
                             </Button>
-                            <Button variant="contained" size="small" onClick={props.handleSaveGrblSettings} fullWidth>
+                            <Button variant="contained" size="small" onClick={() => setGrblWriteConfirmOpen(true)} disabled={!isGrblValid} fullWidth>
                                 設定書き込み
                             </Button>
                         </Box>
-                        <TextField
+                        <NumberField
                             label="X軸ステップ数 (step/mm)"
-                            type="number"
                             value={props.grblSettings.stepsX}
-                            onChange={(e) => props.setGrblSettings(prev => ({ ...prev, stepsX: parseFloat(e.target.value) || 0 }))}
-                            fullWidth margin="normal" size="small"
+                            onChange={(val) => props.setGrblSettings(prev => ({ ...prev, stepsX: val }))}
+                            min={0.0001}
+                            margin="normal"
                         />
-                        <TextField
+                        <NumberField
                             label="Y軸ステップ数 (step/mm)"
-                            type="number"
                             value={props.grblSettings.stepsY}
-                            onChange={(e) => props.setGrblSettings(prev => ({ ...prev, stepsY: parseFloat(e.target.value) || 0 }))}
-                            fullWidth margin="normal" size="small"
+                            onChange={(val) => props.setGrblSettings(prev => ({ ...prev, stepsY: val }))}
+                            min={0.0001}
+                            margin="normal"
                         />
-                        <TextField
+                        <NumberField
                             label="Z軸ステップ数 (step/mm)"
-                            type="number"
                             value={props.grblSettings.stepsZ}
-                            onChange={(e) => props.setGrblSettings(prev => ({ ...prev, stepsZ: parseFloat(e.target.value) || 0 }))}
-                            fullWidth margin="normal" size="small"
+                            onChange={(val) => props.setGrblSettings(prev => ({ ...prev, stepsZ: val }))}
+                            min={0.0001}
+                            margin="normal"
                         />
                         <Box sx={{ mt: 1, display: 'flex', flexDirection: 'column' }}>
                             <Typography variant="body2" sx={{ mb: 0.5 }}>移動方向の反転 (逆転)</Typography>
@@ -275,7 +279,15 @@ const CncTab = (props: CncTabProps) => {
                             {props.serialPorts.map(port => <MenuItem key={port.path} value={port.path}>{port.path}</MenuItem>)}
                         </Select>
                     </FormControl>
-                    <TextField label="ボーレート" type="number" value={props.baudRate} onChange={(e) => props.setBaudRate(parseInt(e.target.value))} fullWidth margin="normal" size="small" disabled={props.isConnected} />
+                    <NumberField
+                        label="ボーレート"
+                        value={props.baudRate}
+                        onChange={props.setBaudRate}
+                        min={1}
+                        validate={(val) => (!Number.isInteger(val) ? '整数を入力してください' : undefined)}
+                        margin="normal"
+                        disabled={props.isConnected}
+                    />
                     <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
                         <Button variant="outlined" onClick={props.handleRefreshPorts} disabled={props.isConnected} startIcon={<Refresh />}>更新</Button>
                         {!props.isConnected ? (
@@ -415,20 +427,20 @@ const CncTab = (props: CncTabProps) => {
                 <Box sx={{ mt: 3, pt: 2, borderTop: '1px solid rgba(255,255,255,0.12)' }}>
                     <Typography variant="subtitle2" gutterBottom>スピンドル</Typography>
                     <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                        <TextField
+                        <NumberField
                             label="回転数 (rpm)"
-                            type="number"
-                            size="small"
                             value={props.spindleSpeed}
-                            onChange={(e) => props.setSpindleSpeed(Number(e.target.value))}
-                            sx={{ width: 140 }}
+                            onChange={props.setSpindleSpeed}
+                            min={0}
+                            fullWidth={false}
+                            margin="none"
                         />
                         <Button
                             variant="contained"
                             color="success"
                             startIcon={<PlayArrow />}
                             onClick={props.handleSpindleOn}
-                            disabled={!props.isConnected || props.spindleOn}
+                            disabled={!props.isConnected || props.spindleOn || props.spindleSpeed <= 0}
                         >
                             ON
                         </Button>
@@ -444,6 +456,13 @@ const CncTab = (props: CncTabProps) => {
                     </Box>
                 </Box>
             </Paper>
+            <ConfirmDialog
+                open={grblWriteConfirmOpen}
+                title="Grbl設定書き込みの確認"
+                message="加工機にステップ数・反転設定を書き込みます。値が誤っていると軸の動きが正しく動作しなくなる可能性があります。よろしいですか？"
+                onConfirm={() => { props.handleSaveGrblSettings(); setGrblWriteConfirmOpen(false); }}
+                onCancel={() => setGrblWriteConfirmOpen(false)}
+            />
         </>
     );
 };
