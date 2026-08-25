@@ -16,6 +16,7 @@ import {
     FormControlLabel,
     IconButton,
     Tooltip,
+    Alert,
 } from '@mui/material';
 import { Refresh, Link, LinkOff, PlayArrow, Pause, Stop, Settings, LockOpen, RestartAlt } from '@mui/icons-material';
 import { MachineSetting, SerialPortInfo } from '../../types';
@@ -179,10 +180,10 @@ const CncTab = (props: CncTabProps) => {
                             ) : (
                                 <Button variant="contained" color="secondary" size="small" onClick={props.handleDisconnect} startIcon={<LinkOff />}>切断</Button>
                             )}
-                            <Tooltip title="詳細設定">
-                                <IconButton size="small" onClick={props.onOpenMachineSettings}>
-                                    <Settings />
-                                </IconButton>
+                            <Tooltip title="安全高さ・切込み深さなどの詳細設定">
+                                <Button size="small" variant="outlined" startIcon={<Settings />} onClick={props.onOpenMachineSettings}>
+                                    詳細設定
+                                </Button>
                             </Tooltip>
                         </Box>
                     </Box>
@@ -292,6 +293,11 @@ const CncTab = (props: CncTabProps) => {
                 </Paper>
                 <Paper sx={{ p: 2, mb: 2 }}>
                     <Typography variant="h6" gutterBottom>Gコード送信</Typography>
+                    {isGcodeTruncated && (
+                        <Alert severity="warning" sx={{ mb: 1 }}>
+                            G-codeが大きいため先頭{GCODE_DISPLAY_LINE_LIMIT}行のみ表示し、編集はできません。送信・保存は全文に対して行われます。
+                        </Alert>
+                    )}
                     <TextField
                         multiline
                         rows={8}
@@ -302,7 +308,6 @@ const CncTab = (props: CncTabProps) => {
                         placeholder="ここにG-codeを貼り付け..."
                         sx={{ mb: 1, fontFamily: 'monospace' }}
                         InputProps={{ readOnly: isGcodeTruncated }}
-                        helperText={isGcodeTruncated ? `G-codeが大きいため先頭${GCODE_DISPLAY_LINE_LIMIT}行のみ表示しています(編集不可)。送信・保存は全文に対して行われます。` : undefined}
                     />
                     <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 1 }}>
                         <Tooltip title={props.gcodeStatus === 'paused' ? '再開' : '送信'}>

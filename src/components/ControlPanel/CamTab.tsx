@@ -11,7 +11,6 @@ import {
     InputLabel,
     LinearProgress,
     Checkbox,
-    IconButton,
     Tooltip,
     Table,
     TableBody,
@@ -184,9 +183,9 @@ const CamTab = (props: CamTabProps) => {
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Typography variant="h6">加工機・工具設定</Typography>
                     <Tooltip title="加工機・工具の詳細設定">
-                        <IconButton size="small" onClick={props.onOpenToolSettings}>
-                            <Settings />
-                        </IconButton>
+                        <Button size="small" variant="outlined" startIcon={<Settings />} onClick={props.onOpenToolSettings}>
+                            詳細設定
+                        </Button>
                     </Tooltip>
                 </Box>
                 <Typography variant="body2" color="text.secondary">
