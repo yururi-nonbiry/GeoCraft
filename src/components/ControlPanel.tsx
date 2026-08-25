@@ -274,6 +274,7 @@ const GCODE_DISPLAY_LINE_LIMIT = 2000;
 const ControlPanel = (props: ControlPanelProps) => {
     const [activeTab, setActiveTab] = useState(0);
     const [isMachineSettingsOpen, setIsMachineSettingsOpen] = useState(false);
+    const [isToolSettingsOpen, setIsToolSettingsOpen] = useState(false);
     const [isSetZeroConfirmOpen, setIsSetZeroConfirmOpen] = useState(false);
 
     // 3Dラフィング等から転送された巨大なG-code(数万行)をそのまま折り返し付きtextareaに
@@ -369,66 +370,21 @@ const ControlPanel = (props: ControlPanelProps) => {
                 <TabPanel value={activeTab} index={0}>
                     <Box sx={{ flexGrow: 1, overflowY: 'auto', pr: 0.5 }}>
                         <Paper sx={{ p: 2, mb: 2 }}>
-                            <Typography variant="h6" gutterBottom>加工機・工具設定</Typography>
-                            <FormControl fullWidth margin="normal" size="small">
-                                <InputLabel>加工機</InputLabel>
-                                <Select
-                                    value={props.selectedMachineId}
-                                    label="加工機"
-                                    onChange={(e) => props.setSelectedMachineId(e.target.value as number)}
-                                >
-                                    {props.machineSettings.map(machine => (
-                                        <MenuItem key={machine.id} value={machine.id}>{machine.name}</MenuItem>
-                                    ))}
-                                </Select>
-                            </FormControl>
-                            <FormControl fullWidth margin="normal" size="small">
-                                <InputLabel>工具</InputLabel>
-                                <Select
-                                    value={props.selectedToolId}
-                                    label="工具"
-                                    onChange={(e) => props.setSelectedToolId(e.target.value as number)}
-                                >
-                                    {props.toolSettings
-                                        .filter(t => t.machineId === props.selectedMachineId)
-                                        .map(tool => (
-                                            <MenuItem key={tool.id} value={tool.id}>{tool.name} (Φ{tool.diameter}mm)</MenuItem>
-                                        ))}
-                                </Select>
-                            </FormControl>
-                            <TextField
-                                label="工具径 (mm)"
-                                type="number"
-                                value={props.toolDiameter}
-                                onChange={(e) => props.setToolDiameter(parseFloat(e.target.value) || 0)}
-                                fullWidth
-                                margin="normal"
-                                size="small"
-                                InputProps={{ readOnly: true }}
-                                helperText="選択した工具の直径（編集不可）"
-                            />
-                            <FormControl fullWidth margin="normal" size="small">
-                                <InputLabel>加工方法</InputLabel>
-                                <Select
-                                    value={props.processType}
-                                    label="加工方法"
-                                    onChange={(e) => props.setProcessType(e.target.value as 'roughing' | 'finishing')}
-                                >
-                                    <MenuItem value="roughing">粗削り</MenuItem>
-                                    <MenuItem value="finishing">仕上げ</MenuItem>
-                                </Select>
-                            </FormControl>
-                            {props.processType === 'roughing' && (
-                                <TextField
-                                    label="仕上げのために残す量 (mm)"
-                                    type="number"
-                                    value={props.stockToLeave}
-                                    onChange={(e) => props.setStockToLeave(parseFloat(e.target.value) || 0)}
-                                    fullWidth
-                                    margin="normal"
-                                    size="small"
-                                />
-                            )}
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <Typography variant="h6">加工機・工具設定</Typography>
+                                <Tooltip title="加工機・工具の詳細設定">
+                                    <IconButton size="small" onClick={() => setIsToolSettingsOpen(true)}>
+                                        <Settings />
+                                    </IconButton>
+                                </Tooltip>
+                            </Box>
+                            <Typography variant="body2" color="text.secondary">
+                                {(props.machineSettings.find(m => m.id === props.selectedMachineId)?.name) || '未選択'}
+                                {' / '}
+                                {(props.toolSettings.find(t => t.id === props.selectedToolId)?.name) || '未選択'}
+                                {' (Φ'}{props.toolDiameter}{'mm) / '}
+                                {props.processType === 'roughing' ? '粗削り' : '仕上げ'}
+                            </Typography>
                         </Paper>
                         <Paper sx={{ p: 2, mb: 2 }}>
                             <Typography variant="h6" gutterBottom>加工開始原点 (ワーク原点 G54)</Typography>
@@ -1168,6 +1124,80 @@ const ControlPanel = (props: ControlPanelProps) => {
                 </DialogContent>
                 <DialogActions>
                     <Button onClick={() => setIsMachineSettingsOpen(false)} variant="contained">
+                        閉じる
+                    </Button>
+                </DialogActions>
+            </Dialog>
+            <Dialog
+                open={isToolSettingsOpen}
+                onClose={() => setIsToolSettingsOpen(false)}
+                maxWidth="xs"
+                fullWidth
+            >
+                <DialogTitle>加工機・工具設定</DialogTitle>
+                <DialogContent dividers>
+                    <FormControl fullWidth margin="normal" size="small">
+                        <InputLabel>加工機</InputLabel>
+                        <Select
+                            value={props.selectedMachineId}
+                            label="加工機"
+                            onChange={(e) => props.setSelectedMachineId(e.target.value as number)}
+                        >
+                            {props.machineSettings.map(machine => (
+                                <MenuItem key={machine.id} value={machine.id}>{machine.name}</MenuItem>
+                            ))}
+                        </Select>
+                    </FormControl>
+                    <FormControl fullWidth margin="normal" size="small">
+                        <InputLabel>工具</InputLabel>
+                        <Select
+                            value={props.selectedToolId}
+                            label="工具"
+                            onChange={(e) => props.setSelectedToolId(e.target.value as number)}
+                        >
+                            {props.toolSettings
+                                .filter(t => t.machineId === props.selectedMachineId)
+                                .map(tool => (
+                                    <MenuItem key={tool.id} value={tool.id}>{tool.name} (Φ{tool.diameter}mm)</MenuItem>
+                                ))}
+                        </Select>
+                    </FormControl>
+                    <TextField
+                        label="工具径 (mm)"
+                        type="number"
+                        value={props.toolDiameter}
+                        onChange={(e) => props.setToolDiameter(parseFloat(e.target.value) || 0)}
+                        fullWidth
+                        margin="normal"
+                        size="small"
+                        InputProps={{ readOnly: true }}
+                        helperText="選択した工具の直径（編集不可）"
+                    />
+                    <FormControl fullWidth margin="normal" size="small">
+                        <InputLabel>加工方法</InputLabel>
+                        <Select
+                            value={props.processType}
+                            label="加工方法"
+                            onChange={(e) => props.setProcessType(e.target.value as 'roughing' | 'finishing')}
+                        >
+                            <MenuItem value="roughing">粗削り</MenuItem>
+                            <MenuItem value="finishing">仕上げ</MenuItem>
+                        </Select>
+                    </FormControl>
+                    {props.processType === 'roughing' && (
+                        <TextField
+                            label="仕上げのために残す量 (mm)"
+                            type="number"
+                            value={props.stockToLeave}
+                            onChange={(e) => props.setStockToLeave(parseFloat(e.target.value) || 0)}
+                            fullWidth
+                            margin="normal"
+                            size="small"
+                        />
+                    )}
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setIsToolSettingsOpen(false)} variant="contained">
                         閉じる
                     </Button>
                 </DialogActions>
