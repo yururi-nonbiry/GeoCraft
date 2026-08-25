@@ -33,6 +33,7 @@ import SettingsDialog from './components/SettingsDialog';
 import { Geometry, ToolpathSegment, Toolpath, MachineSetting, ToolSetting, StlBaseTransform, WorkOrigin, MaterialSetting, StlPlacement } from './types';
 import { useCncConnection } from './hooks/useCncConnection';
 import { useStlAssets } from './hooks/useStlAssets';
+import { useGcodeExport } from './hooks/useGcodeExport';
 
 const theme = createTheme({
   palette: {
@@ -752,79 +753,16 @@ const App = () => {
     }
   };
 
-  // Shared machine-derived fields every G-code generation call needs.
-  const buildGcodeParams = () => ({
+  const { handleGenerateDrillGcode, handleSaveGcode, handleTransferGcodeToCnc } = useGcodeExport({
+    geometry,
+    toolpaths,
+    getEffectiveToolpaths,
     feedRate,
-    safeZ: currentMachine.safeZ,
-    stepDown: currentMachine.stepDown,
-    retractZ: currentMachine.retractZ,
+    machine: currentMachine,
+    onNoTransferToolpaths: () => setIsNoTransferToolpathDialogOpen(true),
+    setGcode: cnc.setGcode,
+    setGcodeStatus: cnc.setGcodeStatus,
   });
-
-  // Runs a bridge call that returns { status, message, ... }, alerting on any
-  // outcome other than success/canceled (including a thrown/rejected call).
-  const runGcodeAction = async (action: () => Promise<any>, failureMessage: string): Promise<any | null> => {
-    try {
-      const result = await action();
-      if (result.status !== 'success' && result.status !== 'canceled') {
-        alert(`${failureMessage}: ${result.message}`);
-      }
-      return result;
-    } catch (error) {
-      alert(`${failureMessage}: ${error}`);
-      return null;
-    }
-  };
-
-  const handleGenerateDrillGcode = async () => {
-    if (!geometry || !geometry.drill_points || geometry.drill_points.length === 0) return alert('Gコードを生成するためのドリル点がありません。');
-    const result = await runGcodeAction(
-      () => api.generateDrillGcode({ drillPoints: geometry.drill_points, ...buildGcodeParams(), peckQ: currentMachine.peckQ }),
-      'Gコードの保存に失敗しました'
-    );
-    if (result?.status === 'success') alert(`ドリルGコードを保存しました: ${result.filePath}`);
-  };
-
-  const handleSaveGcode = async () => {
-    if (!toolpaths || toolpaths.length === 0) return alert('保存するツールパスがありません。');
-    const result = await runGcodeAction(
-      () => api.generateGcode({ toolpaths: getEffectiveToolpaths(toolpaths), ...buildGcodeParams() }),
-      'Gコードの保存に失敗しました'
-    );
-    if (result?.status === 'success') alert(`Gコードを保存しました: ${result.filePath}`);
-  };
-
-  const handleTransferGcodeToCnc = async (): Promise<boolean> => {
-    if (!toolpaths || toolpaths.length === 0) {
-      setIsNoTransferToolpathDialogOpen(true);
-      return false;
-    }
-    // どの区間が固まりの原因か切り分けるための一時的な計測ログ。
-    const tEffective0 = performance.now();
-    const effectiveToolpaths = getEffectiveToolpaths(toolpaths);
-    const tEffective1 = performance.now();
-    console.log(`[transfer] getEffectiveToolpaths: ${(tEffective1 - tEffective0).toFixed(1)}ms, segments=${effectiveToolpaths?.length ?? 0}`);
-
-    const tCall0 = performance.now();
-    const result = await runGcodeAction(
-      () => api.generateGcodeForTransfer({ toolpaths: effectiveToolpaths, ...buildGcodeParams() }),
-      'Gコードの生成に失敗しました'
-    );
-    const tCall1 = performance.now();
-    console.log(`[transfer] bridge call (JSON.stringify + C#生成 + JSON.parse往復): ${(tCall1 - tCall0).toFixed(1)}ms, gcode length=${result?.gcode?.length ?? 0}`);
-
-    if (result?.status === 'success') {
-      const tSet0 = performance.now();
-      cnc.setGcode(result.gcode);
-      cnc.setGcodeStatus('idle');
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          console.log(`[transfer] setGcode -> 再描画完了まで: ${(performance.now() - tSet0).toFixed(1)}ms`);
-        });
-      });
-      return true;
-    }
-    return false;
-  };
 
   const handleSaveProject = async () => {
     try {
