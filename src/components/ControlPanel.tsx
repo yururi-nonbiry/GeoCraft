@@ -898,16 +898,31 @@ const ControlPanel = (props: ControlPanelProps) => {
                                 helperText={isGcodeTruncated ? `G-codeが大きいため先頭${GCODE_DISPLAY_LINE_LIMIT}行のみ表示しています(編集不可)。送信・保存は全文に対して行われます。` : undefined}
                             />
                             <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 1 }}>
-                                <Button
-                                    variant="contained"
-                                    onClick={props.gcodeStatus === 'paused' ? props.handleResumeGcode : props.handleSendGcode}
-                                    disabled={!props.isConnected || (props.gcodeStatus !== 'idle' && props.gcodeStatus !== 'paused')}
-                                    startIcon={<PlayArrow />}
-                                >
-                                    {props.gcodeStatus === 'paused' ? '再開' : '送信'}
-                                </Button>
-                                <Button variant="outlined" onClick={props.handlePauseGcode} disabled={props.gcodeStatus !== 'sending'} startIcon={<Pause />}>一時停止</Button>
-                                <Button variant="outlined" color="secondary" onClick={props.handleStopGcode} disabled={props.gcodeStatus === 'idle'} startIcon={<Stop />}>停止</Button>
+                                <Tooltip title={props.gcodeStatus === 'paused' ? '再開' : '送信'}>
+                                    <span>
+                                        <IconButton
+                                            color="primary"
+                                            onClick={props.gcodeStatus === 'paused' ? props.handleResumeGcode : props.handleSendGcode}
+                                            disabled={!props.isConnected || (props.gcodeStatus !== 'idle' && props.gcodeStatus !== 'paused')}
+                                        >
+                                            <PlayArrow />
+                                        </IconButton>
+                                    </span>
+                                </Tooltip>
+                                <Tooltip title="一時停止">
+                                    <span>
+                                        <IconButton onClick={props.handlePauseGcode} disabled={props.gcodeStatus !== 'sending'}>
+                                            <Pause />
+                                        </IconButton>
+                                    </span>
+                                </Tooltip>
+                                <Tooltip title="停止">
+                                    <span>
+                                        <IconButton color="secondary" onClick={props.handleStopGcode} disabled={props.gcodeStatus === 'idle'}>
+                                            <Stop />
+                                        </IconButton>
+                                    </span>
+                                </Tooltip>
                                 <Tooltip title="リセット: 送信状態が固まって操作できない場合に、表示をidleへ強制的に戻します">
                                     <IconButton color="warning" onClick={props.handleResetGcodeState}>
                                         <RestartAlt />
