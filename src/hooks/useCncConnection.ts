@@ -250,6 +250,15 @@ export const useCncConnection = () => {
   const handleResumeGcode = () => api.resumeGcode();
   const handleStopGcode = () => api.stopGcode();
 
+  // 停止後にバックエンドとの状態がずれて(進捗表示が残る・ボタンが操作不能になる等)
+  // 元に戻せなくなった場合の避難用リセット。バックエンド側が送信中なら念のため
+  // 停止も試みつつ、フロント側の表示は結果を待たず即座にidleへ戻す。
+  const handleResetGcodeState = () => {
+    api.stopGcode();
+    setGcodeStatus('idle');
+    setGcodeProgress({ sent: 0, total: 0 });
+  };
+
   const handleEmergencyStop = () => {
     if (!isConnected) return;
     api.emergencyStop();
@@ -314,6 +323,7 @@ export const useCncConnection = () => {
     handlePauseGcode,
     handleResumeGcode,
     handleStopGcode,
+    handleResetGcodeState,
     handleEmergencyStop,
     handleUnlockAlarm,
   };

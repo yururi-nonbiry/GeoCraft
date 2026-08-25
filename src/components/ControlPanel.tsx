@@ -29,7 +29,7 @@ import {
     TableHead,
     TableRow,
 } from '@mui/material';
-import { Refresh, Link, LinkOff, PlayArrow, Pause, Stop, SkipNext, Settings, LockOpen, InfoOutlined } from '@mui/icons-material';
+import { Refresh, Link, LinkOff, PlayArrow, Pause, Stop, SkipNext, Settings, LockOpen, InfoOutlined, RestartAlt } from '@mui/icons-material';
 import { MachineSetting, ToolSetting, WorkOrigin, Geometry, ToolpathSegment } from '../types';
 
 interface ControlPanelProps {
@@ -99,6 +99,7 @@ interface ControlPanelProps {
     handlePauseGcode: () => void;
     handleResumeGcode: () => void;
     handleStopGcode: () => void;
+    handleResetGcodeState: () => void;
     gcodeProgress: { sent: number; total: number };
     machinePosition: { wpos: { x: number; y: number; z: number }; mpos: { x: number; y: number; z: number }; status: string; homed: boolean };
     jogStep: number;
@@ -897,10 +898,19 @@ const ControlPanel = (props: ControlPanelProps) => {
                                 helperText={isGcodeTruncated ? `G-codeが大きいため先頭${GCODE_DISPLAY_LINE_LIMIT}行のみ表示しています(編集不可)。送信・保存は全文に対して行われます。` : undefined}
                             />
                             <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 1 }}>
-                                <Button variant="contained" onClick={props.handleSendGcode} disabled={!props.isConnected || props.gcodeStatus !== 'idle'} startIcon={<PlayArrow />}>送信</Button>
+                                <Button
+                                    variant="contained"
+                                    onClick={props.gcodeStatus === 'paused' ? props.handleResumeGcode : props.handleSendGcode}
+                                    disabled={!props.isConnected || (props.gcodeStatus !== 'idle' && props.gcodeStatus !== 'paused')}
+                                    startIcon={<PlayArrow />}
+                                >
+                                    {props.gcodeStatus === 'paused' ? '再開' : '送信'}
+                                </Button>
                                 <Button variant="outlined" onClick={props.handlePauseGcode} disabled={props.gcodeStatus !== 'sending'} startIcon={<Pause />}>一時停止</Button>
-                                <Button variant="outlined" onClick={props.handleResumeGcode} disabled={props.gcodeStatus !== 'paused'} startIcon={<PlayArrow />}>再開</Button>
                                 <Button variant="outlined" color="secondary" onClick={props.handleStopGcode} disabled={props.gcodeStatus === 'idle'} startIcon={<Stop />}>停止</Button>
+                                <Tooltip title="送信状態が固まって操作できない場合に、表示をidleへ強制的に戻します">
+                                    <Button variant="outlined" color="warning" onClick={props.handleResetGcodeState} startIcon={<RestartAlt />}>リセット</Button>
+                                </Tooltip>
                             </Box>
                             <Box sx={{ width: '100%' }}>
                                 <Typography variant="body2">状態: {{ 'idle': '待機中', 'sending': '送信中', 'paused': '一時停止中', 'finished': '完了', 'error': 'エラー' }[props.gcodeStatus] || props.gcodeStatus}</Typography>
