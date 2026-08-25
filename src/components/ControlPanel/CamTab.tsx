@@ -19,8 +19,11 @@ import {
     TableContainer,
     TableHead,
     TableRow,
+    Accordion,
+    AccordionSummary,
+    AccordionDetails,
 } from '@mui/material';
-import { Settings, InfoOutlined } from '@mui/icons-material';
+import { Settings, InfoOutlined, ExpandMore } from '@mui/icons-material';
 import { MachineSetting, ToolSetting, WorkOrigin, Geometry, ToolpathSegment } from '../../types';
 import { VisibilityToggles, NumberField, ConfirmDialog } from './shared';
 
@@ -91,9 +94,25 @@ export interface CamTabProps {
     onOpenToolSettings: () => void;
 }
 
+type SectionKey = 'origin' | 'cam2d' | 'cam3d' | 'drill' | 'gcode' | 'objects';
+
 const CamTab = (props: CamTabProps) => {
     const [pendingDelete, setPendingDelete] = useState<{ message: string; onDelete: () => void } | null>(null);
     const [previewOffConfirmOpen, setPreviewOffConfirmOpen] = useState(false);
+    // 2.5D加工と3D加工は同時に使わないことが多いため、STL読み込み状況に応じてどちらかを初期展開する。
+    // それ以外の区分は折りたたんでおき、縦に長くなりがちな画面を見渡しやすくする。
+    const [expanded, setExpanded] = useState<Record<SectionKey, boolean>>(() => {
+        const hasStl = !!(props.stockStlFile || props.targetStlFile);
+        return {
+            origin: false,
+            cam2d: !hasStl,
+            cam3d: hasStl,
+            drill: false,
+            gcode: true,
+            objects: false,
+        };
+    });
+    const toggleSection = (key: SectionKey) => setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
 
     const handleTogglePreviewModeClick = () => {
         const willDeleteToolpaths = props.previewMode && props.toolpaths && props.toolpaths.length > 0;
@@ -178,8 +197,11 @@ const CamTab = (props: CamTabProps) => {
                     {props.processType === 'roughing' ? '粗削り' : '仕上げ'}
                 </Typography>
             </Paper>
-            <Paper sx={{ p: 2, mb: 2 }}>
-                <Typography variant="h6" gutterBottom>加工開始原点 (ワーク原点 G54)</Typography>
+            <Accordion expanded={expanded.origin} onChange={() => toggleSection('origin')} disableGutters sx={{ mb: 2 }}>
+            <AccordionSummary expandIcon={<ExpandMore />}>
+                <Typography variant="h6">加工開始原点 (ワーク原点 G54)</Typography>
+            </AccordionSummary>
+            <AccordionDetails>
                 <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
                     Gコード出力時の原点(0,0,0)位置を設定します。3Dビュー上の頂点を選択するか、プリセットから指定できます。
                 </Typography>
@@ -279,9 +301,13 @@ const CamTab = (props: CamTabProps) => {
                         </Button>
                     </Box>
                 </Box>
-            </Paper>
-            <Paper sx={{ p: 2, mb: 2 }}>
-                <Typography variant="h6" gutterBottom>2.5D 加工 (DXF/SVG)</Typography>
+            </AccordionDetails>
+            </Accordion>
+            <Accordion expanded={expanded.cam2d} onChange={() => toggleSection('cam2d')} disableGutters sx={{ mb: 2 }}>
+            <AccordionSummary expandIcon={<ExpandMore />}>
+                <Typography variant="h6">2.5D 加工 (DXF/SVG)</Typography>
+            </AccordionSummary>
+            <AccordionDetails>
                 <NumberField
                     label="ステップオーバー (%)"
                     value={props.stepover * 100}
@@ -297,11 +323,15 @@ const CamTab = (props: CamTabProps) => {
                 </FormControl>
                 <Button variant="contained" onClick={props.handleGenerateContour} sx={{ mr: 1 }}>輪郭パス生成</Button>
                 <Button variant="contained" onClick={props.handleGeneratePocket}>ポケットパス生成</Button>
-            </Paper>
-            <Paper sx={{ p: 2, mb: 2 }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                    <Typography variant="h6">3D 加工 (STL)</Typography>
-                    {(props.previewMode || (props.stockStlFile && props.targetStlFile)) && (
+            </AccordionDetails>
+            </Accordion>
+            <Accordion expanded={expanded.cam3d} onChange={() => toggleSection('cam3d')} disableGutters sx={{ mb: 2 }}>
+            <AccordionSummary expandIcon={<ExpandMore />}>
+                <Typography variant="h6">3D 加工 (STL)</Typography>
+            </AccordionSummary>
+            <AccordionDetails>
+                {(props.previewMode || (props.stockStlFile && props.targetStlFile)) && (
+                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
                         <Button
                             variant={props.previewMode ? 'contained' : 'outlined'}
                             color={props.previewMode ? 'secondary' : 'primary'}
@@ -310,8 +340,8 @@ const CamTab = (props: CamTabProps) => {
                         >
                             {props.previewMode ? 'プレビュー解除' : 'プレビューモード'}
                         </Button>
-                    )}
-                </Box>
+                    </Box>
+                )}
                 {props.previewMode && (
                     <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
                         プレビューモード中は材料・加工後形状の位置を変更できません。パラメータ変更とパスの再生成は可能です。プレビューを解除すると生成済みのパスは削除されます。
@@ -425,9 +455,13 @@ const CamTab = (props: CamTabProps) => {
                         )}
                     </Box>
                 )}
-            </Paper>
-            <Paper sx={{ p: 2, mb: 2 }}>
-                <Typography variant="h6" gutterBottom>ドリル加工</Typography>
+            </AccordionDetails>
+            </Accordion>
+            <Accordion expanded={expanded.drill} onChange={() => toggleSection('drill')} disableGutters sx={{ mb: 2 }}>
+            <AccordionSummary expandIcon={<ExpandMore />}>
+                <Typography variant="h6">ドリル加工</Typography>
+            </AccordionSummary>
+            <AccordionDetails>
                 <NumberField label="リトラクト高さ (mm)" value={props.retractZ} onChange={props.setRetractZ} min={0} />
                 <NumberField
                     label="ペック量 (Q)"
@@ -436,9 +470,13 @@ const CamTab = (props: CamTabProps) => {
                     validate={(v) => (v <= 0 ? '0より大きい値を入力してください' : undefined)}
                 />
                 <Button variant="contained" onClick={props.handleGenerateDrillGcode}>ドリルGコード生成</Button>
-            </Paper>
-            <Paper sx={{ p: 2, mb: 2 }}>
-                <Typography variant="h6" gutterBottom>Gコード保存</Typography>
+            </AccordionDetails>
+            </Accordion>
+            <Accordion expanded={expanded.gcode} onChange={() => toggleSection('gcode')} disableGutters sx={{ mb: 2 }}>
+            <AccordionSummary expandIcon={<ExpandMore />}>
+                <Typography variant="h6">Gコード保存</Typography>
+            </AccordionSummary>
+            <AccordionDetails>
                 <NumberField
                     label="送り速度 (mm/min)"
                     value={props.feedRate}
@@ -458,14 +496,18 @@ const CamTab = (props: CamTabProps) => {
                         CNCへ転送
                     </Button>
                 </Box>
-            </Paper>
-            <Paper sx={{ p: 2, mb: 2 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 1 }}>
+            </AccordionDetails>
+            </Accordion>
+            <Accordion expanded={expanded.objects} onChange={() => toggleSection('objects')} disableGutters sx={{ mb: 2 }}>
+            <AccordionSummary expandIcon={<ExpandMore />}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                     <Typography variant="h6">投入済みオブジェクト</Typography>
                     <Tooltip title="現在CAMに読み込まれている材料・加工後形状・図形・ツールパスの表示/非表示切り替えや削除ができます。">
                         <InfoOutlined fontSize="small" sx={{ color: 'text.secondary', cursor: 'help' }} />
                     </Tooltip>
                 </Box>
+            </AccordionSummary>
+            <AccordionDetails>
                 <TableContainer component={Paper} variant="outlined">
                     <Table size="small" sx={{ tableLayout: 'fixed' }}>
                         <TableHead>
@@ -516,7 +558,8 @@ const CamTab = (props: CamTabProps) => {
                         </TableBody>
                     </Table>
                 </TableContainer>
-            </Paper>
+            </AccordionDetails>
+            </Accordion>
             <ConfirmDialog
                 open={!!pendingDelete}
                 title="削除の確認"
