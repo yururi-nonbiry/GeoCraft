@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { api } from '../api';
 import { StlBaseTransform, StlPlacement } from '../types';
-import { createBoxStlData, translateStlData, getStlMinZ } from '../stlUtils';
+import { createBoxStlData, translateStlData, getStlMinZ, computeStlBounds } from '../stlUtils';
 
 type Vec3 = { x: number; y: number; z: number };
 
@@ -99,6 +99,32 @@ export const useStlAssets = (onNewStlLoaded: () => void) => {
     setStockBaseTransform(null);
     setStockOffset({ x: 0, y: 0, z: 0 });
     onNewStlLoaded();
+  };
+
+  // 加工後形状(target)が材料(stock)からはみ出さないよう、材料のバウンディングボックス中心に
+  // 加工後形状の中心が重なるようオフセットを調整する(ラフな自動配置。正確な配置は別機能で対応予定)。
+  // target が stock より大きい軸がある場合は、はみ出しを完全には防げないがバランスよく中央に寄せる。
+  const handleCenterTargetOnStock = () => {
+    if (!stockStlData || !targetStlData) return;
+    const stockBounds = computeStlBounds(stockStlData, stockBaseTransform?.rotation);
+    const targetBounds = computeStlBounds(targetStlData, targetBaseTransform?.rotation);
+    const stockBasePos = stockBaseTransform?.position ?? { x: 0, y: 0, z: 0 };
+    const targetBasePos = targetBaseTransform?.position ?? { x: 0, y: 0, z: 0 };
+    const stockCenter = {
+      x: stockBasePos.x + stockOffset.x + (stockBounds.min.x + stockBounds.max.x) / 2,
+      y: stockBasePos.y + stockOffset.y + (stockBounds.min.y + stockBounds.max.y) / 2,
+      z: stockBasePos.z + stockOffset.z + (stockBounds.min.z + stockBounds.max.z) / 2,
+    };
+    const targetLocalCenter = {
+      x: (targetBounds.min.x + targetBounds.max.x) / 2,
+      y: (targetBounds.min.y + targetBounds.max.y) / 2,
+      z: (targetBounds.min.z + targetBounds.max.z) / 2,
+    };
+    setTargetOffset({
+      x: stockCenter.x - targetBasePos.x - targetLocalCenter.x,
+      y: stockCenter.y - targetBasePos.y - targetLocalCenter.y,
+      z: stockCenter.z - targetBasePos.z - targetLocalCenter.z,
+    });
   };
 
   // ファイルメニューからDXF/SVGを開いた際、既存の材料/加工後形状STLを一括で破棄する
@@ -270,6 +296,7 @@ export const useStlAssets = (onNewStlLoaded: () => void) => {
     handleSelectStockStl,
     handleSelectTargetStl,
     handleCreateBoxStock,
+    handleCenterTargetOnStock,
     clearStockAndTarget,
     handleDeleteStock,
     handleDeleteTarget,

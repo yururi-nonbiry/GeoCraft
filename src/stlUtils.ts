@@ -22,6 +22,24 @@ export const getStlMinZ = (data: ArrayBuffer): number => {
     return geometry.boundingBox?.min.z ?? 0;
 };
 
+// STLの(任意で回転を適用した後の)ローカル座標系でのバウンディングボックスを取得する。
+// 材料への自動配置(はみ出し防止・中央寄せ)で、モデルの実サイズ・中心位置を求めるために使用する。
+export const computeStlBounds = (
+    data: ArrayBuffer,
+    rotation?: { x: number; y: number; z: number; w: number }
+): { min: { x: number; y: number; z: number }; max: { x: number; y: number; z: number } } => {
+    const geometry = new STLLoader().parse(data);
+    if (rotation) {
+        geometry.applyQuaternion(new THREE.Quaternion(rotation.x, rotation.y, rotation.z, rotation.w));
+    }
+    geometry.computeBoundingBox();
+    const box = geometry.boundingBox!;
+    return {
+        min: { x: box.min.x, y: box.min.y, z: box.min.z },
+        max: { x: box.max.x, y: box.max.y, z: box.max.z },
+    };
+};
+
 // STLの頂点座標に回転(任意)とoffset分の平行移動を適用したバイナリSTLデータを生成する。
 // ビューア上での表示位置・向き(底面選択による回転を含む)を、実際のジオメトリにも反映するために使用する。
 export const translateStlData = (

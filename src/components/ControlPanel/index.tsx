@@ -45,6 +45,7 @@ interface ControlPanelProps {
     stockBoxSize: { x: number; y: number; z: number };
     setStockBoxSize: (val: { x: number; y: number; z: number }) => void;
     handleCreateBoxStock: () => void;
+    handleCenterTargetOnStock: () => void;
     pickFaceMode: 'stock' | 'target' | null;
     setPickFaceMode: (val: 'stock' | 'target' | null) => void;
     stockOffset: { x: number; y: number; z: number };
@@ -216,6 +217,7 @@ const ControlPanel = (props: ControlPanelProps) => {
                         stockBoxSize={props.stockBoxSize}
                         setStockBoxSize={props.setStockBoxSize}
                         handleCreateBoxStock={props.handleCreateBoxStock}
+                        handleCenterTargetOnStock={props.handleCenterTargetOnStock}
                         pickFaceMode={props.pickFaceMode}
                         setPickFaceMode={props.setPickFaceMode}
                         stockOffset={props.stockOffset}

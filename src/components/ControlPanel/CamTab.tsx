@@ -63,6 +63,7 @@ export interface CamTabProps {
     stockBoxSize: { x: number; y: number; z: number };
     setStockBoxSize: (val: { x: number; y: number; z: number }) => void;
     handleCreateBoxStock: () => void;
+    handleCenterTargetOnStock: () => void;
     pickFaceMode: 'stock' | 'target' | null;
     setPickFaceMode: (val: 'stock' | 'target' | null) => void;
     stockOffset: { x: number; y: number; z: number };
@@ -428,6 +429,22 @@ const CamTab = (props: CamTabProps) => {
                                 <Button size="small" disabled={props.previewMode} onClick={() => props.setTargetOffset({ x: 0, y: 0, z: 0 })}>リセット</Button>
                             </Box>
                         </Box>
+                    )}
+                    {props.targetStlFile && props.stockStlFile && (
+                        <Tooltip title="加工後形状が材料からはみ出さないよう、材料の中心に寄せます(概算配置。正確な位置は位置調整欄で微調整してください)">
+                            <span>
+                                <Button
+                                    variant="outlined"
+                                    disabled={props.previewMode}
+                                    onClick={props.handleCenterTargetOnStock}
+                                    fullWidth
+                                    size="small"
+                                    sx={{ mt: 1 }}
+                                >
+                                    材料の中心に配置
+                                </Button>
+                            </span>
+                        </Tooltip>
                     )}
                 </Box>
                 <NumberField

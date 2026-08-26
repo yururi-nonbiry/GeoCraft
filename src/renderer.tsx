@@ -272,6 +272,7 @@ const App = () => {
     handleSelectStockStl,
     handleSelectTargetStl,
     handleCreateBoxStock,
+    handleCenterTargetOnStock,
     clearStockAndTarget,
     handleDeleteStock,
     handleDeleteTarget,
@@ -1022,6 +1023,7 @@ const App = () => {
             stockBoxSize={stockBoxSize}
             setStockBoxSize={setStockBoxSize}
             handleCreateBoxStock={handleCreateBoxStock}
+            handleCenterTargetOnStock={handleCenterTargetOnStock}
             targetStlFile={targetStlFile}
             handleSelectStockStl={handleSelectStockStl}
             handleSelectTargetStl={handleSelectTargetStl}
