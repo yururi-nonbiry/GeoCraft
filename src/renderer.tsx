@@ -24,7 +24,7 @@ import {
   ToggleButtonGroup,
   Tooltip,
 } from '@mui/material';
-import { Refresh, Link, LinkOff, PlayArrow, Pause, Stop, Settings, Memory, Save, FolderOpen, ViewInAr, Layers, Route, Timeline, CenterFocusStrong } from '@mui/icons-material';
+import { Refresh, Link, LinkOff, PlayArrow, Pause, Stop, Settings, Memory, Save, FolderOpen, ViewInAr, Layers, Route, Timeline, CenterFocusStrong, OpenWith, ThreeDRotation, Close } from '@mui/icons-material';
 
 import { api } from './api';
 
@@ -303,6 +303,11 @@ const App = () => {
   const [showGeometry, setShowGeometry] = useState(true);
   const [showToolpaths, setShowToolpaths] = useState(true);
   const [viewFitToken, setViewFitToken] = useState(0);
+  // 3Dビューでクリック選択中の材料/加工後形状と、表示する移動・回転ツール
+  const [selectedModel, setSelectedModel] = useState<'stock' | 'target' | null>(null);
+  const [transformMode, setTransformMode] = useState<'translate' | 'rotate'>('translate');
+  // 回転スナップ角度(度)。0 は自由回転
+  const [rotationSnapDeg, setRotationSnapDeg] = useState<number>(0);
 
   // --- 加工シミュレーション state ---
   const [simEnabled, setSimEnabled] = useState(false);
@@ -778,6 +783,17 @@ const App = () => {
               toolPosition={toolScenePosition}
               toolTrailResetToken={toolTrailResetToken}
               viewFitToken={viewFitToken}
+              selectedModel={selectedModel}
+              onSelectedModelChange={setSelectedModel}
+              transformMode={transformMode}
+              rotationSnapDeg={rotationSnapDeg}
+              onRotationCommitted={(which, rotation) => {
+                if (which === 'stock') {
+                  setStockBaseTransform((prev) => ({ position: prev?.position ?? { x: 0, y: 0, z: 0 }, rotation }));
+                } else {
+                  setTargetBaseTransform((prev) => ({ position: prev?.position ?? { x: 0, y: 0, z: 0 }, rotation }));
+                }
+              }}
               simulation={{
                 enabled: simEnabled,
                 toolRadius: toolDiameter / 2,
@@ -832,6 +848,75 @@ const App = () => {
                 </IconButton>
               </Tooltip>
             </Box>
+            {selectedModel && (
+              // 材料/加工後形状をクリックして選択中: 移動・回転ツールの切り替えパネル
+              <Box
+                sx={{
+                  position: 'absolute',
+                  bottom: 12,
+                  left: 12,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1,
+                  bgcolor: 'background.paper',
+                  borderRadius: 1,
+                  boxShadow: 1,
+                  p: 0.5,
+                }}
+              >
+                <Typography variant="caption" sx={{ pl: 0.5 }}>
+                  {selectedModel === 'stock' ? '材料形状' : '加工後形状'}を選択中
+                </Typography>
+                <ToggleButtonGroup
+                  size="small"
+                  exclusive
+                  value={transformMode}
+                  onChange={(_, value) => { if (value) setTransformMode(value); }}
+                >
+                  <ToggleButton value="translate" aria-label="移動(XY平面)">
+                    <Tooltip title="移動(XY平面)"><OpenWith fontSize="small" /></Tooltip>
+                  </ToggleButton>
+                  <ToggleButton value="rotate" aria-label="回転(鉛直軸)">
+                    <Tooltip title="回転(鉛直軸)"><ThreeDRotation fontSize="small" /></Tooltip>
+                  </ToggleButton>
+                </ToggleButtonGroup>
+                {transformMode === 'rotate' && (
+                  <>
+                    <ToggleButtonGroup
+                      size="small"
+                      exclusive
+                      value={rotationSnapDeg}
+                      onChange={(_, value) => { if (value !== null) setRotationSnapDeg(value); }}
+                    >
+                      <ToggleButton value={0}>自由</ToggleButton>
+                      <ToggleButton value={30}>30°</ToggleButton>
+                      <ToggleButton value={45}>45°</ToggleButton>
+                    </ToggleButtonGroup>
+                    <Tooltip title="回転をリセット">
+                      <IconButton
+                        size="small"
+                        aria-label="回転をリセット"
+                        onClick={() => {
+                          const identity = { x: 0, y: 0, z: 0, w: 1 };
+                          if (selectedModel === 'stock') {
+                            setStockBaseTransform((prev) => (prev ? { ...prev, rotation: identity } : prev));
+                          } else {
+                            setTargetBaseTransform((prev) => (prev ? { ...prev, rotation: identity } : prev));
+                          }
+                        }}
+                      >
+                        <Refresh fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </>
+                )}
+                <Tooltip title="選択解除">
+                  <IconButton size="small" aria-label="選択解除" onClick={() => setSelectedModel(null)}>
+                    <Close fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              </Box>
+            )}
             {layers.length > 0 && (
               <>
                 {/* 全体表示 / 対象の層のみ表示 切り替え */}
