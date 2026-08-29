@@ -36,6 +36,7 @@ import { useCncConnection } from './hooks/useCncConnection';
 import { useStlAssets } from './hooks/useStlAssets';
 import { useGcodeExport } from './hooks/useGcodeExport';
 import { useToolpathGeneration } from './hooks/useToolpathGeneration';
+import { computeToolpathStats } from './toolpathStats';
 
 const theme = createTheme({
   palette: {
@@ -354,6 +355,17 @@ const App = () => {
         pointCount: segments.reduce((sum, s) => sum + segmentPointCount(s), 0),
       }));
   }, [toolpaths]);
+
+  // 移動距離・加工時間の見積もり(GcodeService.cs の実際のGコード生成ロジックと同じ移動シーケンスを辿る)
+  const pathStats = useMemo(() => {
+    if (!toolpaths || toolpaths.length === 0) return null;
+    return computeToolpathStats(toolpaths, {
+      feedRate,
+      safeZ: currentMachine.safeZ,
+      retractZ: currentMachine.retractZ,
+      stepDown: currentMachine.stepDown,
+    });
+  }, [toolpaths, feedRate, currentMachine.safeZ, currentMachine.retractZ, currentMachine.stepDown]);
 
   // 新しいツールパスが生成されたら層送り状態をリセットする
   useEffect(() => {
@@ -1091,6 +1103,7 @@ const App = () => {
             setStockThickness={setStockThickness}
             handleResetSimulation={resetSimulation}
             handleSkipSimulation={handleSkipSimulation}
+            pathStats={pathStats}
           />
         </Grid>
       </Box>

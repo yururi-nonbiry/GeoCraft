@@ -19,6 +19,7 @@ import {
     Tab,
 } from '@mui/material';
 import { MachineSetting, ToolSetting, WorkOrigin, Geometry, ToolpathSegment, SerialPortInfo } from '../../types';
+import { ToolpathStats } from '../../toolpathStats';
 import { TabPanel, NumberField } from './shared';
 import CamTab from './CamTab';
 import CncTab from './CncTab';
@@ -149,6 +150,7 @@ interface ControlPanelProps {
     setStockThickness: (val: number) => void;
     handleResetSimulation: () => void;
     handleSkipSimulation: () => void;
+    pathStats: ToolpathStats | null;
 }
 
 const SIDE_PANEL_WIDTH = 360;
@@ -246,6 +248,7 @@ const ControlPanel = (props: ControlPanelProps) => {
                         handleDeleteGeometry={props.handleDeleteGeometry}
                         handleDeleteToolpaths={props.handleDeleteToolpaths}
                         onOpenToolSettings={() => setIsToolSettingsOpen(true)}
+                        pathStats={props.pathStats}
                     />
                 </TabPanel>
                 <TabPanel value={activeTab} index={1}>

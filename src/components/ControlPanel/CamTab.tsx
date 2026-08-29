@@ -24,7 +24,23 @@ import {
 } from '@mui/material';
 import { Settings, InfoOutlined, ExpandMore } from '@mui/icons-material';
 import { MachineSetting, ToolSetting, WorkOrigin, Geometry, ToolpathSegment } from '../../types';
+import { ToolpathStats } from '../../toolpathStats';
 import { VisibilityToggles, NumberField, ConfirmDialog } from './shared';
+
+function formatDistanceMm(mm: number): string {
+    if (mm >= 1000) return `${(mm / 1000).toFixed(2)} m`;
+    return `${mm.toFixed(1)} mm`;
+}
+
+function formatDurationSec(sec: number): string {
+    if (!isFinite(sec) || sec < 0) return '---';
+    const total = Math.round(sec);
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = total % 60;
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+}
 
 export interface CamTabProps {
     machineSettings: MachineSetting[];
@@ -92,6 +108,7 @@ export interface CamTabProps {
     handleDeleteGeometry: () => void;
     handleDeleteToolpaths: () => void;
     onOpenToolSettings: () => void;
+    pathStats: ToolpathStats | null;
 }
 
 type SectionKey = 'origin' | 'cam2d' | 'cam3d' | 'drill' | 'gcode' | 'objects';
@@ -499,6 +516,15 @@ const CamTab = (props: CamTabProps) => {
                     onChange={props.setFeedRate}
                     validate={(v) => (v <= 0 ? '0より大きい値を入力してください' : undefined)}
                 />
+                {props.pathStats ? (
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                        移動距離: {formatDistanceMm(props.pathStats.totalDistanceMm)}　／　加工時間(概算): {formatDurationSec(props.pathStats.timeSec)}
+                    </Typography>
+                ) : (
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                        ツールパスを生成すると移動距離・加工時間が表示されます
+                    </Typography>
+                )}
                 <Box sx={{ display: 'flex', gap: 1 }}>
                     <Button variant="contained" onClick={props.handleSaveGcode}>Gコード保存</Button>
                     <Button
