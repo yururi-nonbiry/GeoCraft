@@ -180,14 +180,22 @@ const CncTab = (props: CncTabProps) => {
                         <Typography variant="h6">マシン設定</Typography>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                             {!props.isConnected ? (
-                                <Button variant="contained" size="small" onClick={props.handleConnect} startIcon={<Link />}>接続</Button>
+                                <Tooltip title="接続">
+                                    <IconButton size="small" color="primary" onClick={props.handleConnect}>
+                                        <Link />
+                                    </IconButton>
+                                </Tooltip>
                             ) : (
-                                <Button variant="contained" color="secondary" size="small" onClick={props.handleDisconnect} startIcon={<LinkOff />}>切断</Button>
+                                <Tooltip title="切断">
+                                    <IconButton size="small" color="secondary" onClick={props.handleDisconnect}>
+                                        <LinkOff />
+                                    </IconButton>
+                                </Tooltip>
                             )}
                             <Tooltip title="安全高さ・切込み深さなどの詳細設定">
-                                <Button size="small" variant="outlined" startIcon={<Settings />} onClick={props.onOpenMachineSettings}>
-                                    詳細設定
-                                </Button>
+                                <IconButton size="small" onClick={props.onOpenMachineSettings}>
+                                    <Settings />
+                                </IconButton>
                             </Tooltip>
                         </Box>
                     </Box>
