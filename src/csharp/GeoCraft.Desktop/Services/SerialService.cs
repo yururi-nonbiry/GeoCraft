@@ -9,6 +9,15 @@ namespace GeoCraft.Desktop.Services
         private SerialPort? _port;
         public event Action<string>? OnDataReceived;
 
+        // Write() is called concurrently from several threads (the 250ms status-poll
+        // timer, the G-code streaming loop re-entered from the port's own receive
+        // thread, and direct UI-triggered commands). SerialPort isn't safe to write
+        // from multiple threads at once — unsynchronized calls can corrupt or drop
+        // bytes on the wire, which silently stalls G-code streaming (a lost "ok")
+        // and freezes status polling (a lost "?" reply). All port access is
+        // serialized through this lock to keep writes atomic.
+        private readonly object _portLock = new object();
+
         public object ListPorts()
         {
             return new { status = "success", ports = SerialPort.GetPortNames().Select(p => new { path = p }).ToArray() };
@@ -16,62 +25,77 @@ namespace GeoCraft.Desktop.Services
 
         public object Connect(string portName, int baudRate)
         {
-            if (_port != null && _port.IsOpen)
+            lock (_portLock)
             {
-                return new { status = "error", message = "Port already open." };
-            }
+                if (_port != null && _port.IsOpen)
+                {
+                    return new { status = "error", message = "Port already open." };
+                }
 
-            try
-            {
-                _port = new SerialPort(portName, baudRate);
-                _port.DataReceived += Port_DataReceived;
-                _port.Open();
-                return new { status = "success", message = (string?)null };
-            }
-            catch (Exception ex)
-            {
-                _port = null;
-                return new { status = "error", message = ex.Message };
+                try
+                {
+                    _port = new SerialPort(portName, baudRate);
+                    _port.DataReceived += Port_DataReceived;
+                    _port.Open();
+                    return new { status = "success", message = (string?)null };
+                }
+                catch (Exception ex)
+                {
+                    _port = null;
+                    return new { status = "error", message = ex.Message };
+                }
             }
         }
 
         public object Disconnect()
         {
-            if (_port == null) return new { status = "success", message = (string?)null };
-            try
+            lock (_portLock)
             {
-                if (_port.IsOpen)
+                if (_port == null) return new { status = "success", message = (string?)null };
+                try
                 {
-                    _port.DataReceived -= Port_DataReceived;
-                    _port.Close();
+                    if (_port.IsOpen)
+                    {
+                        _port.DataReceived -= Port_DataReceived;
+                        _port.Close();
+                    }
+                    _port.Dispose();
+                    _port = null;
+                    return new { status = "success", message = (string?)null };
                 }
-                _port.Dispose();
-                _port = null;
-                return new { status = "success", message = (string?)null };
-            }
-            catch (Exception ex)
-            {
-                return new { status = "error", message = ex.Message };
+                catch (Exception ex)
+                {
+                    return new { status = "error", message = ex.Message };
+                }
             }
         }
 
         public void Write(string data)
         {
-            if (_port != null && _port.IsOpen)
+            lock (_portLock)
             {
-                _port.Write(data);
+                if (_port != null && _port.IsOpen)
+                {
+                    _port.Write(data);
+                }
             }
         }
 
         private void Port_DataReceived(object sender, SerialDataReceivedEventArgs e)
         {
-            if (_port != null && _port.IsOpen)
+            string? data = null;
+            lock (_portLock)
             {
-                try {
-                    string data = _port.ReadExisting();
-                    OnDataReceived?.Invoke(data);
-                } catch {}
+                if (_port != null && _port.IsOpen)
+                {
+                    try { data = _port.ReadExisting(); } catch { }
+                }
             }
+            // Invoked outside the lock: the subscriber (GeoCraftBridge) does real work
+            // here, including calling back into Write() to send the next queued
+            // G-code line. Holding _portLock through that would needlessly block the
+            // status-poll timer's "?" writes for the duration.
+            if (data != null) OnDataReceived?.Invoke(data);
         }
 
         public void Dispose()
@@ -84,19 +108,22 @@ namespace GeoCraft.Desktop.Services
         {
             if (disposing)
             {
-                if (_port != null)
+                lock (_portLock)
                 {
-                    try
+                    if (_port != null)
                     {
-                        if (_port.IsOpen)
+                        try
                         {
-                            _port.DataReceived -= Port_DataReceived;
-                            _port.Close();
+                            if (_port.IsOpen)
+                            {
+                                _port.DataReceived -= Port_DataReceived;
+                                _port.Close();
+                            }
                         }
+                        catch { }
+                        _port.Dispose();
+                        _port = null;
                     }
-                    catch { }
-                    _port.Dispose();
-                    _port = null;
                 }
             }
         }
