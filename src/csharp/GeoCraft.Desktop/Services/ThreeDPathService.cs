@@ -69,8 +69,10 @@ namespace GeoCraft.Desktop.Services
             var removalAreas = new Geometry?[totalSlices];
             var sliceResults = new List<object>?[totalSlices];
             int completedSlices = 0;
-            // 除去領域の計算(フェーズ1)とパス生成(フェーズ3)の2段階分の進捗を合わせて報告する。
-            int progressTotal = totalSlices * 2;
+            // 除去領域の計算(フェーズ1)・貫通領域の判定(フェーズ2)・パス生成(フェーズ3)の
+            // 3段階分の進捗を合わせて報告する。フェーズ2は逐次処理で時間がかかることがあるため、
+            // ここで進捗を報告しないと画面が固まったように見えてしまう。
+            int progressTotal = totalSlices * 3;
 
             var stopwatch = Stopwatch.StartNew();
             LogService.Log($"GenerateToolpath: start, {totalSlices} slices");
@@ -114,27 +116,38 @@ namespace GeoCraft.Desktop.Services
             var throughRegions = new Geometry?[totalSlices];
             for (int i = totalSlices - 1; i >= 0; i--)
             {
-                var removalArea = removalAreas[i];
-                if (removalArea == null) continue;
-
-                if (i == totalSlices - 1)
-                {
-                    throughRegions[i] = removalArea;
-                    continue;
-                }
-
-                var below = throughRegions[i + 1];
-                if (below == null || below.IsEmpty) continue;
                 try
                 {
-                    var through = removalArea.Intersection(below);
-                    if (!through.IsEmpty) throughRegions[i] = through;
+                    var removalArea = removalAreas[i];
+                    if (removalArea != null)
+                    {
+                        if (i == totalSlices - 1)
+                        {
+                            throughRegions[i] = removalArea;
+                        }
+                        else
+                        {
+                            var below = throughRegions[i + 1];
+                            if (below != null && !below.IsEmpty)
+                            {
+                                var through = removalArea.Intersection(below);
+                                if (!through.IsEmpty) throughRegions[i] = through;
+                            }
+                        }
+                    }
                 }
                 catch (Exception ex)
                 {
                     LogService.Log($"GenerateToolpath: slice {i} through-region failed: {ex.Message}");
                 }
+
+                // フェーズ2は依存関係上逐次処理になるため、ここで進捗を報告しないとフェーズ1完了後
+                // 画面の進捗バーが止まって見え(実際には計算中でも)ユーザーにはフリーズしたように映る。
+                int done = Interlocked.Increment(ref completedSlices);
+                onProgress?.Invoke(done, progressTotal);
             }
+
+            LogService.Log($"GenerateToolpath: through regions done in {stopwatch.ElapsedMilliseconds}ms");
 
             // フェーズ3: 貫通領域は境界を1周切削するだけにとどめ(内部のクリアランスは省略)、それ以外
             // (最終形状として底が残るポケット)は従来通り同心オフセットで内部まで全面クリアする。

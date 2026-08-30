@@ -113,6 +113,15 @@ namespace GeoCraft.Desktop
             }
         }
 
+        // WebView2のホストオブジェクトメソッドはデフォルトでUIスレッド上で実行されるため、
+        // GenerateToolpathのような重い処理をそのまま呼ぶとアプリ全体が応答なしになる。
+        // Task<string>を返すメソッドはJS側からPromiseとして扱われ、Task完了時に解決されるため、
+        // ここでTask.Runしてバックグラウンドスレッドに逃がすことでUIスレッドを解放できる。
+        private Task<string> ExecuteSafeAsync(Func<object> action)
+        {
+            return Task.Run(() => ExecuteSafe(action));
+        }
+
         private void ExecuteSafeVoid(Action action)
         {
             try
@@ -429,8 +438,8 @@ namespace GeoCraft.Desktop
             return ExecuteSafe(() => _mainWindow.Dispatcher.Invoke<object>(() => _fileService.OpenProject()));
         }
 
-        public string Generate3dRoughingPath(string paramsJson) {
-            return ExecuteSafe(() => {
+        public Task<string> Generate3dRoughingPath(string paramsJson) {
+            return ExecuteSafeAsync(() => {
                 dynamic p = JsonConvert.DeserializeObject(paramsJson)!;
                 string stockPath = p.stockPath;
                 string targetPath = p.targetPath;
