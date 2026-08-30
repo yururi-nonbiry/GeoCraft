@@ -12,15 +12,13 @@ import {
     TextareaAutosize,
     LinearProgress,
     Grid,
-    Checkbox,
-    FormControlLabel,
     IconButton,
     Tooltip,
     Alert,
 } from '@mui/material';
 import { Refresh, Link, LinkOff, PlayArrow, Pause, Stop, Settings, LockOpen, RestartAlt } from '@mui/icons-material';
 import { MachineSetting, SerialPortInfo } from '../../types';
-import { NumberField, ConfirmDialog } from './shared';
+import { NumberField } from './shared';
 
 export interface CncTabProps {
     isConnected: boolean;
@@ -57,10 +55,6 @@ export interface CncTabProps {
     machineSettings: MachineSetting[];
     selectedMachineId: number | '';
     setSelectedMachineId: (val: number) => void;
-    grblSettings: { stepsX: number; stepsY: number; stepsZ: number; invertX: boolean; invertY: boolean; invertZ: boolean };
-    setGrblSettings: React.Dispatch<React.SetStateAction<{ stepsX: number; stepsY: number; stepsZ: number; invertX: boolean; invertY: boolean; invertZ: boolean }>>;
-    handleRequestGrblSettings: () => void;
-    handleSaveGrblSettings: () => void;
     onOpenMachineSettings: () => void;
     onOpenSetZeroConfirm: () => void;
 }
@@ -154,9 +148,6 @@ const LongPressButton = (props: {
 };
 
 const CncTab = (props: CncTabProps) => {
-    const [grblWriteConfirmOpen, setGrblWriteConfirmOpen] = useState(false);
-    const isGrblValid = props.grblSettings.stepsX > 0 && props.grblSettings.stepsY > 0 && props.grblSettings.stepsZ > 0;
-
     // 3Dラフィング等から転送された巨大なG-code(数万行)をそのまま折り返し付きtextareaに
     // 流し込むと、ブラウザ側の行レイアウト計算が仮想化されず数秒〜数十秒単位で固まる。
     // 表示だけ先頭N行に切り詰め、送信自体は props.gcode の全文に対して行う。
@@ -212,73 +203,6 @@ const CncTab = (props: CncTabProps) => {
                         </Select>
                     </FormControl>
                 </Paper>
-                {props.isConnected && (
-                    <Paper sx={{ p: 2, mb: 2 }}>
-                        <Typography variant="h6" gutterBottom>加工機パラメータ (Grbl)</Typography>
-                        <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
-                            <Button variant="outlined" size="small" onClick={props.handleRequestGrblSettings} fullWidth>
-                                設定読み込み
-                            </Button>
-                            <Button variant="contained" size="small" onClick={() => setGrblWriteConfirmOpen(true)} disabled={!isGrblValid} fullWidth>
-                                設定書き込み
-                            </Button>
-                        </Box>
-                        <NumberField
-                            label="X軸ステップ数 (step/mm)"
-                            value={props.grblSettings.stepsX}
-                            onChange={(val) => props.setGrblSettings(prev => ({ ...prev, stepsX: val }))}
-                            min={0.0001}
-                            margin="normal"
-                        />
-                        <NumberField
-                            label="Y軸ステップ数 (step/mm)"
-                            value={props.grblSettings.stepsY}
-                            onChange={(val) => props.setGrblSettings(prev => ({ ...prev, stepsY: val }))}
-                            min={0.0001}
-                            margin="normal"
-                        />
-                        <NumberField
-                            label="Z軸ステップ数 (step/mm)"
-                            value={props.grblSettings.stepsZ}
-                            onChange={(val) => props.setGrblSettings(prev => ({ ...prev, stepsZ: val }))}
-                            min={0.0001}
-                            margin="normal"
-                        />
-                        <Box sx={{ mt: 1, display: 'flex', flexDirection: 'column' }}>
-                            <Typography variant="body2" sx={{ mb: 0.5 }}>移動方向の反転 (逆転)</Typography>
-                            <FormControlLabel
-                                control={
-                                    <Checkbox
-                                        checked={props.grblSettings.invertX}
-                                        onChange={(e) => props.setGrblSettings(prev => ({ ...prev, invertX: e.target.checked }))}
-                                        size="small"
-                                    />
-                                }
-                                label="X軸反転"
-                            />
-                            <FormControlLabel
-                                control={
-                                    <Checkbox
-                                        checked={props.grblSettings.invertY}
-                                        onChange={(e) => props.setGrblSettings(prev => ({ ...prev, invertY: e.target.checked }))}
-                                        size="small"
-                                    />
-                                }
-                                label="Y軸反転"
-                            />
-                            <FormControlLabel
-                                control={
-                                    <Checkbox
-                                        checked={props.grblSettings.invertZ}
-                                        onChange={(e) => props.setGrblSettings(prev => ({ ...prev, invertZ: e.target.checked }))}
-                                        size="small"
-                                    />
-                                }
-                                label="Z軸反転"
-                            />
-                        </Box>
-                    </Paper>
-                )}
                 <Paper sx={{ p: 2, mb: 2 }}>
                     <Typography variant="h6" gutterBottom>CNC 接続</Typography>
                     <FormControl fullWidth margin="normal" size="small" disabled={props.isConnected}>
@@ -464,13 +388,6 @@ const CncTab = (props: CncTabProps) => {
                     </Box>
                 </Box>
             </Paper>
-            <ConfirmDialog
-                open={grblWriteConfirmOpen}
-                title="Grbl設定書き込みの確認"
-                message="加工機にステップ数・反転設定を書き込みます。値が誤っていると軸の動きが正しく動作しなくなる可能性があります。よろしいですか？"
-                onConfirm={() => { props.handleSaveGrblSettings(); setGrblWriteConfirmOpen(false); }}
-                onCancel={() => setGrblWriteConfirmOpen(false)}
-            />
         </>
     );
 };

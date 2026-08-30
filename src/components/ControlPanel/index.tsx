@@ -17,10 +17,11 @@ import {
     DialogActions,
     Tabs,
     Tab,
+    Divider,
 } from '@mui/material';
 import { MachineSetting, ToolSetting, WorkOrigin, Geometry, ToolpathSegment, SerialPortInfo } from '../../types';
 import { ToolpathStats } from '../../toolpathStats';
-import { TabPanel, NumberField } from './shared';
+import { TabPanel, NumberField, ConfirmDialog } from './shared';
 import CamTab from './CamTab';
 import CncTab from './CncTab';
 import SimTab from './SimTab';
@@ -160,6 +161,8 @@ const ControlPanel = (props: ControlPanelProps) => {
     const [isMachineSettingsOpen, setIsMachineSettingsOpen] = useState(false);
     const [isToolSettingsOpen, setIsToolSettingsOpen] = useState(false);
     const [isSetZeroConfirmOpen, setIsSetZeroConfirmOpen] = useState(false);
+    const [grblWriteConfirmOpen, setGrblWriteConfirmOpen] = useState(false);
+    const isGrblValid = props.grblSettings.stepsX > 0 && props.grblSettings.stepsY > 0 && props.grblSettings.stepsZ > 0;
 
     return (
         <Grid
@@ -287,10 +290,6 @@ const ControlPanel = (props: ControlPanelProps) => {
                         machineSettings={props.machineSettings}
                         selectedMachineId={props.selectedMachineId}
                         setSelectedMachineId={props.setSelectedMachineId}
-                        grblSettings={props.grblSettings}
-                        setGrblSettings={props.setGrblSettings}
-                        handleRequestGrblSettings={props.handleRequestGrblSettings}
-                        handleSaveGrblSettings={props.handleSaveGrblSettings}
                         onOpenMachineSettings={() => setIsMachineSettingsOpen(true)}
                         onOpenSetZeroConfirm={() => setIsSetZeroConfirmOpen(true)}
                     />
@@ -368,6 +367,96 @@ const ControlPanel = (props: ControlPanelProps) => {
                         label="機械原点のリセットを有効にする"
                         sx={{ mt: 1, display: 'block' }}
                     />
+                    <Divider sx={{ mt: 2, mb: 1 }} />
+                    <Typography variant="subtitle2" gutterBottom>加工機パラメータ (Grbl)</Typography>
+                    {!props.isConnected && (
+                        <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+                            加工機に接続すると読み込み・書き込みができます。
+                        </Typography>
+                    )}
+                    <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
+                        <Button
+                            variant="outlined"
+                            size="small"
+                            onClick={props.handleRequestGrblSettings}
+                            disabled={!props.isConnected}
+                            fullWidth
+                        >
+                            設定読み込み
+                        </Button>
+                        <Button
+                            variant="contained"
+                            size="small"
+                            onClick={() => setGrblWriteConfirmOpen(true)}
+                            disabled={!props.isConnected || !isGrblValid}
+                            fullWidth
+                        >
+                            設定書き込み
+                        </Button>
+                    </Box>
+                    <NumberField
+                        label="X軸ステップ数 (step/mm)"
+                        value={props.grblSettings.stepsX}
+                        onChange={(val) => props.setGrblSettings(prev => ({ ...prev, stepsX: val }))}
+                        min={0.0001}
+                        margin="normal"
+                        size="small"
+                        disabled={!props.isConnected}
+                    />
+                    <NumberField
+                        label="Y軸ステップ数 (step/mm)"
+                        value={props.grblSettings.stepsY}
+                        onChange={(val) => props.setGrblSettings(prev => ({ ...prev, stepsY: val }))}
+                        min={0.0001}
+                        margin="normal"
+                        size="small"
+                        disabled={!props.isConnected}
+                    />
+                    <NumberField
+                        label="Z軸ステップ数 (step/mm)"
+                        value={props.grblSettings.stepsZ}
+                        onChange={(val) => props.setGrblSettings(prev => ({ ...prev, stepsZ: val }))}
+                        min={0.0001}
+                        margin="normal"
+                        size="small"
+                        disabled={!props.isConnected}
+                    />
+                    <Box sx={{ mt: 1, display: 'flex', flexDirection: 'column' }}>
+                        <Typography variant="body2" sx={{ mb: 0.5 }}>移動方向の反転 (逆転)</Typography>
+                        <FormControlLabel
+                            control={
+                                <Checkbox
+                                    checked={props.grblSettings.invertX}
+                                    onChange={(e) => props.setGrblSettings(prev => ({ ...prev, invertX: e.target.checked }))}
+                                    size="small"
+                                    disabled={!props.isConnected}
+                                />
+                            }
+                            label="X軸反転"
+                        />
+                        <FormControlLabel
+                            control={
+                                <Checkbox
+                                    checked={props.grblSettings.invertY}
+                                    onChange={(e) => props.setGrblSettings(prev => ({ ...prev, invertY: e.target.checked }))}
+                                    size="small"
+                                    disabled={!props.isConnected}
+                                />
+                            }
+                            label="Y軸反転"
+                        />
+                        <FormControlLabel
+                            control={
+                                <Checkbox
+                                    checked={props.grblSettings.invertZ}
+                                    onChange={(e) => props.setGrblSettings(prev => ({ ...prev, invertZ: e.target.checked }))}
+                                    size="small"
+                                    disabled={!props.isConnected}
+                                />
+                            }
+                            label="Z軸反転"
+                        />
+                    </Box>
                 </DialogContent>
                 <DialogActions>
                     <Button onClick={() => setIsMachineSettingsOpen(false)} variant="contained">
@@ -375,6 +464,13 @@ const ControlPanel = (props: ControlPanelProps) => {
                     </Button>
                 </DialogActions>
             </Dialog>
+            <ConfirmDialog
+                open={grblWriteConfirmOpen}
+                title="Grbl設定書き込みの確認"
+                message="加工機にステップ数・反転設定を書き込みます。値が誤っていると軸の動きが正しく動作しなくなる可能性があります。よろしいですか？"
+                onConfirm={() => { props.handleSaveGrblSettings(); setGrblWriteConfirmOpen(false); }}
+                onCancel={() => setGrblWriteConfirmOpen(false)}
+            />
             <Dialog
                 open={isToolSettingsOpen}
                 onClose={() => setIsToolSettingsOpen(false)}
