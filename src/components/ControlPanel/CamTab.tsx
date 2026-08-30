@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
     Typography,
     Paper,
@@ -21,6 +21,9 @@ import {
     Accordion,
     AccordionSummary,
     AccordionDetails,
+    Stepper,
+    Step,
+    StepLabel,
 } from '@mui/material';
 import { Settings, InfoOutlined, ExpandMore } from '@mui/icons-material';
 import { MachineSetting, MaterialSetting, ToolSetting, WorkOrigin, Geometry, ToolpathSegment } from '../../types';
@@ -138,6 +141,48 @@ const CamTab = (props: CamTabProps) => {
     });
     const toggleSection = (key: SectionKey) => setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
 
+    // ステップ進行ガイド: 原点設定 → パス生成 → Gコード出力 の大まかな流れを示すためのインジケーター。
+    // 完了判定は既存の値(toolpaths等)から導出し、原点設定・Gコード出力だけは完了を示す値が
+    // 存在しないため、ユーザー操作(アコーディオンを閉じる/保存ボタン押下)を軽く記録する。
+    // あくまで案内であり、他のセクションを自由に開閉する操作を妨げない。
+    const [originVisited, setOriginVisited] = useState(false);
+    const [gcodeSaved, setGcodeSaved] = useState(false);
+    const hasToolpaths = !!props.toolpaths && props.toolpaths.length > 0;
+    // STLが投入されていれば3D加工、なければ2.5D加工がその時点でのメインの導線とみなす。
+    const primaryPathSection: 'cam2d' | 'cam3d' = (props.stockStlFile || props.targetStlFile) ? 'cam3d' : 'cam2d';
+
+    const handleOriginAccordionChange = () => {
+        const wasOpen = expanded.origin;
+        toggleSection('origin');
+        if (wasOpen) setOriginVisited(true);
+    };
+
+    // 各ステップの完了を検知した最初のタイミングでのみ次のセクションを自動展開する。
+    // ユーザーが後から手動で前のセクションを開き直しても、勝手に閉じたりはしない。
+    const originAdvancedRef = useRef(false);
+    useEffect(() => {
+        if (originVisited && !originAdvancedRef.current) {
+            originAdvancedRef.current = true;
+            setExpanded((prev) => ({ ...prev, [primaryPathSection]: true }));
+        }
+    }, [originVisited, primaryPathSection]);
+
+    const pathAdvancedRef = useRef(false);
+    useEffect(() => {
+        if (hasToolpaths && !pathAdvancedRef.current) {
+            pathAdvancedRef.current = true;
+            setExpanded((prev) => ({ ...prev, [primaryPathSection]: false, drill: false, gcode: true }));
+        }
+    }, [hasToolpaths, primaryPathSection]);
+
+    // 新しいパスが生成されたら、前のGコード出力結果は古くなるため完了表示をリセットする。
+    useEffect(() => {
+        setGcodeSaved(false);
+    }, [props.toolpaths]);
+
+    const stepCompleted = [originVisited, hasToolpaths, gcodeSaved];
+    const activeStep = gcodeSaved ? 3 : hasToolpaths ? 2 : originVisited ? 1 : 0;
+
     const handleTogglePreviewModeClick = () => {
         const willDeleteToolpaths = props.previewMode && props.toolpaths && props.toolpaths.length > 0;
         if (willDeleteToolpaths) {
@@ -223,7 +268,16 @@ const CamTab = (props: CamTabProps) => {
                     {(props.materialSettings.find(m => m.id === props.selectedMaterialId)?.name) || '未選択'}
                 </Typography>
             </Paper>
-            <Accordion expanded={expanded.origin} onChange={() => toggleSection('origin')} disableGutters sx={{ mb: 2 }}>
+            <Paper sx={{ p: 2, mb: 2 }}>
+                <Stepper activeStep={activeStep} alternativeLabel>
+                    {['原点設定', 'パス生成', 'Gコード出力'].map((label, idx) => (
+                        <Step key={label} completed={stepCompleted[idx]}>
+                            <StepLabel>{label}</StepLabel>
+                        </Step>
+                    ))}
+                </Stepper>
+            </Paper>
+            <Accordion expanded={expanded.origin} onChange={handleOriginAccordionChange} disableGutters sx={{ mb: 2 }}>
             <AccordionSummary expandIcon={<ExpandMore />}>
                 <Typography variant="h6">加工開始原点 (ワーク原点 G54)</Typography>
             </AccordionSummary>
@@ -547,13 +601,16 @@ const CamTab = (props: CamTabProps) => {
                     </Typography>
                 )}
                 <Box sx={{ display: 'flex', gap: 1 }}>
-                    <Button variant="contained" onClick={props.handleSaveGcode}>Gコード保存</Button>
+                    <Button variant="contained" onClick={() => { props.handleSaveGcode(); setGcodeSaved(true); }}>Gコード保存</Button>
                     <Button
                         variant="contained"
                         color="secondary"
                         onClick={async () => {
                             const ok = await props.handleTransferGcodeToCnc();
-                            if (ok) props.onGcodeTransferred();
+                            if (ok) {
+                                props.onGcodeTransferred();
+                                setGcodeSaved(true);
+                            }
                         }}
                     >
                         CNCへ転送
