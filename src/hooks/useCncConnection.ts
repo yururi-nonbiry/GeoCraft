@@ -199,7 +199,12 @@ export const useCncConnection = () => {
 
   const handleDisconnect = async () => {
     const result = await api.disconnectSerial();
-    if (result.status !== 'success') setConnectionError(`切断エラー: ${result.message}`);
+    if (result.status === 'success') {
+      setIsConnected(false);
+      setConsoleLog(prev => [...prev, '--- 切断しました ---']);
+    } else {
+      setConnectionError(`切断エラー: ${result.message}`);
+    }
   };
 
   const clearConnectionError = () => setConnectionError(null);
