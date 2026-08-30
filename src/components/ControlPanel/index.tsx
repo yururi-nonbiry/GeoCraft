@@ -71,7 +71,7 @@ interface ControlPanelProps {
     setFeedRate: (val: number) => void;
     rpm: number;
     setRpm: (val: number) => void;
-    handleSaveGcode: () => void;
+    handleSaveGcode: () => Promise<void>;
     handleTransferGcodeToCnc: () => Promise<boolean>;
     safeZ: number;
     setSafeZ: (val: number) => void;

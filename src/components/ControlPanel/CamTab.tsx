@@ -98,7 +98,7 @@ export interface CamTabProps {
     setRpm: (val: number) => void;
     stepDown: number;
     setStepDown: (val: number) => void;
-    handleSaveGcode: () => void;
+    handleSaveGcode: () => Promise<void>;
     handleTransferGcodeToCnc: () => Promise<boolean>;
     onGcodeTransferred: () => void;
     geometry: Geometry | null;
@@ -121,7 +121,7 @@ const CamTab = (props: CamTabProps) => {
     // パス生成とGコード保存を1回のアクションでまとめて行う(切り込みピッチ等をパス生成時に
     // 設定できないと後からGコードだけ出し直す二度手間になるため)。対象操作の種類だけ保持し、
     // 実際の値はprops経由(feedRate等)でモーダル内から直接編集させる。
-    const [gcodeConfirm, setGcodeConfirm] = useState<'contour' | 'pocket' | '3d' | 'drill' | 'transfer' | null>(null);
+    const [gcodeConfirm, setGcodeConfirm] = useState<'contour' | 'pocket' | '3d' | 'drill' | 'transfer' | 'save' | null>(null);
     // 2.5D加工と3D加工は同時に使わないことが多いため、STL読み込み状況に応じてどちらかを初期展開する。
     // それ以外の区分は折りたたんでおき、縦に長くなりがちな画面を見渡しやすくする。
     const [expanded, setExpanded] = useState<Record<SectionKey, boolean>>(() => {
@@ -556,24 +556,9 @@ const CamTab = (props: CamTabProps) => {
                 <Typography variant="h6">Gコード保存</Typography>
             </AccordionSummary>
             <AccordionDetails>
-                <NumberField
-                    label="送り速度 (mm/min)"
-                    value={props.feedRate}
-                    onChange={props.setFeedRate}
-                    validate={(v) => (v <= 0 ? '0より大きい値を入力してください' : undefined)}
-                />
-                <NumberField
-                    label="主軸回転数 (RPM)"
-                    value={props.rpm}
-                    onChange={props.setRpm}
-                    validate={(v) => (v <= 0 ? '0より大きい値を入力してください' : undefined)}
-                />
-                <NumberField
-                    label="切り込み深さ (mm)"
-                    value={props.stepDown}
-                    onChange={props.setStepDown}
-                    forceSign="negative"
-                />
+                <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+                    送り速度・回転数・切り込み深さは、保存ボタンを押した後の確認画面で設定します。
+                </Typography>
                 {props.pathStats ? (
                     <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
                         移動距離: {formatDistanceMm(props.pathStats.totalDistanceMm)}　／　加工時間(概算): {formatDurationSec(props.pathStats.timeSec)}
@@ -584,7 +569,7 @@ const CamTab = (props: CamTabProps) => {
                     </Typography>
                 )}
                 <Box sx={{ display: 'flex', gap: 1 }}>
-                    <Button variant="contained" onClick={() => props.handleSaveGcode()}>Gコード保存</Button>
+                    <Button variant="contained" onClick={() => setGcodeConfirm('save')}>Gコード保存</Button>
                     <Button variant="contained" color="secondary" onClick={() => setGcodeConfirm('transfer')}>
                         CNCへ転送
                     </Button>
@@ -679,6 +664,7 @@ const CamTab = (props: CamTabProps) => {
                 confirmLabel={
                     gcodeConfirm === 'transfer' ? 'CNCへ転送'
                     : gcodeConfirm === 'drill' ? 'Gコード生成'
+                    : gcodeConfirm === 'save' ? 'Gコード保存'
                     : 'パス生成 + Gコード保存'
                 }
                 message={
@@ -745,7 +731,7 @@ const CamTab = (props: CamTabProps) => {
                                 validate={(v) => (v <= 0 ? '0より大きい値を入力してください' : undefined)}
                             />
                         )}
-                        {gcodeConfirm === 'transfer' && props.pathStats && (
+                        {(gcodeConfirm === 'transfer' || gcodeConfirm === 'save') && props.pathStats && (
                             <Typography variant="body2" color="text.secondary">
                                 移動距離: {formatDistanceMm(props.pathStats.totalDistanceMm)}　／　加工時間(概算): {formatDurationSec(props.pathStats.timeSec)}
                             </Typography>
@@ -757,6 +743,8 @@ const CamTab = (props: CamTabProps) => {
                     setGcodeConfirm(null);
                     if (kind === 'drill') {
                         props.handleGenerateDrillGcode();
+                    } else if (kind === 'save') {
+                        props.handleSaveGcode().then(() => setGcodeSaved(true));
                     } else if (kind === 'contour') {
                         props.handleGenerateContour().then(() => setGcodeSaved(true));
                     } else if (kind === 'pocket') {
