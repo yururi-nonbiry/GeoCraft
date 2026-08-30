@@ -215,6 +215,13 @@ const CncTab = (props: CncTabProps) => {
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
                         <Typography variant="h6">マシン設定</Typography>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Tooltip title="ポート一覧を更新">
+                                <span>
+                                    <IconButton size="small" onClick={props.handleRefreshPorts} disabled={props.isConnected}>
+                                        <Refresh />
+                                    </IconButton>
+                                </span>
+                            </Tooltip>
                             {!props.isConnected ? (
                                 <Tooltip title="接続">
                                     <IconButton size="small" color="primary" onClick={props.handleConnect}>
@@ -247,9 +254,6 @@ const CncTab = (props: CncTabProps) => {
                             ))}
                         </Select>
                     </FormControl>
-                </Paper>
-                <Paper sx={{ p: 2, mb: 2 }}>
-                    <Typography variant="h6" gutterBottom>CNC 接続</Typography>
                     <FormControl fullWidth margin="normal" size="small" disabled={props.isConnected}>
                         <InputLabel>ポート</InputLabel>
                         <Select value={props.selectedPort} label="ポート" onChange={(e) => props.setSelectedPort(e.target.value as string)}>
@@ -265,14 +269,9 @@ const CncTab = (props: CncTabProps) => {
                         margin="normal"
                         disabled={props.isConnected}
                     />
-                    <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
-                        <Button variant="outlined" onClick={props.handleRefreshPorts} disabled={props.isConnected} startIcon={<Refresh />}>更新</Button>
-                        {!props.isConnected ? (
-                            <Button variant="contained" onClick={props.handleConnect} startIcon={<Link />}>接続</Button>
-                        ) : (
-                            <Button variant="contained" color="secondary" onClick={props.handleDisconnect} startIcon={<LinkOff />}>切断</Button>
-                        )}
-                    </Box>
+                </Paper>
+                <Paper sx={{ p: 2, mb: 2 }}>
+                    <Typography variant="h6" gutterBottom>通信ログ</Typography>
                     <TextareaAutosize
                         readOnly
                         minRows={5}
