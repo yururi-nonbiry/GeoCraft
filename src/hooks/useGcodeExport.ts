@@ -16,6 +16,7 @@ type UseGcodeExportArgs = {
   rpm: number;
   machine: MachineGcodeFields;
   stockThickness: number;
+  confirmDepthExceedsStock: (depth: number, stockThickness: number) => Promise<boolean>;
   onNoTransferToolpaths: () => void;
   setGcode: (gcode: string) => void;
   setGcodeStatus: (status: 'idle') => void;
@@ -39,14 +40,9 @@ const computeMaxCutDepth = (paths: ToolpathSegment[], stepDown: number): number 
   return hasZ ? maxDepth : Math.abs(stepDown);
 };
 
-// 切り込み深さが材料厚みを超える場合、テーブルや治具に接触する恐れがあることを警告し、
-// ユーザーが承知した場合のみ続行させる。
-const confirmDepthWithinStock = (depth: number, stockThickness: number): boolean => {
-  if (depth <= stockThickness + 1e-6) return true;
-  return window.confirm(
-    `切り込み深さ(${depth.toFixed(2)}mm)が材料厚み(${stockThickness.toFixed(2)}mm)を超えています。テーブルや治具に接触する恐れがあります。続行しますか？`
-  );
-};
+// 切り込み深さが材料厚みを超えるかどうかを判定する。超える場合のみ呼び出し側で
+// confirmDepthExceedsStock (モーダル確認) を呼ばせる。
+const exceedsStockDepth = (depth: number, stockThickness: number): boolean => depth > stockThickness + 1e-6;
 
 // ドリル/輪郭・ポケット/3D加工パスのGコード出力(ファイル保存・実機転送)を担う。
 // C#ブリッジ呼び出しの成功/失敗判定・アラート表示のパターンが3ハンドラで共通のため
@@ -59,6 +55,7 @@ export const useGcodeExport = ({
   rpm,
   machine,
   stockThickness,
+  confirmDepthExceedsStock,
   onNoTransferToolpaths,
   setGcode,
   setGcodeStatus,
@@ -89,7 +86,8 @@ export const useGcodeExport = ({
 
   const handleGenerateDrillGcode = async () => {
     if (!geometry || !geometry.drill_points || geometry.drill_points.length === 0) return alert('Gコードを生成するためのドリル点がありません。');
-    if (!confirmDepthWithinStock(Math.abs(machine.stepDown), stockThickness)) return;
+    const drillDepth = Math.abs(machine.stepDown);
+    if (exceedsStockDepth(drillDepth, stockThickness) && !(await confirmDepthExceedsStock(drillDepth, stockThickness))) return;
     const result = await runGcodeAction(
       () => api.generateDrillGcode({ drillPoints: geometry.drill_points, ...buildGcodeParams(), peckQ: machine.peckQ }),
       'Gコードの保存に失敗しました'
@@ -100,7 +98,8 @@ export const useGcodeExport = ({
   const handleSaveGcode = async () => {
     if (!toolpaths || toolpaths.length === 0) return alert('保存するツールパスがありません。');
     const effectiveToolpaths = getEffectiveToolpaths(toolpaths);
-    if (!confirmDepthWithinStock(computeMaxCutDepth(effectiveToolpaths ?? toolpaths, machine.stepDown), stockThickness)) return;
+    const saveDepth = computeMaxCutDepth(effectiveToolpaths ?? toolpaths, machine.stepDown);
+    if (exceedsStockDepth(saveDepth, stockThickness) && !(await confirmDepthExceedsStock(saveDepth, stockThickness))) return;
     const result = await runGcodeAction(
       () => api.generateGcode({ toolpaths: effectiveToolpaths, ...buildGcodeParams() }),
       'Gコードの保存に失敗しました'
@@ -119,7 +118,8 @@ export const useGcodeExport = ({
     const tEffective1 = performance.now();
     console.log(`[transfer] getEffectiveToolpaths: ${(tEffective1 - tEffective0).toFixed(1)}ms, segments=${effectiveToolpaths?.length ?? 0}`);
 
-    if (!confirmDepthWithinStock(computeMaxCutDepth(effectiveToolpaths ?? toolpaths, machine.stepDown), stockThickness)) return false;
+    const transferDepth = computeMaxCutDepth(effectiveToolpaths ?? toolpaths, machine.stepDown);
+    if (exceedsStockDepth(transferDepth, stockThickness) && !(await confirmDepthExceedsStock(transferDepth, stockThickness))) return false;
 
     const tCall0 = performance.now();
     const result = await runGcodeAction(

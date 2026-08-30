@@ -327,6 +327,16 @@ const App = () => {
   const [projectLoadedPath, setProjectLoadedPath] = useState<string | null>(null);
   const [projectSavedPath, setProjectSavedPath] = useState<string | null>(null);
   const [isNoTransferToolpathDialogOpen, setIsNoTransferToolpathDialogOpen] = useState(false);
+  const [depthWarning, setDepthWarning] = useState<{ depth: number; stockThickness: number; resolve: (proceed: boolean) => void } | null>(null);
+
+  // 切り込み深さが材料厚みを超える場合にモーダルで警告し、ユーザーの選択をPromiseで返す。
+  const confirmDepthExceedsStock = (depth: number, thickness: number): Promise<boolean> =>
+    new Promise((resolve) => setDepthWarning({ depth, stockThickness: thickness, resolve }));
+
+  const resolveDepthWarning = (proceed: boolean) => {
+    depthWarning?.resolve(proceed);
+    setDepthWarning(null);
+  };
 
   // シリアル接続/ジョグ/主軸/Grbl設定/G-code送信制御など、CNC機械との通信に関するstateとhandlerはここに集約
   const cnc = useCncConnection();
@@ -621,6 +631,7 @@ const App = () => {
     rpm,
     machine: currentMachine,
     stockThickness,
+    confirmDepthExceedsStock,
     onNoTransferToolpaths: () => setIsNoTransferToolpathDialogOpen(true),
     setGcode: cnc.setGcode,
     setGcodeStatus: cnc.setGcodeStatus,
@@ -1172,6 +1183,19 @@ const App = () => {
         </DialogContent>
         <DialogActions>
           <Button variant="contained" onClick={() => setIsNoTransferToolpathDialogOpen(false)}>OK</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={depthWarning !== null} onClose={() => resolveDepthWarning(false)}>
+        <DialogTitle>切り込み深さが材料厚みを超えています</DialogTitle>
+        <DialogContent dividers>
+          <Typography>
+            切り込み深さ({depthWarning?.depth.toFixed(2)}mm)が材料厚み({depthWarning?.stockThickness.toFixed(2)}mm)を超えています。テーブルや治具に接触する恐れがあります。続行しますか？
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => resolveDepthWarning(false)}>キャンセル</Button>
+          <Button variant="contained" color="warning" onClick={() => resolveDepthWarning(true)}>続行</Button>
         </DialogActions>
       </Dialog>
 
