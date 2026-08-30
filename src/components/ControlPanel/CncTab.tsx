@@ -20,7 +20,8 @@ import {
 } from '@mui/material';
 import { Refresh, Link, LinkOff, PlayArrow, Pause, Stop, Settings, LockOpen, RestartAlt, VerticalAlignBottom } from '@mui/icons-material';
 import { MachineSetting, SerialPortInfo } from '../../types';
-import { NumberField } from './shared';
+import { NumberField, formatDurationSec } from './shared';
+import { estimateGcodeTime } from '../../gcodeTimeEstimate';
 
 export interface CncTabProps {
     isConnected: boolean;
@@ -179,6 +180,16 @@ const CncTab = (props: CncTabProps) => {
             isGcodeTruncated: true,
         };
     }, [props.gcode]);
+
+    // 送信中/一時停止中に全加工時間の目安と残り時間を表示するための見積もり。G-code本文の
+    // パース(移動距離とF値から算出)はテキストが変わったときだけ行い、進捗更新のたびの
+    // 再計算は避ける。gcodeProgress.sent はバックエンド側で空行/コメント行も含めてカウント
+    // されており(SendNextLineのスキップ処理)、cumulativeSecのインデックスもそれに合わせてある。
+    const gcodeTimeEstimate = useMemo(() => estimateGcodeTime(props.gcode), [props.gcode]);
+    const elapsedEstimateSec = props.gcodeProgress.sent > 0
+        ? gcodeTimeEstimate.cumulativeSec[Math.min(props.gcodeProgress.sent, gcodeTimeEstimate.cumulativeSec.length) - 1] ?? gcodeTimeEstimate.totalSec
+        : 0;
+    const remainingEstimateSec = Math.max(0, gcodeTimeEstimate.totalSec - elapsedEstimateSec);
 
     return (
         <>
@@ -349,6 +360,12 @@ const CncTab = (props: CncTabProps) => {
                         <Typography variant="body2">状態: {{ 'idle': '待機中', 'sending': '送信中', 'paused': '一時停止中', 'finished': '完了', 'error': 'エラー' }[props.gcodeStatus] || props.gcodeStatus}</Typography>
                         <LinearProgress variant="determinate" value={(props.gcodeProgress.total > 0 ? (props.gcodeProgress.sent / props.gcodeProgress.total) * 100 : 0)} />
                         <Typography variant="body2" align="right">{props.gcodeProgress.sent}/{props.gcodeProgress.total}</Typography>
+                        <Typography variant="body2" color="text.secondary">
+                            全加工時間(目安): {formatDurationSec(gcodeTimeEstimate.totalSec)}
+                            {(props.gcodeStatus === 'sending' || props.gcodeStatus === 'paused') && (
+                                <>　／　残り時間(目安): {formatDurationSec(remainingEstimateSec)}</>
+                            )}
+                        </Typography>
                     </Box>
                 </Paper>
                 )}

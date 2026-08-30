@@ -28,21 +28,11 @@ import {
 import { Settings, InfoOutlined, ExpandMore } from '@mui/icons-material';
 import { MachineSetting, MaterialSetting, ToolSetting, WorkOrigin, Geometry, ToolpathSegment } from '../../types';
 import { ToolpathStats } from '../../toolpathStats';
-import { VisibilityToggles, NumberField, ConfirmDialog } from './shared';
+import { VisibilityToggles, NumberField, ConfirmDialog, formatDurationSec } from './shared';
 
 function formatDistanceMm(mm: number): string {
     if (mm >= 1000) return `${(mm / 1000).toFixed(2)} m`;
     return `${mm.toFixed(1)} mm`;
-}
-
-function formatDurationSec(sec: number): string {
-    if (!isFinite(sec) || sec < 0) return '---';
-    const total = Math.round(sec);
-    const h = Math.floor(total / 3600);
-    const m = Math.floor((total % 3600) / 60);
-    const s = total % 60;
-    const pad = (n: number) => n.toString().padStart(2, '0');
-    return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
 }
 
 export interface CamTabProps {

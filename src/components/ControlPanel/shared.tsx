@@ -35,6 +35,17 @@ export const TabPanel = (props: { children?: React.ReactNode; index: number; val
     );
 };
 
+// 秒数を "m:ss" / "h:mm:ss" 表記に整形する。CAM(加工時間概算)とCNC(残り時間表示)で共用。
+export function formatDurationSec(sec: number): string {
+    if (!isFinite(sec) || sec < 0) return '---';
+    const total = Math.round(sec);
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = total % 60;
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+}
+
 export type VisibilityItem = { label: string; checked: boolean; onChange: (checked: boolean) => void };
 
 // 3Dビュー上のオブジェクト(材料/加工後形状/パスなど)の表示・非表示チェックボックス列。
