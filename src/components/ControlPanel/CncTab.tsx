@@ -19,17 +19,11 @@ import {
     ToggleButtonGroup,
 } from '@mui/material';
 import { Refresh, Link, LinkOff, PlayArrow, Pause, Stop, Settings, LockOpen, RestartAlt, VerticalAlignBottom } from '@mui/icons-material';
-import { MachineSetting, SerialPortInfo } from '../../types';
 import { NumberField, formatDurationSec } from './shared';
 import { estimateGcodeTime } from '../../gcodeTimeEstimate';
 
 export interface CncTabProps {
     isConnected: boolean;
-    selectedPort: string;
-    setSelectedPort: (val: string) => void;
-    serialPorts: SerialPortInfo[];
-    baudRate: number;
-    setBaudRate: (val: number) => void;
     handleRefreshPorts: () => void;
     handleConnect: () => void;
     handleDisconnect: () => void;
@@ -60,9 +54,6 @@ export interface CncTabProps {
     spindleOn: boolean;
     handleSpindleOn: () => void;
     handleSpindleOff: () => void;
-    machineSettings: MachineSetting[];
-    selectedMachineId: number | '';
-    setSelectedMachineId: (val: number) => void;
     onOpenMachineSettings: () => void;
     onOpenSetZeroConfirm: () => void;
 }
@@ -242,33 +233,6 @@ const CncTab = (props: CncTabProps) => {
                             </Tooltip>
                         </Box>
                     </Box>
-                    <FormControl fullWidth margin="normal" size="small">
-                        <InputLabel>加工機</InputLabel>
-                        <Select
-                            value={props.selectedMachineId}
-                            label="加工機"
-                            onChange={(e) => props.setSelectedMachineId(e.target.value as number)}
-                        >
-                            {props.machineSettings.map(machine => (
-                                <MenuItem key={machine.id} value={machine.id}>{machine.name}</MenuItem>
-                            ))}
-                        </Select>
-                    </FormControl>
-                    <FormControl fullWidth margin="normal" size="small" disabled={props.isConnected}>
-                        <InputLabel>ポート</InputLabel>
-                        <Select value={props.selectedPort} label="ポート" onChange={(e) => props.setSelectedPort(e.target.value as string)}>
-                            {props.serialPorts.map(port => <MenuItem key={port.path} value={port.path}>{port.path}</MenuItem>)}
-                        </Select>
-                    </FormControl>
-                    <NumberField
-                        label="ボーレート"
-                        value={props.baudRate}
-                        onChange={props.setBaudRate}
-                        min={1}
-                        validate={(val) => (!Number.isInteger(val) ? '整数を入力してください' : undefined)}
-                        margin="normal"
-                        disabled={props.isConnected}
-                    />
                 </Paper>
                 <Paper sx={{ p: 2, mb: 2 }}>
                     <Typography variant="h6" gutterBottom>通信ログ</Typography>

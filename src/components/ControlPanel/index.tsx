@@ -274,11 +274,6 @@ const ControlPanel = (props: ControlPanelProps) => {
                 <TabPanel value={activeTab} index={1}>
                     <CncTab
                         isConnected={props.isConnected}
-                        selectedPort={props.selectedPort}
-                        setSelectedPort={props.setSelectedPort}
-                        serialPorts={props.serialPorts}
-                        baudRate={props.baudRate}
-                        setBaudRate={props.setBaudRate}
                         handleRefreshPorts={props.handleRefreshPorts}
                         handleConnect={props.handleConnect}
                         handleDisconnect={props.handleDisconnect}
@@ -309,9 +304,6 @@ const ControlPanel = (props: ControlPanelProps) => {
                         spindleOn={props.spindleOn}
                         handleSpindleOn={props.handleSpindleOn}
                         handleSpindleOff={props.handleSpindleOff}
-                        machineSettings={props.machineSettings}
-                        selectedMachineId={props.selectedMachineId}
-                        setSelectedMachineId={props.setSelectedMachineId}
                         onOpenMachineSettings={() => setIsMachineSettingsOpen(true)}
                         onOpenSetZeroConfirm={() => setIsSetZeroConfirmOpen(true)}
                     />
@@ -351,6 +343,34 @@ const ControlPanel = (props: ControlPanelProps) => {
                     <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
                         名称・加工範囲・G-codeヘッダー/フッターなどその他の設定は、上部メニューの「設定」画面で編集できます。
                     </Typography>
+                    <FormControl fullWidth margin="normal" size="small">
+                        <InputLabel>加工機</InputLabel>
+                        <Select
+                            value={props.selectedMachineId}
+                            label="加工機"
+                            onChange={(e) => props.setSelectedMachineId(e.target.value as number)}
+                        >
+                            {props.machineSettings.map(machine => (
+                                <MenuItem key={machine.id} value={machine.id}>{machine.name}</MenuItem>
+                            ))}
+                        </Select>
+                    </FormControl>
+                    <FormControl fullWidth margin="normal" size="small" disabled={props.isConnected}>
+                        <InputLabel>ポート</InputLabel>
+                        <Select value={props.selectedPort} label="ポート" onChange={(e) => props.setSelectedPort(e.target.value as string)}>
+                            {props.serialPorts.map(port => <MenuItem key={port.path} value={port.path}>{port.path}</MenuItem>)}
+                        </Select>
+                    </FormControl>
+                    <NumberField
+                        label="ボーレート"
+                        value={props.baudRate}
+                        onChange={props.setBaudRate}
+                        min={1}
+                        validate={(val) => (!Number.isInteger(val) ? '整数を入力してください' : undefined)}
+                        size="small"
+                        disabled={props.isConnected}
+                    />
+                    <Divider sx={{ mt: 2, mb: 1 }} />
                     <NumberField
                         label="安全高さ (mm)"
                         value={props.safeZ}
