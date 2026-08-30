@@ -37,6 +37,7 @@ export type GcodeGenerationParams = {
     toolpaths?: unknown;
     drillPoints?: unknown;
     feedRate: number;
+    rpm?: number;
     safeZ: number;
     stepDown: number;
     peckQ?: number;

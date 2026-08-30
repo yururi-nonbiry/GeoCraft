@@ -11,6 +11,7 @@ namespace GeoCraft.Desktop.Services
         {
             public List<ToolpathSegmentDto> toolpaths = new List<ToolpathSegmentDto>();
             public double feedRate;
+            public double? rpm;
             public double safeZ;
             public double stepDown;
             public double? retractZ;
@@ -40,10 +41,11 @@ namespace GeoCraft.Desktop.Services
                 double safeZ = p.safeZ;
                 double stepDown = p.stepDown;
                 double retractZ = p.retractZ ?? 2.0;
+                int spindleSpeed = (int)(p.rpm ?? 1000);
 
                 GcodeWriter writer = new GcodeWriter();
                 writer.WriteHeader("G90 G21 G17");
-                writer.SpindleOn(1000);
+                writer.SpindleOn(spindleSpeed);
                 writer.RapidMove(z: safeZ);
 
                 double[]? currentXy = null;
@@ -125,6 +127,7 @@ namespace GeoCraft.Desktop.Services
         {
             public List<double[]> drillPoints = new List<double[]>();
             public double feedRate;
+            public double? rpm;
             public double safeZ;
             public double stepDown;
             public double? retractZ;
@@ -148,10 +151,11 @@ namespace GeoCraft.Desktop.Services
                 double targetZ = p.stepDown;
                 double retractZ = p.retractZ ?? 2.0;
                 double peckDepth = Math.Abs(p.peckQ ?? 0.0);
+                int spindleSpeed = (int)(p.rpm ?? 1000);
 
                 GcodeWriter writer = new GcodeWriter();
                 writer.WriteHeader("G90 G21 G17");
-                writer.SpindleOn(1000);
+                writer.SpindleOn(spindleSpeed);
                 writer.RapidMove(z: safeZ);
 
                 foreach (var point in points)

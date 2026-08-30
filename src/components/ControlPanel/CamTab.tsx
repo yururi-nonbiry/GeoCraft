@@ -98,6 +98,8 @@ export interface CamTabProps {
     handleGenerateDrillGcode: () => void;
     feedRate: number;
     setFeedRate: (val: number) => void;
+    rpm: number;
+    setRpm: (val: number) => void;
     handleSaveGcode: () => void;
     handleTransferGcodeToCnc: () => Promise<boolean>;
     onGcodeTransferred: () => void;
@@ -514,6 +516,12 @@ const CamTab = (props: CamTabProps) => {
                     label="送り速度 (mm/min)"
                     value={props.feedRate}
                     onChange={props.setFeedRate}
+                    validate={(v) => (v <= 0 ? '0より大きい値を入力してください' : undefined)}
+                />
+                <NumberField
+                    label="主軸回転数 (RPM)"
+                    value={props.rpm}
+                    onChange={props.setRpm}
                     validate={(v) => (v <= 0 ? '0より大きい値を入力してください' : undefined)}
                 />
                 {props.pathStats ? (

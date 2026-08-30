@@ -69,6 +69,8 @@ interface ControlPanelProps {
     handleGenerateDrillGcode: () => void;
     feedRate: number;
     setFeedRate: (val: number) => void;
+    rpm: number;
+    setRpm: (val: number) => void;
     handleSaveGcode: () => void;
     handleTransferGcodeToCnc: () => Promise<boolean>;
     safeZ: number;
@@ -246,6 +248,8 @@ const ControlPanel = (props: ControlPanelProps) => {
                         handleGenerateDrillGcode={props.handleGenerateDrillGcode}
                         feedRate={props.feedRate}
                         setFeedRate={props.setFeedRate}
+                        rpm={props.rpm}
+                        setRpm={props.setRpm}
                         handleSaveGcode={props.handleSaveGcode}
                         handleTransferGcodeToCnc={props.handleTransferGcodeToCnc}
                         onGcodeTransferred={() => setActiveTab(1)}

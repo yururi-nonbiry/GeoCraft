@@ -72,6 +72,7 @@ type ProjectData = {
   sliceHeight: number;
   contourSide: string;
   feedRate: number;
+  rpm?: number;
   processType: 'roughing' | 'finishing';
   stockToLeave: number;
   machineSettings: MachineSetting[];
@@ -291,6 +292,7 @@ const App = () => {
     setPreviewMode(false);
   });
   const [feedRate, setFeedRate] = useState<number>(DEFAULT_MATERIALS[0]?.feedRate ?? 100);
+  const [rpm, setRpm] = useState<number>(DEFAULT_MATERIALS[0]?.rpm ?? 15000);
   const [contourSide, setContourSide] = useState('outer');
   const [materialSettings, setMaterialSettings] = useState<MaterialSetting[]>(DEFAULT_MATERIALS);
   const [selectedMaterialId, setSelectedMaterialId] = useState<number | ''>(DEFAULT_MATERIALS[0]?.id ?? '');
@@ -491,6 +493,7 @@ const App = () => {
         setSelectedToolId('');
         setToolDiameter(0);
         setFeedRate(0);
+        setRpm(0);
         setStockToLeave(0.0);
       }
       return;
@@ -501,6 +504,7 @@ const App = () => {
     const cutSettings = processType === 'roughing' ? selectedTool.roughing : selectedTool.finishing;
     if (cutSettings) {
       setFeedRate(cutSettings.feedRate);
+      setRpm(cutSettings.rpm);
       updateMachineSetting('stepDown', -Math.abs(cutSettings.depthPerPass));
       if (processType === 'roughing') {
         setStockToLeave(selectedTool.finishing.stockToLeave ?? 0.0);
@@ -510,11 +514,17 @@ const App = () => {
     }
   }, [selectedToolId, selectedMachineId, toolSettings, processType]);
 
+  // 材料選択時は工具の加工条件を上書きしないよう、主軸回転数のみ材料側の推奨値を適用する
+  // (送り速度・切り込み量は工具・加工工程(粗/仕上げ)ごとに大きく変わるため工具側を優先する)。
   useEffect(() => {
     const selectedMaterial = materialSettings.find((material) => material.id === selectedMaterialId);
-    if (!selectedMaterial && materialSettings.length > 0 && selectedMaterialId !== materialSettings[0].id) {
-      setSelectedMaterialId(materialSettings[0].id);
+    if (!selectedMaterial) {
+      if (materialSettings.length > 0 && selectedMaterialId !== materialSettings[0].id) {
+        setSelectedMaterialId(materialSettings[0].id);
+      }
+      return;
     }
+    setRpm(selectedMaterial.rpm);
   }, [selectedMaterialId, materialSettings]);
 
   useEffect(() => {
@@ -607,6 +617,7 @@ const App = () => {
     toolpaths,
     getEffectiveToolpaths,
     feedRate,
+    rpm,
     machine: currentMachine,
     onNoTransferToolpaths: () => setIsNoTransferToolpathDialogOpen(true),
     setGcode: cnc.setGcode,
@@ -627,6 +638,7 @@ const App = () => {
         sliceHeight,
         contourSide,
         feedRate,
+        rpm,
         processType,
         stockToLeave,
         machineSettings,
@@ -671,6 +683,7 @@ const App = () => {
     if (typeof project.sliceHeight === 'number') setSliceHeight(project.sliceHeight);
     if (project.contourSide) setContourSide(project.contourSide);
     if (typeof project.feedRate === 'number') setFeedRate(project.feedRate);
+    if (typeof project.rpm === 'number') setRpm(project.rpm);
     if (project.processType) setProcessType(project.processType);
     if (typeof project.stockToLeave === 'number') setStockToLeave(project.stockToLeave);
 
@@ -1059,6 +1072,8 @@ const App = () => {
             handleGenerateDrillGcode={handleGenerateDrillGcode}
             feedRate={feedRate}
             setFeedRate={setFeedRate}
+            rpm={rpm}
+            setRpm={setRpm}
             handleSaveGcode={handleSaveGcode}
             handleTransferGcodeToCnc={handleTransferGcodeToCnc}
             safeZ={currentMachine.safeZ}

@@ -13,6 +13,7 @@ type UseGcodeExportArgs = {
   toolpaths: ToolpathSegment[] | null;
   getEffectiveToolpaths: (paths: ToolpathSegment[] | null) => ToolpathSegment[] | null;
   feedRate: number;
+  rpm: number;
   machine: MachineGcodeFields;
   onNoTransferToolpaths: () => void;
   setGcode: (gcode: string) => void;
@@ -27,6 +28,7 @@ export const useGcodeExport = ({
   toolpaths,
   getEffectiveToolpaths,
   feedRate,
+  rpm,
   machine,
   onNoTransferToolpaths,
   setGcode,
@@ -35,6 +37,7 @@ export const useGcodeExport = ({
   // Shared machine-derived fields every G-code generation call needs.
   const buildGcodeParams = () => ({
     feedRate,
+    rpm,
     safeZ: machine.safeZ,
     stepDown: machine.stepDown,
     retractZ: machine.retractZ,
