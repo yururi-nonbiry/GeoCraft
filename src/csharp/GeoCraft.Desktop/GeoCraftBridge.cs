@@ -61,6 +61,13 @@ namespace GeoCraft.Desktop
         private bool _homed = false;
         private bool _awaitingHomeConfirm = false;
 
+        // Set by ProbeZ while a G38.2 probe move is in flight; consumed by the next
+        // "ok"/"error"/ALARM line to decide whether to apply the plate-thickness offset
+        // and retract, or to report a probe failure.
+        private bool _awaitingProbeConfirm = false;
+        private double _probeZOffset = 0;
+        private double _probeRetract = 5;
+
         public GeoCraftBridge(MainWindow mainWindow)
         {
             _mainWindow = mainWindow;
@@ -139,6 +146,24 @@ namespace GeoCraft.Desktop
                         Broadcast("serial-data", "[安全] 機械原点の設定に失敗しました。安全制限は無効のままです。");
                     }
                 }
+                if (_awaitingProbeConfirm)
+                {
+                    _awaitingProbeConfirm = false;
+                    if (line == "ok")
+                    {
+                        // The probe move stopped exactly at the trigger point, so the current
+                        // position becomes the new work Z origin, offset by the plate thickness.
+                        _serialService.Write(GrblCommands.SetWorkZ(_probeZOffset));
+                        _serialService.Write(GrblCommands.RetractZ(_probeRetract));
+                        Broadcast("serial-data", "[プローブ] Z軸原点を設定しました。");
+                        Broadcast("probe-result", new { success = true });
+                    }
+                    else
+                    {
+                        Broadcast("serial-data", "[プローブ] センサーに接触しないまま移動量の上限に達しました。Z軸原点は変更していません。");
+                        Broadcast("probe-result", new { success = false });
+                    }
+                }
                 // An "ok"/"error" acknowledges the oldest line still in Grbl's RX buffer,
                 // regardless of whether streaming is currently paused — the buffer accounting
                 // must stay accurate so a subsequent Resume knows how much room is really free.
@@ -155,6 +180,12 @@ namespace GeoCraft.Desktop
             {
                 _homed = false;
                 _awaitingHomeConfirm = false;
+                if (_awaitingProbeConfirm)
+                {
+                    _awaitingProbeConfirm = false;
+                    Broadcast("serial-data", "[プローブ] アラームが発生したため中止しました。配線を確認し、必要ならアラーム解除($X)を行ってください。");
+                    Broadcast("probe-result", new { success = false });
+                }
                 Broadcast("serial-data", "[安全] アラームにより原点情報が無効になりました。再度「機械原点リセット」を行ってください。");
             }
             else if (line.StartsWith("$") && line.Contains("="))
@@ -477,6 +508,7 @@ namespace GeoCraft.Desktop
                 StopStatusPolling();
                 _homed = false;
                 _awaitingHomeConfirm = false;
+                _awaitingProbeConfirm = false;
                 return _serialService.Disconnect();
             });
         }
@@ -589,6 +621,7 @@ namespace GeoCraft.Desktop
             // before the soft limit can trust MPos again.
             _homed = false;
             _awaitingHomeConfirm = false;
+            _awaitingProbeConfirm = false;
             _serialService.Write(GrblCommands.SoftReset);
             BroadcastGcodeProgress("idle");
             // A soft reset halts the spindle unconditionally, so the frontend's
@@ -626,6 +659,26 @@ namespace GeoCraft.Desktop
                  _homed = false;
                  _awaitingHomeConfirm = true;
                  _serialService.Write("$H\n");
+             });
+        }
+
+        // Touch-plate Z probe: drives down (relative move) until the probe input
+        // triggers, then sets the current position to plateThickness in the work
+        // Z coordinate and retracts. See the "ok"/ALARM handling in
+        // ProcessReceivedLine for how the result is applied.
+        public void ProbeZ(double feedRate, double maxTravel, double plateThickness, double retract) {
+             ExecuteSafeVoid(() => {
+                 double travel = Math.Abs(maxTravel);
+                 if (_homed && _lastMpos[2] - travel < -1e-3)
+                 {
+                     Broadcast("serial-data", "[安全] Z軸が原点(MPos=0)を下回るためプローブを中止しました。移動量の上限を確認してください。");
+                     Broadcast("probe-result", new { success = false });
+                     return;
+                 }
+                 _probeZOffset = plateThickness;
+                 _probeRetract = Math.Abs(retract);
+                 _awaitingProbeConfirm = true;
+                 _serialService.Write(GrblCommands.ProbeZ(feedRate, -travel));
              });
         }
 

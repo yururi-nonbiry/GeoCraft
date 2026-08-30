@@ -10,6 +10,12 @@ export type GcodeStatus = 'idle' | 'sending' | 'paused' | 'finished' | 'error';
 const CONSOLE_LOG_FLUSH_MS = 100;
 const CONSOLE_LOG_MAX_LINES = 500;
 
+// Zプローブ(タッチプレート)の送り速度・最大移動量・退避量。プレート厚みだけは
+// 使用するプレートによって変わるためUIで都度入力させ、これらは固定値としている。
+const PROBE_FEED_RATE = 100;
+const PROBE_MAX_TRAVEL = 30;
+const PROBE_RETRACT = 5;
+
 type MachinePosition = {
   wpos: { x: number; y: number; z: number };
   mpos: { x: number; y: number; z: number };
@@ -45,6 +51,8 @@ export const useCncConnection = () => {
   const [spindleSpeed, setSpindleSpeed] = useState(1000);
   const [spindleOn, setSpindleOn] = useState(false);
   const [enableMachineOriginReset, setEnableMachineOriginReset] = useState(false);
+  const [probePlateThickness, setProbePlateThickness] = useState(10);
+  const [probeStatus, setProbeStatus] = useState<'idle' | 'probing' | 'success' | 'error'>('idle');
   const [machinePosition, setMachinePosition] = useState<MachinePosition>({
     wpos: { x: 0, y: 0, z: 0 },
     mpos: { x: 0, y: 0, z: 0 },
@@ -152,6 +160,9 @@ export const useCncConnection = () => {
         return next;
       });
     });
+    const removeProbeResultListener = api.onProbeResult((result) => {
+      setProbeStatus(result.success ? 'success' : 'error');
+    });
 
     return () => {
       if (consoleFlushTimerRef.current != null) {
@@ -168,6 +179,7 @@ export const useCncConnection = () => {
       removeSpindleStatusListener();
       removeStatusListener();
       removeGrblSettingListener();
+      removeProbeResultListener();
     };
   }, []);
 
@@ -205,6 +217,13 @@ export const useCncConnection = () => {
   const handleResetMachineOrigin = () => {
     if (isConnected) {
       api.resetMachineOrigin();
+    }
+  };
+
+  const handleProbeZ = () => {
+    if (isConnected) {
+      setProbeStatus('probing');
+      api.probeZ(PROBE_FEED_RATE, PROBE_MAX_TRAVEL, probePlateThickness, PROBE_RETRACT);
     }
   };
 
@@ -305,6 +324,9 @@ export const useCncConnection = () => {
     spindleOn,
     enableMachineOriginReset,
     setEnableMachineOriginReset,
+    probePlateThickness,
+    setProbePlateThickness,
+    probeStatus,
     machinePosition,
     grblSettings,
     setGrblSettings,
@@ -315,6 +337,7 @@ export const useCncConnection = () => {
     handleJog,
     handleSetZero,
     handleResetMachineOrigin,
+    handleProbeZ,
     handleSpindleOn,
     handleSpindleOff,
     handleRequestGrblSettings,

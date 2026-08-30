@@ -104,6 +104,10 @@ interface ControlPanelProps {
     enableMachineOriginReset: boolean;
     setEnableMachineOriginReset: (val: boolean) => void;
     handleResetMachineOrigin: () => void;
+    probePlateThickness: number;
+    setProbePlateThickness: (val: number) => void;
+    probeStatus: 'idle' | 'probing' | 'success' | 'error';
+    handleProbeZ: () => void;
     handleUnlockAlarm: () => void;
     spindleSpeed: number;
     setSpindleSpeed: (val: number) => void;
@@ -161,6 +165,7 @@ const ControlPanel = (props: ControlPanelProps) => {
     const [isMachineSettingsOpen, setIsMachineSettingsOpen] = useState(false);
     const [isToolSettingsOpen, setIsToolSettingsOpen] = useState(false);
     const [isSetZeroConfirmOpen, setIsSetZeroConfirmOpen] = useState(false);
+    const [isProbeConfirmOpen, setIsProbeConfirmOpen] = useState(false);
     const [grblWriteConfirmOpen, setGrblWriteConfirmOpen] = useState(false);
     const isGrblValid = props.grblSettings.stepsX > 0 && props.grblSettings.stepsY > 0 && props.grblSettings.stepsZ > 0;
 
@@ -281,6 +286,11 @@ const ControlPanel = (props: ControlPanelProps) => {
                         handleJog={props.handleJog}
                         enableMachineOriginReset={props.enableMachineOriginReset}
                         handleResetMachineOrigin={props.handleResetMachineOrigin}
+                        probePlateThickness={props.probePlateThickness}
+                        setProbePlateThickness={props.setProbePlateThickness}
+                        probeStatus={props.probeStatus}
+                        handleProbeZ={props.handleProbeZ}
+                        onOpenProbeConfirm={() => setIsProbeConfirmOpen(true)}
                         handleUnlockAlarm={props.handleUnlockAlarm}
                         spindleSpeed={props.spindleSpeed}
                         setSpindleSpeed={props.setSpindleSpeed}
@@ -561,6 +571,36 @@ const ControlPanel = (props: ControlPanelProps) => {
                         onClick={() => {
                             props.handleSetZero();
                             setIsSetZeroConfirmOpen(false);
+                        }}
+                        variant="contained"
+                        color="secondary"
+                    >
+                        実行
+                    </Button>
+                </DialogActions>
+            </Dialog>
+            <Dialog
+                open={isProbeConfirmOpen}
+                onClose={() => setIsProbeConfirmOpen(false)}
+                maxWidth="xs"
+                fullWidth
+            >
+                <DialogTitle>Zプローブ実行の確認</DialogTitle>
+                <DialogContent dividers>
+                    <Typography>
+                        現在位置からZ軸を下降させ、センサーに接触した位置をワークZ座標
+                        {` ${props.probePlateThickness} `}
+                        mm(プレート厚み)として設定します。プローブの真上にセンサーがあることを確認してください。
+                    </Typography>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setIsProbeConfirmOpen(false)}>
+                        キャンセル
+                    </Button>
+                    <Button
+                        onClick={() => {
+                            props.handleProbeZ();
+                            setIsProbeConfirmOpen(false);
                         }}
                         variant="contained"
                         color="secondary"

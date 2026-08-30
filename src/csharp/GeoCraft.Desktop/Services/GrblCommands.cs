@@ -21,5 +21,13 @@ namespace GeoCraft.Desktop.Services
         public static string SetStepsPerMm(int axisSettingId, double steps) => $"${axisSettingId}={steps}\n";
 
         public static string SetDirectionInvertMask(int mask) => $"$3={mask}\n";
+
+        // G38.2: rigid probe move, relative to current position, that alarms out if it
+        // doesn't trigger within travel. travel is negative (probe moves down in Z).
+        public static string ProbeZ(double feedRate, double travel) => $"G91 G38.2 Z{travel} F{feedRate}\n";
+
+        public static string SetWorkZ(double z) => $"G10 L20 P1 Z{z}\n";
+
+        public static string RetractZ(double retract) => $"G91 G0 Z{retract}\nG90\n";
     }
 }

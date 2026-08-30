@@ -16,7 +16,7 @@ import {
     Tooltip,
     Alert,
 } from '@mui/material';
-import { Refresh, Link, LinkOff, PlayArrow, Pause, Stop, Settings, LockOpen, RestartAlt } from '@mui/icons-material';
+import { Refresh, Link, LinkOff, PlayArrow, Pause, Stop, Settings, LockOpen, RestartAlt, VerticalAlignBottom } from '@mui/icons-material';
 import { MachineSetting, SerialPortInfo } from '../../types';
 import { NumberField } from './shared';
 
@@ -46,6 +46,11 @@ export interface CncTabProps {
     handleJog: (axis: 'X' | 'Y' | 'Z', direction: number) => void;
     enableMachineOriginReset: boolean;
     handleResetMachineOrigin: () => void;
+    probePlateThickness: number;
+    setProbePlateThickness: (val: number) => void;
+    probeStatus: 'idle' | 'probing' | 'success' | 'error';
+    handleProbeZ: () => void;
+    onOpenProbeConfirm: () => void;
     handleUnlockAlarm: () => void;
     spindleSpeed: number;
     setSpindleSpeed: (val: number) => void;
@@ -328,6 +333,34 @@ const CncTab = (props: CncTabProps) => {
                     <Grid item xs={4}><Button fullWidth variant="outlined" onClick={() => props.handleJog('Y', -1)}>Y-</Button></Grid>
                     <Grid item xs={4}><Button fullWidth variant="outlined" onClick={() => props.handleJog('Z', -1)}>Z-</Button></Grid>
                 </Grid>
+                <Box sx={{ mt: 1.5, display: 'flex', gap: 1, alignItems: 'flex-start' }}>
+                    <Box sx={{ flex: 1 }}>
+                        <NumberField
+                            label="プレート厚み (mm)"
+                            value={props.probePlateThickness}
+                            onChange={props.setProbePlateThickness}
+                            min={0}
+                            margin="none"
+                            disabled={!props.isConnected}
+                        />
+                    </Box>
+                    <Button
+                        variant="contained"
+                        color="secondary"
+                        onClick={props.onOpenProbeConfirm}
+                        disabled={!props.isConnected || props.probeStatus === 'probing'}
+                        startIcon={<VerticalAlignBottom />}
+                        sx={{ flexShrink: 0, height: 40 }}
+                    >
+                        {props.probeStatus === 'probing' ? 'プローブ中...' : 'Zプローブ'}
+                    </Button>
+                </Box>
+                {props.probeStatus === 'success' && (
+                    <Typography variant="caption" color="success.main">プローブ完了: Z軸原点を設定しました。</Typography>
+                )}
+                {props.probeStatus === 'error' && (
+                    <Typography variant="caption" color="error.main">プローブ失敗: センサーに接触しませんでした。</Typography>
+                )}
                 <Box sx={{ mt: 1.5 }}>
                     <LongPressButton
                         fullWidth

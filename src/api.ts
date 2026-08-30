@@ -134,6 +134,11 @@ class WebView2API implements ElectronAPI {
         this.callBridge('SaveGrblSettings', stepsX, stepsY, stepsZ, invertX, invertY, invertZ);
     }
     onGrblSetting(callback: (setting: { id: number, value: number }) => void) { return this.on('grbl-setting', callback); }
+
+    probeZ(feedRate: number, maxTravel: number, plateThickness: number, retract: number) {
+        this.callBridge('ProbeZ', feedRate, maxTravel, plateThickness, retract);
+    }
+    onProbeResult(callback: (result: { success: boolean }) => void) { return this.on('probe-result', callback); }
 }
 
 // Export singleton

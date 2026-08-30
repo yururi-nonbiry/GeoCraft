@@ -95,4 +95,8 @@ export interface ElectronAPI {
     requestGrblSettings: () => void;
     saveGrblSettings: (stepsX: number, stepsY: number, stepsZ: number, invertX: boolean, invertY: boolean, invertZ: boolean) => void;
     onGrblSetting: (callback: (setting: { id: number, value: number }) => void) => () => void;
+
+    // --- Z Probe (touch plate) ---
+    probeZ: (feedRate: number, maxTravel: number, plateThickness: number, retract: number) => void;
+    onProbeResult: (callback: (result: { success: boolean }) => void) => () => void;
 }
