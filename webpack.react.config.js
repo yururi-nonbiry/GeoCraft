@@ -41,6 +41,14 @@ module.exports = {
     cache: {
         type: 'filesystem',
     },
+    // src/csharp is the separate .NET desktop app project, not TS/JS source. It
+    // must stay out of webpack's (and fork-ts-checker's) watch scope: the C# app's
+    // running WebView2 instance holds an exclusive lock on files under its
+    // bin/.../EBWebView cache, and chokidar recursing into that directory to watch
+    // it crashes the whole dev server with EBUSY when the app is running.
+    watchOptions: {
+        ignored: '**/src/csharp/**',
+    },
     devServer: {
         static: {
             directory: path.join(__dirname, 'dist'),
