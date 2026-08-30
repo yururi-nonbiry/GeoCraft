@@ -64,8 +64,8 @@ export interface CamTabProps {
     setStepover: (val: number) => void;
     contourSide: string;
     setContourSide: (val: string) => void;
-    handleGenerateContour: () => void;
-    handleGeneratePocket: () => void;
+    handleGenerateContour: () => Promise<void>;
+    handleGeneratePocket: () => Promise<void>;
     previewMode: boolean;
     onTogglePreviewMode: () => void;
     stockStlFile: string | null;
@@ -84,7 +84,7 @@ export interface CamTabProps {
     setTargetOffset: (val: { x: number; y: number; z: number }) => void;
     sliceHeight: number;
     setSliceHeight: (val: number) => void;
-    handleGenerate3dPath: () => void;
+    handleGenerate3dPath: () => Promise<void>;
     isGenerating3dPath: boolean;
     path3dProgress: { current: number; total: number };
     retractZ: number;
@@ -116,9 +116,12 @@ type SectionKey = 'origin' | 'cam2d' | 'cam3d' | 'drill' | 'gcode' | 'objects';
 const CamTab = (props: CamTabProps) => {
     const [pendingDelete, setPendingDelete] = useState<{ message: string; onDelete: () => void } | null>(null);
     const [previewOffConfirmOpen, setPreviewOffConfirmOpen] = useState(false);
-    // Gコード生成直前に加工条件(送り速度・回転数・切り込み深さ等)を最終確認・微調整させるためのモーダル。
-    // 対象操作の種類だけ保持し、実際の値はprops経由(feedRate等)でモーダル内から直接編集させる。
-    const [gcodeConfirm, setGcodeConfirm] = useState<'drill' | 'save' | 'transfer' | null>(null);
+    // パス生成(輪郭/ポケット/3D)・ドリルGコード生成・CNC転送の直前に加工条件(工具径関連パラメータ・
+    // 送り速度・回転数・切り込み深さ等)を最終確認・微調整させるためのモーダル。パス生成系は確認後、
+    // パス生成とGコード保存を1回のアクションでまとめて行う(切り込みピッチ等をパス生成時に
+    // 設定できないと後からGコードだけ出し直す二度手間になるため)。対象操作の種類だけ保持し、
+    // 実際の値はprops経由(feedRate等)でモーダル内から直接編集させる。
+    const [gcodeConfirm, setGcodeConfirm] = useState<'contour' | 'pocket' | '3d' | 'drill' | 'transfer' | null>(null);
     // 2.5D加工と3D加工は同時に使わないことが多いため、STL読み込み状況に応じてどちらかを初期展開する。
     // それ以外の区分は折りたたんでおき、縦に長くなりがちな画面を見渡しやすくする。
     const [expanded, setExpanded] = useState<Record<SectionKey, boolean>>(() => {
@@ -381,21 +384,11 @@ const CamTab = (props: CamTabProps) => {
                 <Typography variant="h6">2.5D 加工 (DXF/SVG)</Typography>
             </AccordionSummary>
             <AccordionDetails>
-                <NumberField
-                    label="ステップオーバー (%)"
-                    value={props.stepover * 100}
-                    onChange={(val) => props.setStepover(val / 100)}
-                    validate={(v) => (v <= 0 || v > 100 ? '1〜100の範囲で入力してください' : undefined)}
-                />
-                <FormControl fullWidth margin="normal" size="small">
-                    <InputLabel>輪郭方向</InputLabel>
-                    <Select value={props.contourSide} label="輪郭方向" onChange={(e) => props.setContourSide(e.target.value as string)}>
-                        <MenuItem value="outer">外側</MenuItem>
-                        <MenuItem value="inner">内側</MenuItem>
-                    </Select>
-                </FormControl>
-                <Button variant="contained" onClick={props.handleGenerateContour} sx={{ mr: 1 }}>輪郭パス生成</Button>
-                <Button variant="contained" onClick={props.handleGeneratePocket}>ポケットパス生成</Button>
+                <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+                    ステップオーバー・輪郭方向・送り速度等の加工条件は、パス生成ボタンを押した後の確認画面で設定します。
+                </Typography>
+                <Button variant="contained" onClick={() => setGcodeConfirm('contour')} sx={{ mr: 1 }}>輪郭パス生成</Button>
+                <Button variant="contained" onClick={() => setGcodeConfirm('pocket')}>ポケットパス生成</Button>
             </AccordionDetails>
             </Accordion>
             <Accordion expanded={expanded.cam3d} onChange={() => toggleSection('cam3d')} disableGutters sx={{ mb: 2 }}>
@@ -520,13 +513,10 @@ const CamTab = (props: CamTabProps) => {
                         </Tooltip>
                     )}
                 </Box>
-                <NumberField
-                    label="スライス厚 (mm)"
-                    value={props.sliceHeight}
-                    onChange={props.setSliceHeight}
-                    validate={(v) => (v <= 0 ? '0より大きい値を入力してください' : undefined)}
-                />
-                <Button variant="contained" onClick={props.handleGenerate3dPath} disabled={props.isGenerating3dPath} fullWidth>
+                <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+                    スライス厚(切り込みピッチ)・送り速度等の加工条件は、パス生成ボタンを押した後の確認画面で設定します。
+                </Typography>
+                <Button variant="contained" onClick={() => setGcodeConfirm('3d')} disabled={props.isGenerating3dPath} fullWidth>
                     {props.isGenerating3dPath
                         ? (props.path3dProgress.total > 0 && props.path3dProgress.current >= props.path3dProgress.total
                             ? '結果を集計中...'
@@ -594,7 +584,7 @@ const CamTab = (props: CamTabProps) => {
                     </Typography>
                 )}
                 <Box sx={{ display: 'flex', gap: 1 }}>
-                    <Button variant="contained" onClick={() => setGcodeConfirm('save')}>Gコード保存</Button>
+                    <Button variant="contained" onClick={() => props.handleSaveGcode()}>Gコード保存</Button>
                     <Button variant="contained" color="secondary" onClick={() => setGcodeConfirm('transfer')}>
                         CNCへ転送
                     </Button>
@@ -685,10 +675,47 @@ const CamTab = (props: CamTabProps) => {
             />
             <ConfirmDialog
                 open={!!gcodeConfirm}
-                title="加工条件の確認"
-                confirmLabel={gcodeConfirm === 'transfer' ? 'CNCへ転送' : 'Gコード生成'}
+                title={gcodeConfirm === 'contour' || gcodeConfirm === 'pocket' || gcodeConfirm === '3d' ? 'パス生成条件の確認' : '加工条件の確認'}
+                confirmLabel={
+                    gcodeConfirm === 'transfer' ? 'CNCへ転送'
+                    : gcodeConfirm === 'drill' ? 'Gコード生成'
+                    : 'パス生成 + Gコード保存'
+                }
                 message={
                     <Box>
+                        {gcodeConfirm === 'contour' && (
+                            <>
+                                <NumberField
+                                    label="ステップオーバー (%)"
+                                    value={props.stepover * 100}
+                                    onChange={(val) => props.setStepover(val / 100)}
+                                    validate={(v) => (v <= 0 || v > 100 ? '1〜100の範囲で入力してください' : undefined)}
+                                />
+                                <FormControl fullWidth margin="normal" size="small">
+                                    <InputLabel>輪郭方向</InputLabel>
+                                    <Select value={props.contourSide} label="輪郭方向" onChange={(e) => props.setContourSide(e.target.value as string)}>
+                                        <MenuItem value="outer">外側</MenuItem>
+                                        <MenuItem value="inner">内側</MenuItem>
+                                    </Select>
+                                </FormControl>
+                            </>
+                        )}
+                        {gcodeConfirm === 'pocket' && (
+                            <NumberField
+                                label="ステップオーバー (%)"
+                                value={props.stepover * 100}
+                                onChange={(val) => props.setStepover(val / 100)}
+                                validate={(v) => (v <= 0 || v > 100 ? '1〜100の範囲で入力してください' : undefined)}
+                            />
+                        )}
+                        {gcodeConfirm === '3d' && (
+                            <NumberField
+                                label="スライス厚 / 切り込みピッチ (mm)"
+                                value={props.sliceHeight}
+                                onChange={props.setSliceHeight}
+                                validate={(v) => (v <= 0 ? '0より大きい値を入力してください' : undefined)}
+                            />
+                        )}
                         <NumberField
                             label="送り速度 (mm/min)"
                             value={props.feedRate}
@@ -701,12 +728,14 @@ const CamTab = (props: CamTabProps) => {
                             onChange={props.setRpm}
                             validate={(v) => (v <= 0 ? '0より大きい値を入力してください' : undefined)}
                         />
-                        <NumberField
-                            label="切り込み深さ (mm)"
-                            value={props.stepDown}
-                            onChange={props.setStepDown}
-                            forceSign="negative"
-                        />
+                        {gcodeConfirm !== '3d' && (
+                            <NumberField
+                                label="切り込み深さ / ピッチ (mm)"
+                                value={props.stepDown}
+                                onChange={props.setStepDown}
+                                forceSign="negative"
+                            />
+                        )}
                         <NumberField label="リトラクト高さ (mm)" value={props.retractZ} onChange={props.setRetractZ} forceSign="positive" />
                         {gcodeConfirm === 'drill' && (
                             <NumberField
@@ -716,7 +745,7 @@ const CamTab = (props: CamTabProps) => {
                                 validate={(v) => (v <= 0 ? '0より大きい値を入力してください' : undefined)}
                             />
                         )}
-                        {gcodeConfirm !== 'drill' && props.pathStats && (
+                        {gcodeConfirm === 'transfer' && props.pathStats && (
                             <Typography variant="body2" color="text.secondary">
                                 移動距離: {formatDistanceMm(props.pathStats.totalDistanceMm)}　／　加工時間(概算): {formatDurationSec(props.pathStats.timeSec)}
                             </Typography>
@@ -728,9 +757,12 @@ const CamTab = (props: CamTabProps) => {
                     setGcodeConfirm(null);
                     if (kind === 'drill') {
                         props.handleGenerateDrillGcode();
-                    } else if (kind === 'save') {
-                        props.handleSaveGcode();
-                        setGcodeSaved(true);
+                    } else if (kind === 'contour') {
+                        props.handleGenerateContour().then(() => setGcodeSaved(true));
+                    } else if (kind === 'pocket') {
+                        props.handleGeneratePocket().then(() => setGcodeSaved(true));
+                    } else if (kind === '3d') {
+                        props.handleGenerate3dPath().then(() => setGcodeSaved(true));
                     } else if (kind === 'transfer') {
                         (async () => {
                             const ok = await props.handleTransferGcodeToCnc();

@@ -29,6 +29,9 @@ type UseToolpathGenerationArgs = {
   setToolpaths: (paths: ToolpathSegment[]) => void;
   setPreviewMode: (v: boolean) => void;
   resetSimulation: () => void;
+  // パス生成後、同じアクションでGコード保存まで行うために呼び出す。setToolpathsによる状態更新の
+  // 反映を待たず、生成直後の配列をそのまま渡せるようにoverridePathsを取る形にしてある。
+  saveGcode: (paths: ToolpathSegment[]) => Promise<void>;
 };
 
 // 完全な円（DXFのCIRCLEエンティティ等）はセグメントを持たずarcsのみに格納されるため、
@@ -69,6 +72,7 @@ export const useToolpathGeneration = ({
   setToolpaths,
   setPreviewMode,
   resetSimulation,
+  saveGcode,
 }: UseToolpathGenerationArgs) => {
   const [isGenerating3dPath, setIsGenerating3dPath] = useState(false);
   const [path3dProgress, setPath3dProgress] = useState({ current: 0, total: 0 });
@@ -182,7 +186,11 @@ export const useToolpathGeneration = ({
         alert(linearErrorCount === 1 ? `初期パス生成エラー: ${lastLinearError}` : `初期パス生成エラー: ${linearErrorCount}件の形状でパスを生成できませんでした（${lastLinearError}）`);
       }
       if (fitArcError) alert(`円弧フィットエラー: ${fitArcError}`);
-      if (allSegments.length > 0) setToolpaths(optimizeToolpathOrder(allSegments));
+      if (allSegments.length > 0) {
+        const ordered = optimizeToolpathOrder(allSegments);
+        setToolpaths(ordered);
+        await saveGcode(ordered);
+      }
       resetSimulation();
     } catch (error) {
       alert(`パス生成に失敗しました: ${error}`);
@@ -211,7 +219,9 @@ export const useToolpathGeneration = ({
       const result = await api.generatePocketPath(params);
       if (result.status === 'success') {
         const segments = result.toolpaths.map((path: number[][]) => ({ type: 'line' as const, points: path }));
-        setToolpaths(optimizeToolpathOrder(segments));
+        const ordered = optimizeToolpathOrder(segments);
+        setToolpaths(ordered);
+        await saveGcode(ordered);
       } else {
         alert(`パス生成エラー: ${result.message}`);
       }
@@ -238,9 +248,11 @@ export const useToolpathGeneration = ({
       };
       const result = await api.generate3dRoughingPath(params);
       if (result.status === 'success') {
-        setToolpaths(optimizeToolpathOrder(result.toolpaths));
+        const ordered = optimizeToolpathOrder(result.toolpaths);
+        setToolpaths(ordered);
         // 3Dパス生成後は誤って材料/加工後形状を動かさないようプレビューモードに入る
         setPreviewMode(true);
+        await saveGcode(ordered);
       } else {
         alert(`3Dパス生成エラー: ${result.message}`);
       }

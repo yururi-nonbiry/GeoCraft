@@ -38,8 +38,8 @@ interface ControlPanelProps {
     setStepover: (val: number) => void;
     contourSide: string;
     setContourSide: (val: string) => void;
-    handleGenerateContour: () => void;
-    handleGeneratePocket: () => void;
+    handleGenerateContour: () => Promise<void>;
+    handleGeneratePocket: () => Promise<void>;
     stockStlFile: string | null;
     targetStlFile: string | null;
     handleSelectStockStl: () => void;
@@ -59,7 +59,7 @@ interface ControlPanelProps {
     onTogglePreviewMode: () => void;
     sliceHeight: number;
     setSliceHeight: (val: number) => void;
-    handleGenerate3dPath: () => void;
+    handleGenerate3dPath: () => Promise<void>;
     isGenerating3dPath: boolean;
     path3dProgress: { current: number; total: number };
     retractZ: number;

@@ -602,6 +602,20 @@ const App = () => {
     resetSimulation();
   };
 
+  const { handleGenerateDrillGcode, handleSaveGcode, handleTransferGcodeToCnc } = useGcodeExport({
+    geometry,
+    toolpaths,
+    getEffectiveToolpaths,
+    feedRate,
+    rpm,
+    machine: currentMachine,
+    stockThickness: actualStockThickness,
+    confirmDepthExceedsStock,
+    onNoTransferToolpaths: () => setIsNoTransferToolpathDialogOpen(true),
+    setGcode: cnc.setGcode,
+    setGcodeStatus: cnc.setGcodeStatus,
+  });
+
   const {
     handleGenerateContour,
     handleGeneratePocket,
@@ -630,20 +644,7 @@ const App = () => {
     setToolpaths,
     setPreviewMode,
     resetSimulation,
-  });
-
-  const { handleGenerateDrillGcode, handleSaveGcode, handleTransferGcodeToCnc } = useGcodeExport({
-    geometry,
-    toolpaths,
-    getEffectiveToolpaths,
-    feedRate,
-    rpm,
-    machine: currentMachine,
-    stockThickness: actualStockThickness,
-    confirmDepthExceedsStock,
-    onNoTransferToolpaths: () => setIsNoTransferToolpathDialogOpen(true),
-    setGcode: cnc.setGcode,
-    setGcodeStatus: cnc.setGcodeStatus,
+    saveGcode: handleSaveGcode,
   });
 
   const handleSaveProject = async () => {

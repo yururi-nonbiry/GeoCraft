@@ -95,10 +95,13 @@ export const useGcodeExport = ({
     if (result?.status === 'success') alert(`ドリルGコードを保存しました: ${result.filePath}`);
   };
 
-  const handleSaveGcode = async () => {
-    if (!toolpaths || toolpaths.length === 0) return alert('保存するツールパスがありません。');
-    const effectiveToolpaths = getEffectiveToolpaths(toolpaths);
-    const saveDepth = computeMaxCutDepth(effectiveToolpaths ?? toolpaths, machine.stepDown);
+  // overridePathsは、パス生成直後にReactの状態更新を待たず生成結果をそのまま保存するために使う
+  // (setToolpathsの反映を待つとこの関数の呼び出し元が持つtoolpathsが古いままになるため)。
+  const handleSaveGcode = async (overridePaths?: ToolpathSegment[]) => {
+    const sourcePaths = overridePaths ?? toolpaths;
+    if (!sourcePaths || sourcePaths.length === 0) return alert('保存するツールパスがありません。');
+    const effectiveToolpaths = getEffectiveToolpaths(sourcePaths);
+    const saveDepth = computeMaxCutDepth(effectiveToolpaths ?? sourcePaths, machine.stepDown);
     if (exceedsStockDepth(saveDepth, stockThickness) && !(await confirmDepthExceedsStock(saveDepth, stockThickness))) return;
     const result = await runGcodeAction(
       () => api.generateGcode({ toolpaths: effectiveToolpaths, ...buildGcodeParams() }),
