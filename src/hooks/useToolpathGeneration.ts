@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { Geometry, ToolpathSegment, StlBaseTransform } from '../types';
+import { optimizeToolpathOrder } from '../toolpathOrdering';
 
 type Vec3 = { x: number; y: number; z: number };
 
@@ -181,7 +182,7 @@ export const useToolpathGeneration = ({
         alert(linearErrorCount === 1 ? `初期パス生成エラー: ${lastLinearError}` : `初期パス生成エラー: ${linearErrorCount}件の形状でパスを生成できませんでした（${lastLinearError}）`);
       }
       if (fitArcError) alert(`円弧フィットエラー: ${fitArcError}`);
-      if (allSegments.length > 0) setToolpaths(allSegments);
+      if (allSegments.length > 0) setToolpaths(optimizeToolpathOrder(allSegments));
       resetSimulation();
     } catch (error) {
       alert(`パス生成に失敗しました: ${error}`);
@@ -209,7 +210,8 @@ export const useToolpathGeneration = ({
       };
       const result = await api.generatePocketPath(params);
       if (result.status === 'success') {
-        setToolpaths(result.toolpaths.map((path: number[][]) => ({ type: 'line' as const, points: path })));
+        const segments = result.toolpaths.map((path: number[][]) => ({ type: 'line' as const, points: path }));
+        setToolpaths(optimizeToolpathOrder(segments));
       } else {
         alert(`パス生成エラー: ${result.message}`);
       }
@@ -236,7 +238,7 @@ export const useToolpathGeneration = ({
       };
       const result = await api.generate3dRoughingPath(params);
       if (result.status === 'success') {
-        setToolpaths(result.toolpaths);
+        setToolpaths(optimizeToolpathOrder(result.toolpaths));
         // 3Dパス生成後は誤って材料/加工後形状を動かさないようプレビューモードに入る
         setPreviewMode(true);
       } else {
