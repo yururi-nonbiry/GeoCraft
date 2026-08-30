@@ -66,15 +66,18 @@ namespace GeoCraft.Desktop.Services
             }
 
             int totalSlices = zLevels.Count;
+            var removalAreas = new Geometry?[totalSlices];
             var sliceResults = new List<object>?[totalSlices];
             int completedSlices = 0;
+            // 除去領域の計算(フェーズ1)とパス生成(フェーズ3)の2段階分の進捗を合わせて報告する。
+            int progressTotal = totalSlices * 2;
 
             var stopwatch = Stopwatch.StartNew();
             LogService.Log($"GenerateToolpath: start, {totalSlices} slices");
 
-            // 各スライスは独立して計算できるため並列化する。SliceToUnionは呼び出しのたびに
-            // メッシュを複製してからカットするため元のメッシュを変更せず、スレッド間で
-            // stockMesh/targetMeshを安全に共有できる。
+            // フェーズ1: 各スライスの除去領域(stockArea - targetArea)を求める。スライスごとに独立して
+            // 計算できるため並列化する。SliceToUnionは呼び出しのたびにメッシュを複製してからカットする
+            // ため元のメッシュを変更せず、スレッド間でstockMesh/targetMeshを安全に共有できる。
             Parallel.For(0, totalSlices, i =>
             {
                 try
@@ -88,10 +91,71 @@ namespace GeoCraft.Desktop.Services
                             ? stockArea.Difference(targetArea)
                             : stockArea;
 
-                        if (!removalArea.IsEmpty)
+                        if (!removalArea.IsEmpty) removalAreas[i] = removalArea;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // 1スライスの幾何演算(NTSのBuffer/Difference等)が失敗しても、他の正常なスライスの
+                    // 結果やGenerateToolpath全体の完了を妨げないよう、このスライスだけ空扱いにして続行する。
+                    LogService.Log($"GenerateToolpath: slice {i} removal-area failed: {ex.Message}");
+                }
+
+                int done = Interlocked.Increment(ref completedSlices);
+                onProgress?.Invoke(done, progressTotal);
+            });
+
+            LogService.Log($"GenerateToolpath: removal areas done in {stopwatch.ElapsedMilliseconds}ms");
+
+            // フェーズ2: 最も深いレベル(zBottom側)から浅い方へ積算し、「このレベルから最深部まで
+            // ずっと除去領域が続いている」領域(=貫通していて、輪郭さえ切り離せばスクラップとして
+            // 分離できるため内部を全部削る必要がない領域)を求める。各レベルの結果が1つ深いレベルの
+            // 結果に依存するため、このフェーズだけは逐次処理する(演算自体は多角形の交差のみで軽い)。
+            var throughRegions = new Geometry?[totalSlices];
+            for (int i = totalSlices - 1; i >= 0; i--)
+            {
+                var removalArea = removalAreas[i];
+                if (removalArea == null) continue;
+
+                if (i == totalSlices - 1)
+                {
+                    throughRegions[i] = removalArea;
+                    continue;
+                }
+
+                var below = throughRegions[i + 1];
+                if (below == null || below.IsEmpty) continue;
+                try
+                {
+                    var through = removalArea.Intersection(below);
+                    if (!through.IsEmpty) throughRegions[i] = through;
+                }
+                catch (Exception ex)
+                {
+                    LogService.Log($"GenerateToolpath: slice {i} through-region failed: {ex.Message}");
+                }
+            }
+
+            // フェーズ3: 貫通領域は境界を1周切削するだけにとどめ(内部のクリアランスは省略)、それ以外
+            // (最終形状として底が残るポケット)は従来通り同心オフセットで内部まで全面クリアする。
+            // フェーズ1で求めた除去領域とフェーズ2の貫通領域が確定していれば各スライスは独立なので
+            // 再び並列化できる。
+            Parallel.For(0, totalSlices, i =>
+            {
+                try
+                {
+                    var removalArea = removalAreas[i];
+                    if (removalArea != null)
+                    {
+                        double z = zLevels[i];
+                        var through = throughRegions[i];
+                        var hasThrough = through != null && !through.IsEmpty;
+                        var remainder = hasThrough ? removalArea.Difference(through!) : removalArea;
+
+                        var slicePaths = new List<object>();
+                        if (hasThrough)
                         {
-                            var slicePaths = new List<object>();
-                            foreach (var path in OffsetInward(removalArea, toolDiameter, stepover))
+                            foreach (var path in OffsetInward(through!, toolDiameter, stepover, boundaryOnly: true))
                             {
                                 slicePaths.Add(new
                                 {
@@ -99,19 +163,28 @@ namespace GeoCraft.Desktop.Services
                                     points = path.Select(p => new[] { p[0], p[1], z }).ToList()
                                 });
                             }
-                            sliceResults[i] = slicePaths;
                         }
+                        if (!remainder.IsEmpty)
+                        {
+                            foreach (var path in OffsetInward(remainder, toolDiameter, stepover))
+                            {
+                                slicePaths.Add(new
+                                {
+                                    type = "line",
+                                    points = path.Select(p => new[] { p[0], p[1], z }).ToList()
+                                });
+                            }
+                        }
+                        if (slicePaths.Count > 0) sliceResults[i] = slicePaths;
                     }
                 }
                 catch (Exception ex)
                 {
-                    // 1スライスの幾何演算(NTSのBuffer/Difference等)が失敗しても、他の正常なスライスの
-                    // 結果やGenerateToolpath全体の完了を妨げないよう、このスライスだけ空扱いにして続行する。
-                    LogService.Log($"GenerateToolpath: slice {i} failed: {ex.Message}");
+                    LogService.Log($"GenerateToolpath: slice {i} path-gen failed: {ex.Message}");
                 }
 
                 int done = Interlocked.Increment(ref completedSlices);
-                onProgress?.Invoke(done, totalSlices);
+                onProgress?.Invoke(done, progressTotal);
             });
 
             LogService.Log($"GenerateToolpath: all slices done in {stopwatch.ElapsedMilliseconds}ms, building result");
@@ -172,7 +245,10 @@ namespace GeoCraft.Desktop.Services
             return union;
         }
 
-        private List<List<double[]>> OffsetInward(Geometry area, double toolDiameter, double stepover)
+        // boundaryOnly=trueの場合、工具径ぶんの最初の1周分だけを返し、以降の内側への
+        // オフセット(内部の全面クリアランス)は行わない。貫通領域は輪郭さえ切削すれば
+        // スクラップとして分離できるため、内部を削る時間を省くのに使う。
+        private List<List<double[]>> OffsetInward(Geometry area, double toolDiameter, double stepover, bool boundaryOnly = false)
         {
             var allPaths = new List<List<double[]>>();
             var bufferParams = new BufferParameters { EndCapStyle = EndCapStyle.Flat, JoinStyle = JoinStyle.Mitre };
@@ -201,6 +277,7 @@ namespace GeoCraft.Desktop.Services
                     }
                 }
 
+                if (boundaryOnly) break;
                 currentOffset -= stepover;
             }
             return allPaths;
