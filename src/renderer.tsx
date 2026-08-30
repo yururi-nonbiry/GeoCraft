@@ -620,6 +620,7 @@ const App = () => {
     feedRate,
     rpm,
     machine: currentMachine,
+    stockThickness,
     onNoTransferToolpaths: () => setIsNoTransferToolpathDialogOpen(true),
     setGcode: cnc.setGcode,
     setGcodeStatus: cnc.setGcodeStatus,
