@@ -1087,6 +1087,9 @@ const App = () => {
             toolSettings={toolSettings}
             selectedToolId={selectedToolId}
             setSelectedToolId={setSelectedToolId}
+            materialSettings={materialSettings}
+            selectedMaterialId={selectedMaterialId}
+            setSelectedMaterialId={setSelectedMaterialId}
             processType={processType}
             setProcessType={setProcessType}
             stockToLeave={stockToLeave}

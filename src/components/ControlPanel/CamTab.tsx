@@ -23,7 +23,7 @@ import {
     AccordionDetails,
 } from '@mui/material';
 import { Settings, InfoOutlined, ExpandMore } from '@mui/icons-material';
-import { MachineSetting, ToolSetting, WorkOrigin, Geometry, ToolpathSegment } from '../../types';
+import { MachineSetting, MaterialSetting, ToolSetting, WorkOrigin, Geometry, ToolpathSegment } from '../../types';
 import { ToolpathStats } from '../../toolpathStats';
 import { VisibilityToggles, NumberField, ConfirmDialog } from './shared';
 
@@ -49,6 +49,9 @@ export interface CamTabProps {
     toolSettings: ToolSetting[];
     selectedToolId: number | '';
     setSelectedToolId: (val: number) => void;
+    materialSettings: MaterialSetting[];
+    selectedMaterialId: number | '';
+    setSelectedMaterialId: (val: number) => void;
     toolDiameter: number;
     processType: 'roughing' | 'finishing';
     workOrigin: WorkOrigin | null;
@@ -214,6 +217,8 @@ const CamTab = (props: CamTabProps) => {
                     {(props.toolSettings.find(t => t.id === props.selectedToolId)?.name) || '未選択'}
                     {' (Φ'}{props.toolDiameter}{'mm) / '}
                     {props.processType === 'roughing' ? '粗削り' : '仕上げ'}
+                    {' / 材料: '}
+                    {(props.materialSettings.find(m => m.id === props.selectedMaterialId)?.name) || '未選択'}
                 </Typography>
             </Paper>
             <Accordion expanded={expanded.origin} onChange={() => toggleSection('origin')} disableGutters sx={{ mb: 2 }}>

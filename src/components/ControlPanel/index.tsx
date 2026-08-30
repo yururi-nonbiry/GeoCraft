@@ -19,7 +19,7 @@ import {
     Tab,
     Divider,
 } from '@mui/material';
-import { MachineSetting, ToolSetting, WorkOrigin, Geometry, ToolpathSegment, SerialPortInfo } from '../../types';
+import { MachineSetting, MaterialSetting, ToolSetting, WorkOrigin, Geometry, ToolpathSegment, SerialPortInfo } from '../../types';
 import { ToolpathStats } from '../../toolpathStats';
 import { TabPanel, NumberField, ConfirmDialog } from './shared';
 import CamTab from './CamTab';
@@ -126,6 +126,9 @@ interface ControlPanelProps {
     toolSettings: ToolSetting[];
     selectedToolId: number | '';
     setSelectedToolId: (val: number) => void;
+    materialSettings: MaterialSetting[];
+    selectedMaterialId: number | '';
+    setSelectedMaterialId: (val: number) => void;
     processType: 'roughing' | 'finishing';
     setProcessType: (val: 'roughing' | 'finishing') => void;
     stockToLeave: number;
@@ -199,6 +202,9 @@ const ControlPanel = (props: ControlPanelProps) => {
                         toolSettings={props.toolSettings}
                         selectedToolId={props.selectedToolId}
                         setSelectedToolId={props.setSelectedToolId}
+                        materialSettings={props.materialSettings}
+                        selectedMaterialId={props.selectedMaterialId}
+                        setSelectedMaterialId={props.setSelectedMaterialId}
                         toolDiameter={props.toolDiameter}
                         processType={props.processType}
                         workOrigin={props.workOrigin}
@@ -517,6 +523,18 @@ const ControlPanel = (props: ControlPanelProps) => {
                                 .map(tool => (
                                     <MenuItem key={tool.id} value={tool.id}>{tool.name} (Φ{tool.diameter}mm)</MenuItem>
                                 ))}
+                        </Select>
+                    </FormControl>
+                    <FormControl fullWidth margin="normal" size="small">
+                        <InputLabel>材料</InputLabel>
+                        <Select
+                            value={props.selectedMaterialId}
+                            label="材料"
+                            onChange={(e) => props.setSelectedMaterialId(e.target.value as number)}
+                        >
+                            {props.materialSettings.map(material => (
+                                <MenuItem key={material.id} value={material.id}>{material.name}</MenuItem>
+                            ))}
                         </Select>
                     </FormControl>
                     <TextField
