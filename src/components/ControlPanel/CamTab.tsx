@@ -103,6 +103,8 @@ export interface CamTabProps {
     setFeedRate: (val: number) => void;
     rpm: number;
     setRpm: (val: number) => void;
+    stepDown: number;
+    setStepDown: (val: number) => void;
     handleSaveGcode: () => void;
     handleTransferGcodeToCnc: () => Promise<boolean>;
     onGcodeTransferred: () => void;
@@ -528,6 +530,12 @@ const CamTab = (props: CamTabProps) => {
                     value={props.rpm}
                     onChange={props.setRpm}
                     validate={(v) => (v <= 0 ? '0より大きい値を入力してください' : undefined)}
+                />
+                <NumberField
+                    label="切り込み深さ (mm)"
+                    value={props.stepDown}
+                    onChange={props.setStepDown}
+                    validate={(v) => (v >= 0 ? 'マイナスの値を入力してください（Z方向への切込み量）' : undefined)}
                 />
                 {props.pathStats ? (
                     <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>

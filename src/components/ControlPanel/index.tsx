@@ -256,6 +256,8 @@ const ControlPanel = (props: ControlPanelProps) => {
                         setFeedRate={props.setFeedRate}
                         rpm={props.rpm}
                         setRpm={props.setRpm}
+                        stepDown={props.stepDown}
+                        setStepDown={props.setStepDown}
                         handleSaveGcode={props.handleSaveGcode}
                         handleTransferGcodeToCnc={props.handleTransferGcodeToCnc}
                         onGcodeTransferred={() => setActiveTab(1)}
