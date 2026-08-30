@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
     Typography,
     Paper,
@@ -15,6 +15,8 @@ import {
     IconButton,
     Tooltip,
     Alert,
+    ToggleButton,
+    ToggleButtonGroup,
 } from '@mui/material';
 import { Refresh, Link, LinkOff, PlayArrow, Pause, Stop, Settings, LockOpen, RestartAlt, VerticalAlignBottom } from '@mui/icons-material';
 import { MachineSetting, SerialPortInfo } from '../../types';
@@ -153,6 +155,16 @@ const LongPressButton = (props: {
 };
 
 const CncTab = (props: CncTabProps) => {
+    const [mode, setMode] = useState<'auto' | 'manual'>('auto');
+
+    // Gコード送信中/一時停止中に手動タブへ切り替わっていると、進捗表示が隠れて
+    // 送信が続いていることに気づきにくい。送信が始まったら自動タブへ強制的に戻す。
+    useEffect(() => {
+        if (props.gcodeStatus === 'sending' || props.gcodeStatus === 'paused') {
+            setMode('auto');
+        }
+    }, [props.gcodeStatus]);
+
     // 3Dラフィング等から転送された巨大なG-code(数万行)をそのまま折り返し付きtextareaに
     // 流し込むと、ブラウザ側の行レイアウト計算が仮想化されず数秒〜数十秒単位で固まる。
     // 表示だけ先頭N行に切り詰め、送信自体は props.gcode の全文に対して行う。
@@ -170,6 +182,23 @@ const CncTab = (props: CncTabProps) => {
 
     return (
         <>
+            <Box sx={{ flexShrink: 0, mb: 1 }}>
+                <ToggleButtonGroup
+                    value={mode}
+                    exclusive
+                    fullWidth
+                    size="small"
+                    onChange={(_, val) => { if (val) setMode(val); }}
+                >
+                    <ToggleButton value="auto">自動 (Gコード送信)</ToggleButton>
+                    <ToggleButton
+                        value="manual"
+                        disabled={props.gcodeStatus === 'sending' || props.gcodeStatus === 'paused'}
+                    >
+                        手動 (Jog)
+                    </ToggleButton>
+                </ToggleButtonGroup>
+            </Box>
             <Box sx={{ flexGrow: 1, overflowY: 'auto', pr: 0.5, mb: 1 }}>
                 <Paper sx={{ p: 2, mb: 2 }}>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
@@ -241,6 +270,32 @@ const CncTab = (props: CncTabProps) => {
                     />
                 </Paper>
                 <Paper sx={{ p: 2, mb: 2 }}>
+                    <Typography variant="h6" gutterBottom>マシン状態</Typography>
+                    <Typography variant="body2">状態: {props.machinePosition.status}</Typography>
+                    <Typography variant="body2">WPos: X:{props.machinePosition.wpos.x.toFixed(3)} Y:{props.machinePosition.wpos.y.toFixed(3)} Z:{props.machinePosition.wpos.z.toFixed(3)}</Typography>
+                    <Typography variant="body2">MPos: X:{props.machinePosition.mpos.x.toFixed(3)} Y:{props.machinePosition.mpos.y.toFixed(3)} Z:{props.machinePosition.mpos.z.toFixed(3)}</Typography>
+                    <Typography variant="caption" color={props.machinePosition.homed ? 'success.main' : 'text.secondary'}>
+                        {props.machinePosition.homed ? '原点設定済み: MPos<0への移動を制限中' : '原点未設定: 移動制限なし'}
+                    </Typography>
+                    <Box sx={{ mt: 1 }}>
+                        <Tooltip title="緊急停止後に機械が動かない場合、Grblのアラーム状態($X)を解除します。解除後は位置情報が未確定になるため、機械原点リセットを行ってください。">
+                            <span>
+                                <Button
+                                    fullWidth
+                                    variant={props.machinePosition.status === 'Alarm' ? 'contained' : 'outlined'}
+                                    color="error"
+                                    disabled={!props.isConnected}
+                                    onClick={props.handleUnlockAlarm}
+                                    startIcon={<LockOpen />}
+                                >
+                                    アラーム解除 ($X){props.machinePosition.status === 'Alarm' ? '  ※Alarm状態' : ''}
+                                </Button>
+                            </span>
+                        </Tooltip>
+                    </Box>
+                </Paper>
+                {mode === 'auto' && (
+                <Paper sx={{ p: 2, mb: 2 }}>
                     <Typography variant="h6" gutterBottom>Gコード送信</Typography>
                     {isGcodeTruncated && (
                         <Alert severity="warning" sx={{ mb: 1 }}>
@@ -296,17 +351,11 @@ const CncTab = (props: CncTabProps) => {
                         <Typography variant="body2" align="right">{props.gcodeProgress.sent}/{props.gcodeProgress.total}</Typography>
                     </Box>
                 </Paper>
+                )}
             </Box>
+            {mode === 'manual' && (
             <Paper sx={{ p: 2, flexShrink: 0, mb: 0 }}>
                 <Typography variant="h6" gutterBottom>手動操作 (Jog)</Typography>
-                <Box sx={{ mb: 2 }}>
-                    <Typography variant="body2">マシン状態: {props.machinePosition.status}</Typography>
-                    <Typography variant="body2">WPos: X:{props.machinePosition.wpos.x.toFixed(3)} Y:{props.machinePosition.wpos.y.toFixed(3)} Z:{props.machinePosition.wpos.z.toFixed(3)}</Typography>
-                    <Typography variant="body2">MPos: X:{props.machinePosition.mpos.x.toFixed(3)} Y:{props.machinePosition.mpos.y.toFixed(3)} Z:{props.machinePosition.mpos.z.toFixed(3)}</Typography>
-                    <Typography variant="caption" color={props.machinePosition.homed ? 'success.main' : 'text.secondary'}>
-                        {props.machinePosition.homed ? '原点設定済み: MPos<0への移動を制限中' : '原点未設定: 移動制限なし'}
-                    </Typography>
-                </Box>
                 <FormControl fullWidth margin="dense" size="small" sx={{ mb: 2 }}>
                     <InputLabel id="jog-step-select-label">移動量 (mm)</InputLabel>
                     <Select
@@ -373,22 +422,6 @@ const CncTab = (props: CncTabProps) => {
                         機械原点リセット (長押し)
                     </LongPressButton>
                 </Box>
-                <Box sx={{ mt: 1 }}>
-                    <Tooltip title="緊急停止後に機械が動かない場合、Grblのアラーム状態($X)を解除します。解除後は位置情報が未確定になるため、機械原点リセットを行ってください。">
-                        <span>
-                            <Button
-                                fullWidth
-                                variant={props.machinePosition.status === 'Alarm' ? 'contained' : 'outlined'}
-                                color="error"
-                                disabled={!props.isConnected}
-                                onClick={props.handleUnlockAlarm}
-                                startIcon={<LockOpen />}
-                            >
-                                アラーム解除 ($X){props.machinePosition.status === 'Alarm' ? '  ※Alarm状態' : ''}
-                            </Button>
-                        </span>
-                    </Tooltip>
-                </Box>
                 <Box sx={{ mt: 3, pt: 2, borderTop: '1px solid rgba(255,255,255,0.12)' }}>
                     <Typography variant="subtitle2" gutterBottom>スピンドル</Typography>
                     <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
@@ -421,6 +454,7 @@ const CncTab = (props: CncTabProps) => {
                     </Box>
                 </Box>
             </Paper>
+            )}
         </>
     );
 };
