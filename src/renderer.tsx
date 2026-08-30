@@ -325,6 +325,7 @@ const App = () => {
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [projectLoadedPath, setProjectLoadedPath] = useState<string | null>(null);
+  const [projectSavedPath, setProjectSavedPath] = useState<string | null>(null);
   const [isNoTransferToolpathDialogOpen, setIsNoTransferToolpathDialogOpen] = useState(false);
 
   // シリアル接続/ジョグ/主軸/Grbl設定/G-code送信制御など、CNC機械との通信に関するstateとhandlerはここに集約
@@ -649,7 +650,7 @@ const App = () => {
         selectedToolId: typeof selectedToolId === 'number' ? selectedToolId : undefined,
       };
       const result = await api.saveProject(JSON.stringify(project));
-      if (result.status === 'success') alert(`プロジェクトを保存しました: ${result.filePath}`);
+      if (result.status === 'success') setProjectSavedPath(result.filePath);
       else if (result.status !== 'canceled') alert(`プロジェクトの保存に失敗しました: ${result.message}`);
     } catch (error) {
       alert(`プロジェクトの保存に失敗しました: ${error}`);
@@ -1150,6 +1151,16 @@ const App = () => {
         </DialogContent>
         <DialogActions>
           <Button variant="contained" onClick={() => setProjectLoadedPath(null)}>OK</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={projectSavedPath !== null} onClose={() => setProjectSavedPath(null)}>
+        <DialogTitle>プロジェクトを保存しました</DialogTitle>
+        <DialogContent dividers>
+          <Typography>{projectSavedPath}</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button variant="contained" onClick={() => setProjectSavedPath(null)}>OK</Button>
         </DialogActions>
       </Dialog>
 
