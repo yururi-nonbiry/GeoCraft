@@ -116,6 +116,9 @@ type SectionKey = 'origin' | 'cam2d' | 'cam3d' | 'drill' | 'gcode' | 'objects';
 const CamTab = (props: CamTabProps) => {
     const [pendingDelete, setPendingDelete] = useState<{ message: string; onDelete: () => void } | null>(null);
     const [previewOffConfirmOpen, setPreviewOffConfirmOpen] = useState(false);
+    // Gコード生成直前に加工条件(送り速度・回転数・切り込み深さ等)を最終確認・微調整させるためのモーダル。
+    // 対象操作の種類だけ保持し、実際の値はprops経由(feedRate等)でモーダル内から直接編集させる。
+    const [gcodeConfirm, setGcodeConfirm] = useState<'drill' | 'save' | 'transfer' | null>(null);
     // 2.5D加工と3D加工は同時に使わないことが多いため、STL読み込み状況に応じてどちらかを初期展開する。
     // それ以外の区分は折りたたんでおき、縦に長くなりがちな画面を見渡しやすくする。
     const [expanded, setExpanded] = useState<Record<SectionKey, boolean>>(() => {
@@ -555,7 +558,7 @@ const CamTab = (props: CamTabProps) => {
                     onChange={props.setPeckQ}
                     validate={(v) => (v <= 0 ? '0より大きい値を入力してください' : undefined)}
                 />
-                <Button variant="contained" onClick={props.handleGenerateDrillGcode}>ドリルGコード生成</Button>
+                <Button variant="contained" onClick={() => setGcodeConfirm('drill')}>ドリルGコード生成</Button>
             </AccordionDetails>
             </Accordion>
             <Accordion expanded={expanded.gcode} onChange={() => toggleSection('gcode')} disableGutters sx={{ mb: 2 }}>
@@ -591,18 +594,8 @@ const CamTab = (props: CamTabProps) => {
                     </Typography>
                 )}
                 <Box sx={{ display: 'flex', gap: 1 }}>
-                    <Button variant="contained" onClick={() => { props.handleSaveGcode(); setGcodeSaved(true); }}>Gコード保存</Button>
-                    <Button
-                        variant="contained"
-                        color="secondary"
-                        onClick={async () => {
-                            const ok = await props.handleTransferGcodeToCnc();
-                            if (ok) {
-                                props.onGcodeTransferred();
-                                setGcodeSaved(true);
-                            }
-                        }}
-                    >
+                    <Button variant="contained" onClick={() => setGcodeConfirm('save')}>Gコード保存</Button>
+                    <Button variant="contained" color="secondary" onClick={() => setGcodeConfirm('transfer')}>
                         CNCへ転送
                     </Button>
                 </Box>
@@ -689,6 +682,66 @@ const CamTab = (props: CamTabProps) => {
                     setPreviewOffConfirmOpen(false);
                 }}
                 onCancel={() => setPreviewOffConfirmOpen(false)}
+            />
+            <ConfirmDialog
+                open={!!gcodeConfirm}
+                title="加工条件の確認"
+                confirmLabel={gcodeConfirm === 'transfer' ? 'CNCへ転送' : 'Gコード生成'}
+                message={
+                    <Box>
+                        <NumberField
+                            label="送り速度 (mm/min)"
+                            value={props.feedRate}
+                            onChange={props.setFeedRate}
+                            validate={(v) => (v <= 0 ? '0より大きい値を入力してください' : undefined)}
+                        />
+                        <NumberField
+                            label="主軸回転数 (RPM)"
+                            value={props.rpm}
+                            onChange={props.setRpm}
+                            validate={(v) => (v <= 0 ? '0より大きい値を入力してください' : undefined)}
+                        />
+                        <NumberField
+                            label="切り込み深さ (mm)"
+                            value={props.stepDown}
+                            onChange={props.setStepDown}
+                            forceSign="negative"
+                        />
+                        <NumberField label="リトラクト高さ (mm)" value={props.retractZ} onChange={props.setRetractZ} forceSign="positive" />
+                        {gcodeConfirm === 'drill' && (
+                            <NumberField
+                                label="ペック量 (Q)"
+                                value={props.peckQ}
+                                onChange={props.setPeckQ}
+                                validate={(v) => (v <= 0 ? '0より大きい値を入力してください' : undefined)}
+                            />
+                        )}
+                        {gcodeConfirm !== 'drill' && props.pathStats && (
+                            <Typography variant="body2" color="text.secondary">
+                                移動距離: {formatDistanceMm(props.pathStats.totalDistanceMm)}　／　加工時間(概算): {formatDurationSec(props.pathStats.timeSec)}
+                            </Typography>
+                        )}
+                    </Box>
+                }
+                onConfirm={() => {
+                    const kind = gcodeConfirm;
+                    setGcodeConfirm(null);
+                    if (kind === 'drill') {
+                        props.handleGenerateDrillGcode();
+                    } else if (kind === 'save') {
+                        props.handleSaveGcode();
+                        setGcodeSaved(true);
+                    } else if (kind === 'transfer') {
+                        (async () => {
+                            const ok = await props.handleTransferGcodeToCnc();
+                            if (ok) {
+                                props.onGcodeTransferred();
+                                setGcodeSaved(true);
+                            }
+                        })();
+                    }
+                }}
+                onCancel={() => setGcodeConfirm(null)}
             />
         </Box>
     );
