@@ -37,6 +37,7 @@ import { useStlAssets } from './hooks/useStlAssets';
 import { useGcodeExport } from './hooks/useGcodeExport';
 import { useToolpathGeneration } from './hooks/useToolpathGeneration';
 import { computeToolpathStats } from './toolpathStats';
+import { computeStlBounds } from './stlUtils';
 
 const theme = createTheme({
   palette: {
@@ -320,6 +321,14 @@ const App = () => {
   const [simSpeed, setSimSpeed] = useState(1);
   const [stockMargin, setStockMargin] = useState(5);
   const [stockThickness, setStockThickness] = useState(10);
+  // 切り込み深さの安全チェックには、シミュレーション用に手入力されたstockThicknessではなく
+  // 実際に読み込まれた材料STLの実寸(高さ)を使う。手入力値との乖離により、実寸的には
+  // 問題ない加工が誤って警告されたり、逆に検出漏れが起きたりするのを防ぐため。
+  const actualStockThickness = useMemo(() => {
+    if (!stockStlData) return stockThickness;
+    const bounds = computeStlBounds(stockStlData, stockBaseTransform?.rotation);
+    return bounds.max.z - bounds.min.z;
+  }, [stockStlData, stockBaseTransform, stockThickness]);
   const [simResetToken, setSimResetToken] = useState(0);
   const [simSkipToken, setSimSkipToken] = useState(0);
 
@@ -630,7 +639,7 @@ const App = () => {
     feedRate,
     rpm,
     machine: currentMachine,
-    stockThickness,
+    stockThickness: actualStockThickness,
     confirmDepthExceedsStock,
     onNoTransferToolpaths: () => setIsNoTransferToolpathDialogOpen(true),
     setGcode: cnc.setGcode,
