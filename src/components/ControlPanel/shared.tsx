@@ -59,6 +59,9 @@ type NumberFieldProps = {
     max?: number;
     // min/max だけでは表現できない条件（例: 0以外の負数のみ許可）用の追加チェック。エラーメッセージを返す。
     validate?: (val: number) => string | undefined;
+    // Z方向の向き(安全高さ/退避は上=正、切込み深さは下=負)を取り違えると加工機が
+    // 意図しない方向(材料側)に動く危険があるため、表示上の警告に留めず符号自体を強制する。
+    forceSign?: 'positive' | 'negative';
     helperText?: string;
     size?: 'small' | 'medium';
     fullWidth?: boolean;
@@ -70,6 +73,7 @@ type NumberFieldProps = {
 
 // 数値TextFieldの共通ラッパー。範囲外/未入力値を赤枠+ヘルパーテキストで可視化する。
 // 入力自体はブロックしない(値は都度onChangeに伝播する)ため、既存の挙動を壊さずに検証だけ追加できる。
+// forceSignを指定したフィールドのみ、伝播前に符号を矯正する(誤った符号のまま使われることを防ぐ)。
 export const NumberField = ({
     label,
     value,
@@ -77,6 +81,7 @@ export const NumberField = ({
     min,
     max,
     validate,
+    forceSign,
     helperText,
     size = 'small',
     fullWidth = true,
@@ -103,7 +108,11 @@ export const NumberField = ({
             value={value}
             onChange={(e) => {
                 const next = parseFloat(e.target.value);
-                onChange(Number.isNaN(next) ? 0 : next);
+                if (Number.isNaN(next)) {
+                    onChange(0);
+                    return;
+                }
+                onChange(forceSign === 'positive' ? Math.abs(next) : forceSign === 'negative' ? -Math.abs(next) : next);
             }}
             error={!!error}
             helperText={error || helperText}

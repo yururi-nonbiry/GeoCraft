@@ -38,9 +38,12 @@ namespace GeoCraft.Desktop.Services
                 LogService.Log($"GenerateGcode: deserialize done at {sw.ElapsedMilliseconds}ms, toolpaths={p.toolpaths.Count}, jsonLen={paramsJson.Length}");
                 var toolpaths = p.toolpaths;
                 double feedRate = p.feedRate;
-                double safeZ = p.safeZ;
-                double stepDown = p.stepDown;
-                double retractZ = p.retractZ ?? 2.0;
+                // 安全高さ/退避高さは常にZ+方向(材料から離れる向き)、切込み深さは常にZ-方向(材料に向かう向き)
+                // でなければならない。符号を取り違えた値が渡ると退避のつもりが逆に材料側へ動いてしまうため、
+                // 呼び出し元(UI/保存済みプロジェクト)の値によらずここで符号を強制する。
+                double safeZ = Math.Abs(p.safeZ);
+                double stepDown = -Math.Abs(p.stepDown);
+                double retractZ = Math.Abs(p.retractZ ?? 2.0);
                 int spindleSpeed = (int)(p.rpm ?? 1000);
 
                 GcodeWriter writer = new GcodeWriter();
@@ -146,10 +149,11 @@ namespace GeoCraft.Desktop.Services
                 }
 
                 double feedRate = p.feedRate;
-                double safeZ = p.safeZ;
+                double safeZ = Math.Abs(p.safeZ);
                 // stepDownは輪郭/ポケット同様、絶対Z座標として扱う(work Z0=表面、負値が掘り込み深さ)。
-                double targetZ = p.stepDown;
-                double retractZ = p.retractZ ?? 2.0;
+                // 符号を取り違えると退避が材料側へ動く事故になるため、safeZ/retractZ同様ここで符号を強制する。
+                double targetZ = -Math.Abs(p.stepDown);
+                double retractZ = Math.Abs(p.retractZ ?? 2.0);
                 double peckDepth = Math.Abs(p.peckQ ?? 0.0);
                 int spindleSpeed = (int)(p.rpm ?? 1000);
 

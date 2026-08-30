@@ -504,7 +504,7 @@ const CamTab = (props: CamTabProps) => {
                 <Typography variant="h6">ドリル加工</Typography>
             </AccordionSummary>
             <AccordionDetails>
-                <NumberField label="リトラクト高さ (mm)" value={props.retractZ} onChange={props.setRetractZ} min={0} />
+                <NumberField label="リトラクト高さ (mm)" value={props.retractZ} onChange={props.setRetractZ} forceSign="positive" />
                 <NumberField
                     label="ペック量 (Q)"
                     value={props.peckQ}
@@ -535,7 +535,7 @@ const CamTab = (props: CamTabProps) => {
                     label="切り込み深さ (mm)"
                     value={props.stepDown}
                     onChange={props.setStepDown}
-                    validate={(v) => (v >= 0 ? 'マイナスの値を入力してください（Z方向への切込み量）' : undefined)}
+                    forceSign="negative"
                 />
                 {props.pathStats ? (
                     <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>

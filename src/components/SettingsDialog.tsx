@@ -354,21 +354,21 @@ const SettingsDialog = ({
             label="安全高さ (Z)"
             value={editingMachine.safeZ}
             onChange={(val) => setEditingMachine((prev) => ({ ...prev, safeZ: val }))}
-            min={0}
+            forceSign="positive"
             margin="dense"
           />
           <NumberField
             label="切込み深さ (Z)"
             value={editingMachine.stepDown}
             onChange={(val) => setEditingMachine((prev) => ({ ...prev, stepDown: val }))}
-            validate={(v) => (v >= 0 ? 'マイナスの値を入力してください（Z方向への切込み量）' : undefined)}
+            forceSign="negative"
             margin="dense"
           />
           <NumberField
             label="R点 (切込み開始高さ)"
             value={editingMachine.retractZ}
             onChange={(val) => setEditingMachine((prev) => ({ ...prev, retractZ: val }))}
-            min={0}
+            forceSign="positive"
             margin="dense"
           />
           <NumberField

@@ -355,21 +355,21 @@ const ControlPanel = (props: ControlPanelProps) => {
                         label="安全高さ (mm)"
                         value={props.safeZ}
                         onChange={props.setSafeZ}
-                        min={0}
+                        forceSign="positive"
                         size="small"
                     />
                     <NumberField
                         label="切り込み深さ (mm)"
                         value={props.stepDown}
                         onChange={props.setStepDown}
-                        validate={(v) => (v >= 0 ? 'マイナスの値を入力してください（Z方向への切込み量）' : undefined)}
+                        forceSign="negative"
                         size="small"
                     />
                     <NumberField
                         label="リトラクト高さ (mm)"
                         value={props.retractZ}
                         onChange={props.setRetractZ}
-                        min={0}
+                        forceSign="positive"
                         size="small"
                     />
                     <NumberField
