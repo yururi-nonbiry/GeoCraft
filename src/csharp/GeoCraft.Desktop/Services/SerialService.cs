@@ -35,6 +35,13 @@ namespace GeoCraft.Desktop.Services
                 try
                 {
                     _port = new SerialPort(portName, baudRate);
+                    // SerialPort.Write has no timeout by default (InfiniteTimeout). If the
+                    // controller stops draining bytes (e.g. it hard-faults/resets after a
+                    // limit-switch alarm), Write() blocks forever inside the _portLock —
+                    // and since callers hold _stateLock (GeoCraftBridge) while writing, that
+                    // freezes EmergencyStop/StopGcode too, since they need the same lock.
+                    // A bounded timeout guarantees Write() always returns.
+                    _port.WriteTimeout = 1000;
                     _port.DataReceived += Port_DataReceived;
                     _port.Open();
                     return new { status = "success", message = (string?)null };
@@ -76,7 +83,18 @@ namespace GeoCraft.Desktop.Services
             {
                 if (_port != null && _port.IsOpen)
                 {
-                    _port.Write(data);
+                    try
+                    {
+                        _port.Write(data);
+                    }
+                    catch (TimeoutException)
+                    {
+                        // The device isn't draining bytes (crashed/reset/disconnected).
+                        // Drop this write rather than propagate — an uncaught exception
+                        // here would blow up on a background thread, and the caller
+                        // (GeoCraftBridge) needs its lock released, not an exception
+                        // to handle, so a subsequent EmergencyStop can get through.
+                    }
                 }
             }
         }

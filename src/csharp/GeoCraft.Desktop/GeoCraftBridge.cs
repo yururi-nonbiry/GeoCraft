@@ -186,6 +186,19 @@ namespace GeoCraft.Desktop
                     Broadcast("serial-data", "[プローブ] アラームが発生したため中止しました。配線を確認し、必要ならアラーム解除($X)を行ってください。");
                     Broadcast("probe-result", new { success = false });
                 }
+                if (_isSending)
+                {
+                    // Grbl stops acknowledging queued lines once it enters an alarm
+                    // lockout, so without this the streaming loop would wait forever
+                    // for "ok"s that never arrive — the job silently freezes mid-way
+                    // with no error/finished broadcast and the UI stuck on "sending".
+                    _isSending = false;
+                    _isPaused = false;
+                    _gcodeQueue.Clear();
+                    _sentLineLengths.Clear();
+                    _unacknowledgedBytes = 0;
+                    BroadcastGcodeProgress("error");
+                }
                 Broadcast("serial-data", "[安全] アラームにより原点情報が無効になりました。再度「機械原点リセット」を行ってください。");
             }
             else if (line.StartsWith("$") && line.Contains("="))
