@@ -234,6 +234,70 @@ const CncTab = (props: CncTabProps) => {
                         </Box>
                     </Box>
                 </Paper>
+                {mode === 'auto' && (
+                <Paper sx={{ p: 2, mb: 2 }}>
+                    <Typography variant="h6" gutterBottom>Gコード送信</Typography>
+                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 1 }}>
+                        <Tooltip title={props.gcodeStatus === 'paused' ? '再開' : '送信'}>
+                            <span>
+                                <IconButton
+                                    color="primary"
+                                    onClick={props.gcodeStatus === 'paused' ? props.handleResumeGcode : props.handleSendGcode}
+                                    disabled={!props.isConnected || (props.gcodeStatus !== 'idle' && props.gcodeStatus !== 'paused')}
+                                >
+                                    <PlayArrow />
+                                </IconButton>
+                            </span>
+                        </Tooltip>
+                        <Tooltip title="一時停止">
+                            <span>
+                                <IconButton onClick={props.handlePauseGcode} disabled={props.gcodeStatus !== 'sending'}>
+                                    <Pause />
+                                </IconButton>
+                            </span>
+                        </Tooltip>
+                        <Tooltip title="停止">
+                            <span>
+                                <IconButton color="secondary" onClick={props.handleStopGcode} disabled={props.gcodeStatus === 'idle'}>
+                                    <Stop />
+                                </IconButton>
+                            </span>
+                        </Tooltip>
+                        <Tooltip title="リセット: 送信状態が固まって操作できない場合に、表示をidleへ強制的に戻します">
+                            <IconButton color="warning" onClick={props.handleResetGcodeState}>
+                                <RestartAlt />
+                            </IconButton>
+                        </Tooltip>
+                    </Box>
+                    <Box sx={{ width: '100%', mb: 1 }}>
+                        <Typography variant="body2">状態: {{ 'idle': '待機中', 'sending': '送信中', 'paused': '一時停止中', 'finished': '完了', 'error': 'エラー' }[props.gcodeStatus] || props.gcodeStatus}</Typography>
+                        <LinearProgress variant="determinate" value={(props.gcodeProgress.total > 0 ? (props.gcodeProgress.sent / props.gcodeProgress.total) * 100 : 0)} />
+                        <Typography variant="body2" align="right">{props.gcodeProgress.sent}/{props.gcodeProgress.total}</Typography>
+                        <Typography variant="body2" color="text.secondary">
+                            全加工時間(目安): {formatDurationSec(gcodeTimeEstimate.totalSec)}
+                            {(props.gcodeStatus === 'sending' || props.gcodeStatus === 'paused') && (
+                                <>　／　残り時間(目安): {formatDurationSec(remainingEstimateSec)}</>
+                            )}
+                        </Typography>
+                    </Box>
+                    {isGcodeTruncated && (
+                        <Alert severity="warning" sx={{ mb: 1 }}>
+                            G-codeが大きいため先頭{GCODE_DISPLAY_LINE_LIMIT}行のみ表示し、編集はできません。送信・保存は全文に対して行われます。
+                        </Alert>
+                    )}
+                    <TextField
+                        multiline
+                        rows={8}
+                        fullWidth
+                        variant="outlined"
+                        value={displayedGcode}
+                        onChange={(e) => { if (!isGcodeTruncated) props.setGcode(e.target.value); }}
+                        placeholder="ここにG-codeを貼り付け..."
+                        sx={{ fontFamily: 'monospace' }}
+                        InputProps={{ readOnly: isGcodeTruncated }}
+                    />
+                </Paper>
+                )}
                 <Paper sx={{ p: 2, mb: 2 }}>
                     <Typography variant="h6" gutterBottom>通信ログ</Typography>
                     <TextareaAutosize
@@ -268,70 +332,6 @@ const CncTab = (props: CncTabProps) => {
                         </Tooltip>
                     </Box>
                 </Paper>
-                {mode === 'auto' && (
-                <Paper sx={{ p: 2, mb: 2 }}>
-                    <Typography variant="h6" gutterBottom>Gコード送信</Typography>
-                    {isGcodeTruncated && (
-                        <Alert severity="warning" sx={{ mb: 1 }}>
-                            G-codeが大きいため先頭{GCODE_DISPLAY_LINE_LIMIT}行のみ表示し、編集はできません。送信・保存は全文に対して行われます。
-                        </Alert>
-                    )}
-                    <TextField
-                        multiline
-                        rows={8}
-                        fullWidth
-                        variant="outlined"
-                        value={displayedGcode}
-                        onChange={(e) => { if (!isGcodeTruncated) props.setGcode(e.target.value); }}
-                        placeholder="ここにG-codeを貼り付け..."
-                        sx={{ mb: 1, fontFamily: 'monospace' }}
-                        InputProps={{ readOnly: isGcodeTruncated }}
-                    />
-                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 1 }}>
-                        <Tooltip title={props.gcodeStatus === 'paused' ? '再開' : '送信'}>
-                            <span>
-                                <IconButton
-                                    color="primary"
-                                    onClick={props.gcodeStatus === 'paused' ? props.handleResumeGcode : props.handleSendGcode}
-                                    disabled={!props.isConnected || (props.gcodeStatus !== 'idle' && props.gcodeStatus !== 'paused')}
-                                >
-                                    <PlayArrow />
-                                </IconButton>
-                            </span>
-                        </Tooltip>
-                        <Tooltip title="一時停止">
-                            <span>
-                                <IconButton onClick={props.handlePauseGcode} disabled={props.gcodeStatus !== 'sending'}>
-                                    <Pause />
-                                </IconButton>
-                            </span>
-                        </Tooltip>
-                        <Tooltip title="停止">
-                            <span>
-                                <IconButton color="secondary" onClick={props.handleStopGcode} disabled={props.gcodeStatus === 'idle'}>
-                                    <Stop />
-                                </IconButton>
-                            </span>
-                        </Tooltip>
-                        <Tooltip title="リセット: 送信状態が固まって操作できない場合に、表示をidleへ強制的に戻します">
-                            <IconButton color="warning" onClick={props.handleResetGcodeState}>
-                                <RestartAlt />
-                            </IconButton>
-                        </Tooltip>
-                    </Box>
-                    <Box sx={{ width: '100%' }}>
-                        <Typography variant="body2">状態: {{ 'idle': '待機中', 'sending': '送信中', 'paused': '一時停止中', 'finished': '完了', 'error': 'エラー' }[props.gcodeStatus] || props.gcodeStatus}</Typography>
-                        <LinearProgress variant="determinate" value={(props.gcodeProgress.total > 0 ? (props.gcodeProgress.sent / props.gcodeProgress.total) * 100 : 0)} />
-                        <Typography variant="body2" align="right">{props.gcodeProgress.sent}/{props.gcodeProgress.total}</Typography>
-                        <Typography variant="body2" color="text.secondary">
-                            全加工時間(目安): {formatDurationSec(gcodeTimeEstimate.totalSec)}
-                            {(props.gcodeStatus === 'sending' || props.gcodeStatus === 'paused') && (
-                                <>　／　残り時間(目安): {formatDurationSec(remainingEstimateSec)}</>
-                            )}
-                        </Typography>
-                    </Box>
-                </Paper>
-                )}
             </Box>
             {mode === 'manual' && (
             <Paper sx={{ p: 2, flexShrink: 0, mb: 0 }}>
