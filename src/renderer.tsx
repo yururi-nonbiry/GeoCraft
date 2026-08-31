@@ -71,6 +71,7 @@ type ProjectData = {
   toolDiameter: number;
   stepover: number;
   sliceHeight: number;
+  cutThroughBoundaryOnly?: boolean;
   contourSide: string;
   feedRate: number;
   rpm?: number;
@@ -135,6 +136,7 @@ const App = () => {
   const [toolDiameter, setToolDiameter] = useState(3.0);
   const [stepover, setStepover] = useState(0.5);
   const [sliceHeight, setSliceHeight] = useState(1.0);
+  const [cutThroughBoundaryOnly, setCutThroughBoundaryOnly] = useState(true);
   const [toolpaths, setToolpaths] = useState<ToolpathSegment[] | null>(null);
   // --- ツールパス表示(層送り)state ---
   const [showAllLayers, setShowAllLayers] = useState(true);
@@ -630,6 +632,7 @@ const App = () => {
     processType,
     stockToLeave,
     sliceHeight,
+    cutThroughBoundaryOnly,
     placement: {
       stockStlPath,
       stockStlData,
@@ -659,6 +662,7 @@ const App = () => {
         toolDiameter,
         stepover,
         sliceHeight,
+        cutThroughBoundaryOnly,
         contourSide,
         feedRate,
         rpm,
@@ -704,6 +708,7 @@ const App = () => {
     if (typeof project.toolDiameter === 'number') setToolDiameter(project.toolDiameter);
     if (typeof project.stepover === 'number') setStepover(project.stepover);
     if (typeof project.sliceHeight === 'number') setSliceHeight(project.sliceHeight);
+    if (typeof project.cutThroughBoundaryOnly === 'boolean') setCutThroughBoundaryOnly(project.cutThroughBoundaryOnly);
     if (project.contourSide) setContourSide(project.contourSide);
     if (typeof project.feedRate === 'number') setFeedRate(project.feedRate);
     if (typeof project.rpm === 'number') setRpm(project.rpm);
@@ -1085,6 +1090,8 @@ const App = () => {
             onTogglePreviewMode={handleTogglePreviewMode}
             sliceHeight={sliceHeight}
             setSliceHeight={setSliceHeight}
+            cutThroughBoundaryOnly={cutThroughBoundaryOnly}
+            setCutThroughBoundaryOnly={setCutThroughBoundaryOnly}
             handleGenerate3dPath={handleGenerate3dPath}
             isGenerating3dPath={isGenerating3dPath}
             path3dProgress={path3dProgress}

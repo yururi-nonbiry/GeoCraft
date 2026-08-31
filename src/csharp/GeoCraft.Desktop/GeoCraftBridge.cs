@@ -446,7 +446,9 @@ namespace GeoCraft.Desktop
                 double sliceHeight = p.sliceHeight;
                 double toolDiameter = p.toolDiameter;
                 double stepoverRatio = p.stepoverRatio;
+                bool cutThroughBoundaryOnly = p.cutThroughBoundaryOnly;
                 return _threeDPathService.GenerateToolpath(stockPath, targetPath, sliceHeight, toolDiameter, stepoverRatio,
+                    cutThroughBoundaryOnly,
                     (current, total) => Broadcast("path-progress", new { current, total }));
             });
         }

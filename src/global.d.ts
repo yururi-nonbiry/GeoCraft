@@ -31,6 +31,7 @@ export type RoughingPathParams = {
     sliceHeight: number;
     toolDiameter: number;
     stepoverRatio: number;
+    cutThroughBoundaryOnly: boolean;
 };
 
 export type GcodeGenerationParams = {

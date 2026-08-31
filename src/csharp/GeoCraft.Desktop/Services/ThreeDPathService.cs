@@ -15,7 +15,7 @@ namespace GeoCraft.Desktop.Services
     {
         private GeometryFactory _factory = new GeometryFactory();
 
-        public object GenerateToolpath(string stockPath, string targetPath, double sliceHeight, double toolDiameter, double stepoverRatio, Action<int, int>? onProgress = null)
+        public object GenerateToolpath(string stockPath, string targetPath, double sliceHeight, double toolDiameter, double stepoverRatio, bool cutThroughBoundaryOnly = true, Action<int, int>? onProgress = null)
         {
             if (string.IsNullOrEmpty(stockPath) || string.IsNullOrEmpty(targetPath))
             {
@@ -113,32 +113,37 @@ namespace GeoCraft.Desktop.Services
             // ずっと除去領域が続いている」領域(=貫通していて、輪郭さえ切り離せばスクラップとして
             // 分離できるため内部を全部削る必要がない領域)を求める。各レベルの結果が1つ深いレベルの
             // 結果に依存するため、このフェーズだけは逐次処理する(演算自体は多角形の交差のみで軽い)。
+            // cutThroughBoundaryOnly=falseの場合はユーザーが全面切削を選択しているため、この判定自体を
+            // 行わずthroughRegionsを空のまま(=フェーズ3で常に全面クリア)にする。
             var throughRegions = new Geometry?[totalSlices];
             for (int i = totalSlices - 1; i >= 0; i--)
             {
-                try
+                if (cutThroughBoundaryOnly)
                 {
-                    var removalArea = removalAreas[i];
-                    if (removalArea != null)
+                    try
                     {
-                        if (i == totalSlices - 1)
+                        var removalArea = removalAreas[i];
+                        if (removalArea != null)
                         {
-                            throughRegions[i] = removalArea;
-                        }
-                        else
-                        {
-                            var below = throughRegions[i + 1];
-                            if (below != null && !below.IsEmpty)
+                            if (i == totalSlices - 1)
                             {
-                                var through = removalArea.Intersection(below);
-                                if (!through.IsEmpty) throughRegions[i] = through;
+                                throughRegions[i] = removalArea;
+                            }
+                            else
+                            {
+                                var below = throughRegions[i + 1];
+                                if (below != null && !below.IsEmpty)
+                                {
+                                    var through = removalArea.Intersection(below);
+                                    if (!through.IsEmpty) throughRegions[i] = through;
+                                }
                             }
                         }
                     }
-                }
-                catch (Exception ex)
-                {
-                    LogService.Log($"GenerateToolpath: slice {i} through-region failed: {ex.Message}");
+                    catch (Exception ex)
+                    {
+                        LogService.Log($"GenerateToolpath: slice {i} through-region failed: {ex.Message}");
+                    }
                 }
 
                 // フェーズ2は依存関係上逐次処理になるため、ここで進捗を報告しないとフェーズ1完了後

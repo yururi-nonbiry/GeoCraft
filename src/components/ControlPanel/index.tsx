@@ -59,6 +59,8 @@ interface ControlPanelProps {
     onTogglePreviewMode: () => void;
     sliceHeight: number;
     setSliceHeight: (val: number) => void;
+    cutThroughBoundaryOnly: boolean;
+    setCutThroughBoundaryOnly: (val: boolean) => void;
     handleGenerate3dPath: () => Promise<void>;
     isGenerating3dPath: boolean;
     path3dProgress: { current: number; total: number };
@@ -244,6 +246,8 @@ const ControlPanel = (props: ControlPanelProps) => {
                         setTargetOffset={props.setTargetOffset}
                         sliceHeight={props.sliceHeight}
                         setSliceHeight={props.setSliceHeight}
+                        cutThroughBoundaryOnly={props.cutThroughBoundaryOnly}
+                        setCutThroughBoundaryOnly={props.setCutThroughBoundaryOnly}
                         handleGenerate3dPath={props.handleGenerate3dPath}
                         isGenerating3dPath={props.isGenerating3dPath}
                         path3dProgress={props.path3dProgress}

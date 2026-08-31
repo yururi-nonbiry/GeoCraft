@@ -25,6 +25,7 @@ type UseToolpathGenerationArgs = {
   processType: 'roughing' | 'finishing';
   stockToLeave: number;
   sliceHeight: number;
+  cutThroughBoundaryOnly: boolean;
   placement: StockTargetPlacement;
   setToolpaths: (paths: ToolpathSegment[]) => void;
   setPreviewMode: (v: boolean) => void;
@@ -68,6 +69,7 @@ export const useToolpathGeneration = ({
   processType,
   stockToLeave,
   sliceHeight,
+  cutThroughBoundaryOnly,
   placement,
   setToolpaths,
   setPreviewMode,
@@ -244,7 +246,8 @@ export const useToolpathGeneration = ({
         targetPath,
         sliceHeight,
         toolDiameter,
-        stepoverRatio: stepover
+        stepoverRatio: stepover,
+        cutThroughBoundaryOnly,
       };
       const result = await api.generate3dRoughingPath(params);
       if (result.status === 'success') {

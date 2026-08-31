@@ -11,6 +11,7 @@ import {
     InputLabel,
     LinearProgress,
     Checkbox,
+    FormControlLabel,
     Tooltip,
     Table,
     TableBody,
@@ -84,6 +85,8 @@ export interface CamTabProps {
     setTargetOffset: (val: { x: number; y: number; z: number }) => void;
     sliceHeight: number;
     setSliceHeight: (val: number) => void;
+    cutThroughBoundaryOnly: boolean;
+    setCutThroughBoundaryOnly: (val: boolean) => void;
     handleGenerate3dPath: () => Promise<void>;
     isGenerating3dPath: boolean;
     path3dProgress: { current: number; total: number };
@@ -695,12 +698,25 @@ const CamTab = (props: CamTabProps) => {
                             />
                         )}
                         {gcodeConfirm === '3d' && (
-                            <NumberField
-                                label="スライス厚 / 切り込みピッチ (mm)"
-                                value={props.sliceHeight}
-                                onChange={props.setSliceHeight}
-                                validate={(v) => (v <= 0 ? '0より大きい値を入力してください' : undefined)}
-                            />
+                            <>
+                                <NumberField
+                                    label="スライス厚 / 切り込みピッチ (mm)"
+                                    value={props.sliceHeight}
+                                    onChange={props.setSliceHeight}
+                                    validate={(v) => (v <= 0 ? '0より大きい値を入力してください' : undefined)}
+                                />
+                                <Tooltip title="貫通する領域(下まで削り抜ける部分)は輪郭のみ切削してスクラップとして分離し、内部のクリアランスを省略して加工時間を短縮します。オフにすると貫通領域も内部まで全面切削します。">
+                                    <FormControlLabel
+                                        control={
+                                            <Checkbox
+                                                checked={props.cutThroughBoundaryOnly}
+                                                onChange={(e) => props.setCutThroughBoundaryOnly(e.target.checked)}
+                                            />
+                                        }
+                                        label="貫通領域は境界線のみ切削する"
+                                    />
+                                </Tooltip>
+                            </>
                         )}
                         <NumberField
                             label="送り速度 (mm/min)"
